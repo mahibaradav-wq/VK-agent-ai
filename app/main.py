@@ -39,13 +39,13 @@ async def handle_integrity_error(_: Request, exc: IntegrityError):
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    return templates.TemplateResponse("landing.html", {"request": request, "app_name": settings.app_name})
+    return templates.TemplateResponse(request, "landing.html", {"app_name": settings.app_name})
 
 
 @app.get("/app", response_class=HTMLResponse)
 def web_dashboard(request: Request, db: Session = Depends(get_db)):
     context = _dashboard_context(request, db)
-    return templates.TemplateResponse("dashboard.html", context)
+    return templates.TemplateResponse(request, "dashboard.html", context)
 
 
 @app.post("/app/products")
