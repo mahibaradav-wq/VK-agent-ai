@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ app_name }}</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="card">
+        <p class="eyebrow">Mock MVP</p>
+        <h1>Дом по полочкам</h1>
+        <p>
+          Локальная система управления контентом и товарами для VK-сообщества.
+          Публикация во внешние сервисы отключена и заменена mock-ответами.
+        </p>
+        <ul>
+          <li>Approval обязателен перед публикацией</li>
+          <li>Изменение материала создаёт новую версию</li>
+          <li>Повторная публикация той же версии идемпотентна</li>
+          <li>Действия фиксируются в audit log</li>
+        </ul>
+        <a href="/docs">Открыть API-документацию</a>
+      </section>
+    </main>
+  </body>
+</html>
