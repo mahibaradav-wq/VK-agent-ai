@@ -68,6 +68,12 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 http://localhost:8000
 ```
 
+Рабочий кабинет:
+
+```text
+http://localhost:8000/app
+```
+
 ## Тестирование
 
 ```bash
@@ -97,9 +103,20 @@ data/                  # SQLite и локальные данные
 
 ## API endpoints
 
+### Сайт
+
+- `GET /` — landing page
+- `GET /app` — рабочий кабинет
+- `POST /app/products` — создать товар через форму
+- `POST /app/ideas` — сгенерировать AI-идею через форму
+- `POST /app/content-drafts` — сгенерировать AI-черновик через форму
+- `POST /app/content` — создать материал вручную
+- `POST /app/content/{id}/review`
+- `POST /app/content/{id}/approve`
+- `POST /app/content/{id}/publish`
+
 ### Системные
 
-- `GET /` — HTML-страница статуса
 - `GET /health` — проверка статуса
 
 ### Задачи
@@ -202,6 +219,7 @@ DATABASE_URL=sqlite:///./data/app.db
 - [Архитектура](docs/architecture.md)
 - [Рабочие процессы](docs/workflows.md)
 - [Тестирование](docs/testing.md)
+- [Предложения по сайту](docs/site-proposal.md)
 
 ## Статус
 
