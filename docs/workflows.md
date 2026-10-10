@@ -52,3 +52,31 @@ POST /api/content/{id}/publish
 3. Повторная публикация той же версии на ту же платформу возвращает существующий
    mock URL и не создаёт дубль.
 
+## Mock integrations
+
+### Ozon
+
+```text
+POST /api/mock/ozon/import-products
+```
+
+Импортирует или обновляет товары в локальной SQLite-базе. Реальный Ozon API не
+вызывается.
+
+### Telegram
+
+```text
+POST /api/mock/telegram/notify
+```
+
+Создаёт локальную запись `notifications`. Реальные сообщения в Telegram не
+отправляются.
+
+### Metrics
+
+```text
+POST /api/metrics/collect
+```
+
+Создаёт локальный снимок метрик. Можно привязать его к `published_post_id`.
+

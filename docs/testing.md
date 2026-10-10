@@ -16,4 +16,9 @@ pytest tests/ -q
 - повторная публикация той же версии идемпотентна;
 - изменение материала сбрасывает approval;
 - слишком короткий материал требует revision.
+- AI endpoints создают идеи и черновики;
+- AI-черновик проходит полный approval/publish workflow;
+- mock Ozon import создаёт и обновляет товары;
+- mock Telegram notification сохраняется локально;
+- ручной сбор mock-метрик сохраняет snapshot.
 

@@ -50,6 +50,12 @@ py -3.11 -m pip install -r requirements.txt
 python -c "from app.database import init_db; init_db()"
 ```
 
+Демо-данные:
+
+```bash
+python scripts/seed_demo.py
+```
+
 ## Запуск
 
 ```bash
@@ -119,15 +125,23 @@ data/                  # SQLite и локальные данные
 - `POST /api/content`
 - `POST /api/ai/content-drafts` — создать черновик через mock AI
 - `GET /api/content/{content_id}`
+- `GET /api/content/{content_id}/versions`
+- `GET /api/content/{content_id}/reviews`
+- `GET /api/content/{content_id}/approvals`
 - `PATCH /api/content/{content_id}`
 - `POST /api/content/{content_id}/review`
 - `POST /api/content/{content_id}/approve`
 - `POST /api/content/{content_id}/publish`
 
-### Аудит и метрики
+### Публикации, уведомления, аудит и метрики
 
+- `GET /api/publications`
+- `GET /api/notifications`
+- `POST /api/mock/telegram/notify`
+- `POST /api/mock/ozon/import-products`
 - `GET /api/audit-logs`
 - `GET /api/metrics`
+- `POST /api/metrics/collect`
 
 ## Основной workflow
 

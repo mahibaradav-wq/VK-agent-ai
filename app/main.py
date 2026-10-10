@@ -116,6 +116,21 @@ def get_content(content_id: str, db: Session = Depends(get_db)) -> models.Conten
     return content
 
 
+@app.get("/api/content/{content_id}/versions", response_model=list[schemas.ContentVersionRead])
+def list_content_versions(content_id: str, db: Session = Depends(get_db)) -> list[models.ContentVersion]:
+    return services.list_content_versions(db, content_id)
+
+
+@app.get("/api/content/{content_id}/reviews", response_model=list[schemas.ReviewRead])
+def list_content_reviews(content_id: str, db: Session = Depends(get_db)) -> list[models.ContentReview]:
+    return services.list_content_reviews(db, content_id)
+
+
+@app.get("/api/content/{content_id}/approvals", response_model=list[schemas.ApprovalRead])
+def list_content_approvals(content_id: str, db: Session = Depends(get_db)) -> list[models.Approval]:
+    return services.list_content_approvals(db, content_id)
+
+
 @app.patch("/api/content/{content_id}", response_model=schemas.ContentRead)
 def update_content(
     content_id: str,
@@ -148,12 +163,46 @@ def publish_content(
     return services.publish_content(db, content_id, payload)
 
 
+@app.get("/api/publications", response_model=list[schemas.PublishedPostRead])
+def list_published_posts(db: Session = Depends(get_db)) -> list[models.PublishedPost]:
+    return services.list_published_posts(db)
+
+
 @app.get("/api/audit-logs", response_model=list[schemas.AuditLogRead])
 def list_audit_logs(db: Session = Depends(get_db)) -> Sequence[models.AuditLog]:
     return repositories.list_all(db, models.AuditLog)
 
 
+@app.get("/api/notifications", response_model=list[schemas.NotificationRead])
+def list_notifications(db: Session = Depends(get_db)) -> list[models.Notification]:
+    return services.list_notifications(db)
+
+
+@app.post("/api/mock/telegram/notify", response_model=schemas.NotificationRead, status_code=201)
+def send_telegram_notification(
+    payload: schemas.NotificationCreate,
+    db: Session = Depends(get_db),
+) -> models.Notification:
+    return services.send_telegram_notification(db, payload)
+
+
+@app.post("/api/mock/ozon/import-products", response_model=schemas.OzonImportRead)
+def import_ozon_products(
+    payload: schemas.OzonImportCreate,
+    db: Session = Depends(get_db),
+) -> schemas.OzonImportRead:
+    return services.import_ozon_products(db, payload)
+
+
 @app.get("/api/metrics", response_model=list[schemas.MetricsRead])
 def list_metrics(db: Session = Depends(get_db)) -> list[models.MetricsSnapshot]:
     return services.list_metrics(db)
+
+
+@app.post("/api/metrics/collect", response_model=schemas.MetricsRead, status_code=201)
+def collect_metrics(
+    payload: schemas.MetricsCollectCreate,
+    db: Session = Depends(get_db),
+) -> models.MetricsSnapshot:
+    return services.collect_metrics(db, payload)
 

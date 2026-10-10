@@ -167,6 +167,36 @@ def generate_content_draft(
     return content
 
 
+def list_content_versions(db: Session, content_id: str) -> list[models.ContentVersion]:
+    _require_content(db, content_id)
+    stmt = (
+        select(models.ContentVersion)
+        .where(models.ContentVersion.content_id == content_id)
+        .order_by(models.ContentVersion.version_number.desc())
+    )
+    return list(db.scalars(stmt).all())
+
+
+def list_content_reviews(db: Session, content_id: str) -> list[models.ContentReview]:
+    _require_content(db, content_id)
+    stmt = (
+        select(models.ContentReview)
+        .where(models.ContentReview.content_id == content_id)
+        .order_by(models.ContentReview.created_at.desc())
+    )
+    return list(db.scalars(stmt).all())
+
+
+def list_content_approvals(db: Session, content_id: str) -> list[models.Approval]:
+    _require_content(db, content_id)
+    stmt = (
+        select(models.Approval)
+        .where(models.Approval.content_id == content_id)
+        .order_by(models.Approval.created_at.desc())
+    )
+    return list(db.scalars(stmt).all())
+
+
 def update_content(db: Session, content_id: str, payload: schemas.ContentUpdate) -> models.ContentItem:
     content = db.get(models.ContentItem, content_id)
     if not content:
@@ -348,4 +378,85 @@ def publish_content(
 def list_metrics(db: Session) -> list[models.MetricsSnapshot]:
     stmt = select(models.MetricsSnapshot).order_by(models.MetricsSnapshot.created_at.desc())
     return list(db.scalars(stmt).all())
+
+
+def list_published_posts(db: Session) -> list[models.PublishedPost]:
+    stmt = select(models.PublishedPost).order_by(models.PublishedPost.created_at.desc())
+    return list(db.scalars(stmt).all())
+
+
+def list_notifications(db: Session) -> list[models.Notification]:
+    stmt = select(models.Notification).order_by(models.Notification.created_at.desc())
+    return list(db.scalars(stmt).all())
+
+
+def import_ozon_products(db: Session, payload: schemas.OzonImportCreate) -> schemas.OzonImportRead:
+    product_ids: list[str] = []
+    for item in payload.products:
+        product = db.get(models.Product, item.id)
+        if product:
+            product.name = item.name
+            product.category = item.category
+            product.price = item.price
+            product.stock = item.stock
+        else:
+            db.add(models.Product(**item.model_dump()))
+        product_ids.append(item.id)
+
+    repositories.audit(
+        db,
+        "MOCK_OZON_IMPORT_PRODUCTS",
+        "product",
+        ",".join(product_ids),
+        details=f"count={len(product_ids)}",
+    )
+    db.commit()
+    return schemas.OzonImportRead(status="mock", imported_count=len(product_ids), product_ids=product_ids)
+
+
+def send_telegram_notification(db: Session, payload: schemas.NotificationCreate) -> models.Notification:
+    notification = models.Notification(channel=payload.channel, message=payload.message)
+    db.add(notification)
+    repositories.audit(
+        db,
+        "MOCK_TELEGRAM_NOTIFY",
+        "notification",
+        payload.channel,
+        details=payload.message,
+    )
+    db.commit()
+    db.refresh(notification)
+    return notification
+
+
+def collect_metrics(db: Session, payload: schemas.MetricsCollectCreate) -> models.MetricsSnapshot:
+    platform = payload.platform.upper()
+    if payload.published_post_id and not db.get(models.PublishedPost, payload.published_post_id):
+        raise NotFoundError(f"Published post {payload.published_post_id} not found")
+
+    metrics = models.MetricsSnapshot(
+        published_post_id=payload.published_post_id,
+        platform=platform,
+        views=payload.views,
+        likes=payload.likes,
+        comments=payload.comments,
+    )
+    db.add(metrics)
+    repositories.audit(
+        db,
+        "COLLECT_METRICS",
+        "metrics",
+        platform,
+        details=f"views={payload.views}; likes={payload.likes}; comments={payload.comments}",
+    )
+    db.commit()
+    db.refresh(metrics)
+    return metrics
+
+
+def _require_content(db: Session, content_id: str) -> models.ContentItem:
+    content = db.get(models.ContentItem, content_id)
+    if not content:
+        raise NotFoundError(f"Content {content_id} not found")
+    return content
 

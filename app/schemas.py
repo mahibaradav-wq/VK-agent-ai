@@ -79,6 +79,19 @@ class ContentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ContentVersionRead(BaseModel):
+    id: int
+    content_id: str
+    version_number: int
+    title: str
+    body: str
+    product_id: str | None
+    version_hash: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class GenerateDraftCreate(BaseModel):
     idea_id: str | None = None
     title: str | None = None
@@ -112,6 +125,18 @@ class ApprovalRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class PublishedPostRead(BaseModel):
+    id: int
+    content_id: str
+    platform: str
+    version_hash: str
+    publication_url: str
+    mock: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class PublishCreate(BaseModel):
     platform: str = "VK"
 
@@ -136,6 +161,39 @@ class AuditLogRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class NotificationCreate(BaseModel):
+    channel: str = "telegram"
+    message: str = Field(min_length=1)
+
+
+class NotificationRead(BaseModel):
+    id: int
+    channel: str
+    message: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OzonImportCreate(BaseModel):
+    products: list[ProductCreate] = Field(min_length=1)
+
+
+class OzonImportRead(BaseModel):
+    status: str
+    imported_count: int
+    product_ids: list[str]
+    mock: bool = True
+
+
+class MetricsCollectCreate(BaseModel):
+    platform: str = "VK"
+    published_post_id: int | None = None
+    views: int = Field(default=0, ge=0)
+    likes: int = Field(default=0, ge=0)
+    comments: int = Field(default=0, ge=0)
 
 
 class MetricsRead(BaseModel):

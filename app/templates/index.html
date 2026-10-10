@@ -21,7 +21,16 @@
           <li>Повторная публикация той же версии идемпотентна</li>
           <li>Действия фиксируются в audit log</li>
           <li>Mock AI создаёт идеи и черновики без внешних LLM API</li>
+          <li>Mock Ozon импортирует товары, Telegram пишет уведомления локально</li>
         </ul>
+        <h2>Ключевые сценарии</h2>
+        <pre><code>POST /api/ai/ideas
+POST /api/ai/content-drafts
+POST /api/content/{id}/review
+POST /api/content/{id}/approve
+POST /api/content/{id}/publish
+POST /api/mock/ozon/import-products
+POST /api/mock/telegram/notify</code></pre>
         <a href="/docs">Открыть API-документацию</a>
       </section>
     </main>
