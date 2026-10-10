@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Кабинет — Дом по полочкам</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body class="app-body">
+    <aside class="sidebar">
+      <a class="logo" href="/">Дом по полочкам</a>
+      <nav class="side-nav">
+        <a href="#overview">Обзор</a>
+        <a href="#create">Создать</a>
+        <a href="#content">Контент</a>
+        <a href="#analytics">Аналитика</a>
+        <a href="/docs">API</a>
+      </nav>
+    </aside>
+
+    <main class="dashboard">
+      <section id="overview" class="dashboard-hero">
+        <div>
+          <p class="eyebrow">Рабочий кабинет</p>
+          <h1>Контент, товары и публикации в одном месте</h1>
+          <p>
+            Управляйте mock MVP через сайт: генерируйте идеи, создавайте
+            черновики, отправляйте на ревизию, одобряйте и публикуйте.
+          </p>
+        </div>
+        <div class="stats-grid">
+          <div><strong>{{ stats.ideas }}</strong><span>идей</span></div>
+          <div><strong>{{ stats.products }}</strong><span>товаров</span></div>
+          <div><strong>{{ stats.content }}</strong><span>материалов</span></div>
+          <div><strong>{{ stats.publications }}</strong><span>публикаций</span></div>
+        </div>
+      </section>
+
+      <section id="create" class="dashboard-grid">
+        <article class="panel">
+          <h2>Импорт товара</h2>
+          <form method="post" action="/app/products" class="form-grid">
+            <input name="id" placeholder="PROD-001" required />
+            <input name="name" placeholder="Название товара" required />
+            <input name="category" placeholder="Категория" required />
+            <input name="price" type="number" min="0" placeholder="Цена в копейках" required />
+            <input name="stock" type="number" min="0" value="0" />
+            <button type="submit">Сохранить товар</button>
+          </form>
+        </article>
+
+        <article class="panel">
+          <h2>AI-идея</h2>
+          <form method="post" action="/app/ideas" class="form-grid">
+            <input name="topic" placeholder="Тема: хранение специй" required />
+            <input name="house_zone" placeholder="Зона: кухня" required />
+            <input name="content_format" value="пост" />
+            <button type="submit">Сгенерировать идею</button>
+          </form>
+        </article>
+
+        <article class="panel">
+          <h2>AI-черновик</h2>
+          <form method="post" action="/app/content-drafts" class="form-grid">
+            <select name="idea_id" required>
+              <option value="">Выберите идею</option>
+              {% for idea in ideas %}
+                <option value="{{ idea.id }}">{{ idea.title }}</option>
+              {% endfor %}
+            </select>
+            <select name="product_id">
+              <option value="">Без товара</option>
+              {% for product in products %}
+                <option value="{{ product.id }}">{{ product.name }}</option>
+              {% endfor %}
+            </select>
+            <input name="content_type" value="пост" />
+            <button type="submit">Создать черновик</button>
+          </form>
+        </article>
+
+        <article class="panel">
+          <h2>Ручной контент</h2>
+          <form method="post" action="/app/content" class="form-grid">
+            <input name="id" placeholder="CONTENT-001" required />
+            <input name="title" placeholder="Заголовок" required />
+            <input name="content_type" value="пост" />
+            <select name="product_id">
+              <option value="">Без товара</option>
+              {% for product in products %}
+                <option value="{{ product.id }}">{{ product.name }}</option>
+              {% endfor %}
+            </select>
+            <textarea name="body" placeholder="Текст материала" required></textarea>
+            <button type="submit">Создать материал</button>
+          </form>
+        </article>
+      </section>
+
+      <section id="content" class="panel wide-panel">
+        <div class="panel-heading">
+          <h2>Контентный pipeline</h2>
+          <span>{{ content_items|length }} последних материалов</span>
+        </div>
+        <div class="content-list">
+          {% for item in content_items %}
+            <article class="content-card">
+              <div>
+                <span class="status-pill status-{{ item.status|lower }}">{{ item.status }}</span>
+                <h3>{{ item.title }}</h3>
+                <p>{{ item.body[:180] }}{% if item.body|length > 180 %}...{% endif %}</p>
+                <small>version: {{ item.current_version_hash[:10] }}</small>
+              </div>
+              <div class="card-actions">
+                <form method="post" action="/app/content/{{ item.id }}/review">
+                  <button type="submit">Review</button>
+                </form>
+                <form method="post" action="/app/content/{{ item.id }}/approve">
+                  <input type="hidden" name="approved_by" value="owner" />
+                  <button type="submit">Approve</button>
+                </form>
+                <form method="post" action="/app/content/{{ item.id }}/publish">
+                  <input type="hidden" name="platform" value="VK" />
+                  <button type="submit">Publish VK</button>
+                </form>
+              </div>
+            </article>
+          {% else %}
+            <p class="empty">Пока нет контента. Сгенерируйте AI-идею и черновик.</p>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section id="analytics" class="dashboard-grid">
+        <article class="panel">
+          <h2>Публикации</h2>
+          <ul class="plain-list">
+            {% for post in publications %}
+              <li>{{ post.platform }} — {{ post.publication_url }}</li>
+            {% else %}
+              <li>Публикаций пока нет</li>
+            {% endfor %}
+          </ul>
+        </article>
+
+        <article class="panel">
+          <h2>Добавить метрики</h2>
+          <form method="post" action="/app/metrics" class="form-grid">
+            <select name="published_post_id">
+              <option value="">Без публикации</option>
+              {% for post in publications %}
+                <option value="{{ post.id }}">{{ post.platform }} {{ post.publication_url }}</option>
+              {% endfor %}
+            </select>
+            <input name="platform" value="VK" />
+            <input name="views" type="number" min="0" placeholder="Просмотры" />
+            <input name="likes" type="number" min="0" placeholder="Лайки" />
+            <input name="comments" type="number" min="0" placeholder="Комментарии" />
+            <button type="submit">Сохранить метрики</button>
+          </form>
+        </article>
+
+        <article class="panel">
+          <h2>Telegram mock</h2>
+          <form method="post" action="/app/telegram" class="form-grid">
+            <textarea name="message" placeholder="Сообщение для mock Telegram" required></textarea>
+            <button type="submit">Отправить mock</button>
+          </form>
+          <ul class="plain-list">
+            {% for notification in notifications %}
+              <li>{{ notification.message }}</li>
+            {% endfor %}
+          </ul>
+        </article>
+
+        <article class="panel">
+          <h2>Audit log</h2>
+          <ul class="plain-list">
+            {% for log in audit_logs %}
+              <li>{{ log.action }} · {{ log.entity_type }} · {{ log.entity_id }}</li>
+            {% else %}
+              <li>Событий пока нет</li>
+            {% endfor %}
+          </ul>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

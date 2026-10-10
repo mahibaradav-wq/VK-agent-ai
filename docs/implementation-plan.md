@@ -1,0 +1,365 @@
+# План реализации SaaS-платформы управления соцсетями
+
+Документ относится к этапу 1. На этом этапе не пишется код приложения.
+
+## 1. Результат исследования репозитория
+
+Текущий репозиторий содержит Python/FastAPI mock MVP с SQLite, Jinja-шаблонами и
+pytest. Это полезный функциональный прототип, но он не соответствует целевому
+стеку из `AGENTS.md`.
+
+Целевой продукт следует реализовывать как Next.js/TypeScript SaaS-приложение с
+PostgreSQL, Prisma, Auth.js, Tailwind CSS и модульной backend-логикой. Текущий
+FastAPI код не удаляется на этапе 1. Решение о миграции/замене принимается на
+этапе 2.
+
+## 2. Принятые технические решения
+
+| Вопрос | Решение |
+|---|---|
+| Frontend/backend | Next.js App Router |
+| Язык | TypeScript strict |
+| UI | Tailwind CSS + shadcn/ui |
+| ORM | Prisma |
+| БД | PostgreSQL |
+| Auth | Auth.js |
+| Email в dev | локальный mail viewer/dev transport |
+| Очереди | Redis + BullMQ |
+| Медиа | S3-compatible storage |
+| AI | provider adapter, ключи только server-side |
+| Billing | provider interface, без фиктивных оплат |
+| Тесты | Vitest + Playwright |
+| Локальная инфраструктура | Docker Compose |
+
+## 3. Зависимости и внешние сервисы
+
+### Обязательные для рабочего продукта
+
+- PostgreSQL;
+- Redis;
+- S3-compatible storage;
+- email provider или dev mail stand;
+- официальные credentials первой выбранной соцплатформы;
+- AI provider key;
+- billing provider credentials;
+- мониторинг ошибок и логов.
+
+### Решения, влияющие на бюджет/безопасность
+
+- AI provider: влияет на стоимость генераций и лимиты пользователей.
+- Billing provider: требует webhook verification и юридической настройки.
+- Social APIs: требуют официальных OAuth/API credentials и соблюдения правил
+  платформ.
+- S3 storage: требует настройки приватного доступа и signed URLs.
+
+## 4. Карта этапов
+
+### Этап 1. Исследование и документы
+
+Статус: выполнен в рамках текущего поручения.
+
+Deliverables:
+
+- исследование текущего репозитория;
+- `docs/architecture.md`;
+- `docs/implementation-plan.md`;
+- карта маршрутов;
+- модель данных;
+- список зависимостей и внешних сервисов;
+- предложение минимального вертикального среза.
+
+Проверки:
+
+- TypeScript: не применимо, Next.js приложение ещё не создано;
+- lint: не применимо, код приложения не изменялся;
+- tests: не применимо для этапа 1, так как изменялась только документация;
+- build: не применимо, целевое приложение ещё не создано;
+- миграции: не применимо.
+
+### Этап 2. Настройка Next.js проекта и публичного сайта
+
+Deliverables:
+
+- Next.js App Router;
+- TypeScript strict;
+- Tailwind CSS;
+- shadcn/ui;
+- CSS variables/design tokens;
+- базовый marketing layout;
+- страницы: главная, возможности, автопостинг, AI, аналитика, редактор,
+  медиатека, команда, тарифы, FAQ, блог, статья, help, контакты, login,
+  register, forgot/reset password, privacy, terms;
+- sitemap.xml, robots.txt, metadata/canonical/Open Graph;
+- базовые состояния UI: loading, empty, error, success, disabled, skeleton.
+
+Проверки:
+
+- typecheck;
+- lint;
+- unit tests для UI helpers;
+- production build;
+- ручная проверка responsive desktop/mobile.
+
+### Этап 3. PostgreSQL, Prisma и авторизация
+
+Deliverables:
+
+- Docker Compose для PostgreSQL;
+- Prisma schema и первая миграция;
+- Auth.js email/password;
+- подтверждение email через dev mail;
+- восстановление пароля;
+- создание workspace при регистрации;
+- server-side session checks;
+- защита private routes.
+
+Проверки:
+
+- миграции применяются с нуля;
+- регистрация/вход/выход;
+- email verification;
+- password reset;
+- негативные тесты неверных токенов и занятых email.
+
+### Этап 4. Workspaces, проекты, роли и изоляция данных
+
+Deliverables:
+
+- WorkspaceMember;
+- роли Owner/Admin/Editor/Approver/Viewer;
+- проекты;
+- переключение workspace/project;
+- матрица permissions;
+- server-side authorization helpers.
+
+Проверки:
+
+- пользователь не видит чужой workspace;
+- подмена projectId/accountId/mediaId блокируется;
+- роли не могут повышать себя самостоятельно.
+
+### Этап 5. Редактор публикаций и медиатека
+
+Deliverables:
+
+- редактор публикации;
+- версии контента;
+- PostTarget;
+- сохранение черновика;
+- media upload в S3;
+- MIME/size validation;
+- привязка media к post;
+- предпросмотр по собственным шаблонам.
+
+Проверки:
+
+- сохранение черновика;
+- загрузка валидного файла;
+- отказ опасных/неподдержанных типов;
+- version invalidation.
+
+### Этап 6. Календарь контента
+
+Deliverables:
+
+- режимы месяц/неделя/день/список;
+- фильтры по проектам, аккаунтам, статусам;
+- поиск;
+- создание по выбранной дате;
+- изменение расписания;
+- UTC storage + timezone display.
+
+Проверки:
+
+- смена дат;
+- фильтры;
+- проверка прав при переносе;
+- edge cases timezone/DST.
+
+### Этап 7. Очереди и автопостинг
+
+Deliverables:
+
+- Redis + BullMQ;
+- PublishJob;
+- PublishAttempt;
+- idempotency key;
+- atomic claim;
+- retries with exponential backoff;
+- статус `requires_manual_check`;
+- агрегированный статус Post.
+
+Проверки:
+
+- защита от повторной отправки;
+- retry only temporary failures;
+- partial success;
+- неуспешная цель повторяется без повторной отправки успешной.
+
+### Этап 8. Первая реальная социальная платформа
+
+Deliverables:
+
+- таблица исследования платформ;
+- выбор первой официально доступной интеграции;
+- OAuth/API подключение;
+- capabilities;
+- adapter implementation;
+- обработка token expired/rate limits/API errors.
+
+Проверки:
+
+- подключение только официальным механизмом;
+- отсутствие запросов пароля соцсети;
+- понятная ошибка без credentials;
+- ручная проверка в интеграционном окружении.
+
+### Этап 9. AI-ассистент
+
+Deliverables:
+
+- AI provider interface;
+- generation history;
+- идеи, посты, заголовки, CTA, хештеги;
+- tone/length/platform adaptation;
+- лимиты и usage accounting;
+- перенос результата в редактор.
+
+Проверки:
+
+- ключ не попадает во frontend;
+- отсутствие ключа показывает настройку/demo, не фиктивный рабочий ответ;
+- лимиты соблюдаются.
+
+### Этап 10. Аналитика
+
+Deliverables:
+
+- normalized analytics layer;
+- raw platform payload;
+- dashboard;
+- Recharts charts;
+- фильтры по датам/проектам/аккаунтам;
+- demo data clearly marked if real data absent.
+
+Проверки:
+
+- корректная агрегация;
+- unknown metric availability handled;
+- источник и collectedAt отображаются.
+
+### Этап 11. Командная работа и согласование
+
+Deliverables:
+
+- приглашения;
+- роли;
+- комментарии к публикациям;
+- approval workflow;
+- уведомления о статусах;
+- audit history.
+
+Проверки:
+
+- Approver может одобрить только разрешённый проект;
+- Editor не может публиковать без approval;
+- Viewer read-only.
+
+### Этап 12. Подписки и платежи
+
+Deliverables:
+
+- тарифы в конфигурации/БД;
+- subscription state;
+- provider interface;
+- webhook verification;
+- PaymentEvent idempotency;
+- usage limits atomic reservation.
+
+Проверки:
+
+- пользователь не считается оплатившим только после redirect;
+- replay webhook не меняет состояние повторно;
+- лимиты устойчивы к параллельным запросам.
+
+### Этап 13. Админка и уведомления
+
+Deliverables:
+
+- admin-only routes;
+- пользователи/workspaces/plans/integrations/queues/errors/audit;
+- notification center;
+- mark as read;
+- email notification adapter.
+
+Проверки:
+
+- admin access только server-side;
+- обычный пользователь не видит admin data;
+- critical admin actions audited.
+
+### Этап 14. Полное тестирование, безопасность, документация и deploy
+
+Deliverables:
+
+- security review;
+- e2e coverage critical flows;
+- production build;
+- deployment docs;
+- environment docs;
+- runbooks для очередей и интеграций.
+
+Проверки:
+
+- all tests pass;
+- production build pass;
+- secrets not exposed;
+- DB migrations from clean state;
+- documented launch procedure works.
+
+## 5. Минимальный вертикальный срез
+
+Цель: получить маленький, но полностью рабочий SaaS-path без фиктивных успехов.
+
+Объём:
+
+1. Регистрация email/password.
+2. Подтверждение email через dev mail.
+3. Автоматическое создание workspace.
+4. Создание проекта.
+5. Создание демонстрационного social account со статусом `requires_setup`.
+6. Создание черновика публикации.
+7. Сохранение версии публикации.
+8. Отправка на согласование.
+9. Approval текущей версии владельцем.
+10. Планирование публикации.
+11. Создание PublishJob.
+12. Worker забирает job.
+13. Adapter возвращает `integration_not_configured`.
+14. PostTarget получает `failed` или `requires_manual_check`.
+15. PublishAttempt, Notification и AuditLog сохраняются.
+
+Почему этот срез выбран:
+
+- проверяет auth;
+- проверяет workspace isolation;
+- проверяет проекты;
+- проверяет редактор;
+- проверяет approval;
+- проверяет очередь;
+- проверяет adapter boundary;
+- не создаёт ложных внешних публикаций.
+
+## 6. Блокеры перед этапом 2
+
+Перед началом реализации нужно принять техническое решение:
+
+1. Текущий FastAPI MVP оставить как архивный прототип или заменить целевым
+   Next.js проектом в этом же репозитории.
+2. Выбрать Auth.js email provider для production и dev mail stand.
+3. Выбрать S3-compatible storage для dev/prod.
+4. Выбрать первую реальную социальную платформу только после проверки
+   официальной документации и доступности credentials.
+5. Уточнить, нужен ли billing на раннем MVP или только архитектурный интерфейс до
+   этапа 12.
+
