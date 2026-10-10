@@ -20,6 +20,7 @@ Telegram отключена: все операции происходят лок
 - Идемпотентная mock-публикация
 - Mock-статистика публикаций
 - Полный аудит-лог действий
+- Mock AI-генерация идей и черновиков
 - Простая HTML-страница статуса
 
 ## Требования
@@ -105,6 +106,7 @@ data/                  # SQLite и локальные данные
 
 - `GET /api/ideas`
 - `POST /api/ideas`
+- `POST /api/ai/ideas` — создать идею через mock AI
 
 ### Товары
 
@@ -115,6 +117,7 @@ data/                  # SQLite и локальные данные
 
 - `GET /api/content`
 - `POST /api/content`
+- `POST /api/ai/content-drafts` — создать черновик через mock AI
 - `GET /api/content/{content_id}`
 - `PATCH /api/content/{content_id}`
 - `POST /api/content/{content_id}/review`
@@ -141,6 +144,33 @@ IDEA -> RESEARCH -> PLANNED -> DRAFT
 2. Изменение текста аннулирует approval.
 3. Повторная публикация той же версии не создаёт дубль.
 4. Все значимые действия записываются в audit log.
+
+## Mock AI
+
+AI-генерация в MVP детерминированная и не вызывает внешние LLM API.
+
+Создать идею:
+
+```bash
+curl -X POST http://localhost:8000/api/ai/ideas \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "хранение специй",
+    "house_zone": "кухня",
+    "content_format": "пост"
+  }'
+```
+
+Создать черновик по идее:
+
+```bash
+curl -X POST http://localhost:8000/api/ai/content-drafts \
+  -H "Content-Type: application/json" \
+  -d '{
+    "idea_id": "IDEA-AI-...",
+    "content_type": "пост"
+  }'
+```
 
 ## Переменные окружения
 

@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models, repositories, schemas
+from app.agents.generator import ContentDraftAgent, IdeaAgent
 from app.agents.reviewer import ReviewerAgent
 from app.integrations.mock_publishers import MockPublisher
 
@@ -52,6 +53,33 @@ def create_idea(db: Session, payload: schemas.IdeaCreate) -> models.Idea:
     return idea
 
 
+def generate_idea(
+    db: Session,
+    payload: schemas.GenerateIdeaCreate,
+    agent: IdeaAgent | None = None,
+) -> models.Idea:
+    agent = agent or IdeaAgent()
+    generated = agent.generate(
+        topic=payload.topic,
+        house_zone=payload.house_zone,
+        content_format=payload.content_format,
+    )
+    existing = db.get(models.Idea, generated.id)
+    if existing:
+        return existing
+
+    return create_idea(
+        db,
+        schemas.IdeaCreate(
+            id=generated.id,
+            title=generated.title,
+            format=generated.format,
+            house_zone=generated.house_zone,
+            status="ai_generated",
+        ),
+    )
+
+
 def create_product(db: Session, payload: schemas.ProductCreate) -> models.Product:
     product = models.Product(**payload.model_dump())
     db.add(product)
@@ -86,6 +114,54 @@ def create_content(db: Session, payload: schemas.ContentCreate) -> models.Conten
     db.add(content)
     db.add(version)
     repositories.audit(db, "CREATE_CONTENT", "content", content.id, details=f"version_hash={version_hash}")
+    db.commit()
+    db.refresh(content)
+    return content
+
+
+def generate_content_draft(
+    db: Session,
+    payload: schemas.GenerateDraftCreate,
+    agent: ContentDraftAgent | None = None,
+) -> models.ContentItem:
+    idea = db.get(models.Idea, payload.idea_id) if payload.idea_id else None
+    if payload.idea_id and not idea:
+        raise NotFoundError(f"Idea {payload.idea_id} not found")
+
+    title = payload.title or (idea.title if idea else None)
+    if not title:
+        raise DomainError("Either idea_id or title is required")
+
+    if payload.product_id and not db.get(models.Product, payload.product_id):
+        raise NotFoundError(f"Product {payload.product_id} not found")
+
+    agent = agent or ContentDraftAgent()
+    generated = agent.generate(
+        idea_title=title,
+        content_type=payload.content_type,
+        product_id=payload.product_id,
+    )
+    existing = db.get(models.ContentItem, generated.id)
+    if existing:
+        return existing
+
+    content = create_content(
+        db,
+        schemas.ContentCreate(
+            id=generated.id,
+            title=generated.title,
+            content_type=generated.content_type,
+            body=generated.body,
+            product_id=generated.product_id,
+        ),
+    )
+    repositories.audit(
+        db,
+        "GENERATE_CONTENT_DRAFT",
+        "content",
+        content.id,
+        details=f"idea_id={payload.idea_id}" if payload.idea_id else "source=title",
+    )
     db.commit()
     db.refresh(content)
     return content

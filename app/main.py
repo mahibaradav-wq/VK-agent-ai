@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.exc import IntegrityError
@@ -28,12 +29,12 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 @app.exception_handler(services.DomainError)
 async def handle_domain_error(_: Request, exc: services.DomainError):
-    raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
 
 
 @app.exception_handler(IntegrityError)
 async def handle_integrity_error(_: Request, exc: IntegrityError):
-    raise HTTPException(status_code=409, detail="Entity violates a uniqueness or relation constraint") from exc
+    return JSONResponse(status_code=409, content={"detail": "Entity violates a uniqueness or relation constraint"})
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -74,6 +75,11 @@ def create_idea(payload: schemas.IdeaCreate, db: Session = Depends(get_db)) -> m
     return services.create_idea(db, payload)
 
 
+@app.post("/api/ai/ideas", response_model=schemas.IdeaRead, status_code=201)
+def generate_idea(payload: schemas.GenerateIdeaCreate, db: Session = Depends(get_db)) -> models.Idea:
+    return services.generate_idea(db, payload)
+
+
 @app.get("/api/products", response_model=list[schemas.ProductRead])
 def list_products(db: Session = Depends(get_db)) -> Sequence[models.Product]:
     return repositories.list_all(db, models.Product)
@@ -92,6 +98,14 @@ def list_content(db: Session = Depends(get_db)) -> Sequence[models.ContentItem]:
 @app.post("/api/content", response_model=schemas.ContentRead, status_code=201)
 def create_content(payload: schemas.ContentCreate, db: Session = Depends(get_db)) -> models.ContentItem:
     return services.create_content(db, payload)
+
+
+@app.post("/api/ai/content-drafts", response_model=schemas.ContentRead, status_code=201)
+def generate_content_draft(
+    payload: schemas.GenerateDraftCreate,
+    db: Session = Depends(get_db),
+) -> models.ContentItem:
+    return services.generate_content_draft(db, payload)
 
 
 @app.get("/api/content/{content_id}", response_model=schemas.ContentRead)

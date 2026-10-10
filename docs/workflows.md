@@ -9,6 +9,23 @@ DRAFT -> REVIEW_REQUIRED -> READY_FOR_APPROVAL -> APPROVED -> PUBLISHED
 В текущем MVP endpoint `POST /api/content/{id}/review` сразу выполняет mock-ревизию.
 Если материал проходит проверку, он получает статус `READY_FOR_APPROVAL`.
 
+## AI generation
+
+Mock AI workflow:
+
+```text
+POST /api/ai/ideas
+-> Idea(status=ai_generated)
+-> POST /api/ai/content-drafts
+-> ContentItem(status=DRAFT)
+-> review
+-> approval
+-> publish
+```
+
+AI endpoints создают обычные записи в базе. После генерации черновик проходит
+тот же workflow, что и контент, созданный вручную.
+
 ## Approval
 
 Approval создаётся endpoint-ом:

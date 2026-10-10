@@ -32,8 +32,12 @@ API -> Services -> Repositories -> SQLAlchemy models -> SQLite
 
 ### Agents
 
-`app/agents/reviewer.py` содержит deterministic mock reviewer. Он не вызывает внешние
-LLM API и подходит для тестов.
+`app/agents/` содержит deterministic mock agents. Они не вызывают внешние LLM API
+и подходят для тестов:
+
+- `IdeaAgent` генерирует идеи;
+- `ContentDraftAgent` генерирует черновики;
+- `ReviewerAgent` проверяет текст перед approval.
 
 ### Integrations
 
@@ -43,4 +47,10 @@ LLM API и подходит для тестов.
 
 Публиковать можно только текущую версию контента, для которой есть активное
 одобрение владельца.
+
+## AI boundary
+
+AI-логика изолирована в `app/agents`. API и сервисный слой работают с обычными
+Pydantic-схемами и ORM-моделями, поэтому mock agents можно заменить реальными
+LLM-интеграциями без изменения таблиц и основных endpoints.
 

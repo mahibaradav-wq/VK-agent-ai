@@ -31,6 +31,12 @@ class IdeaRead(IdeaCreate):
     model_config = ConfigDict(from_attributes=True)
 
 
+class GenerateIdeaCreate(BaseModel):
+    topic: str = Field(min_length=2)
+    house_zone: str = Field(min_length=2)
+    content_format: str = "пост"
+
+
 class ProductCreate(BaseModel):
     id: str
     name: str
@@ -71,6 +77,13 @@ class ContentRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class GenerateDraftCreate(BaseModel):
+    idea_id: str | None = None
+    title: str | None = None
+    content_type: str = "пост"
+    product_id: str | None = None
 
 
 class ReviewRead(BaseModel):
