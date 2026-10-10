@@ -198,14 +198,8 @@ def publish_content(
     content = db.get(models.ContentItem, content_id)
     if not content:
         raise NotFoundError(f"Content {content_id} not found")
-    if content.status not in {models.ContentStatus.APPROVED.value, models.ContentStatus.SCHEDULED.value}:
-        raise ConflictError("Content must be approved before publication")
 
     platform = payload.platform.upper()
-    approval = repositories.get_active_approval(db, content.id, content.current_version_hash)
-    if not approval:
-        raise ConflictError("Active approval for current content version is required")
-
     existing = repositories.get_published_post(db, content.id, platform, content.current_version_hash)
     if existing:
         repositories.audit(
@@ -225,6 +219,13 @@ def publish_content(
             mock=existing.mock,
             duplicate=True,
         )
+
+    if content.status not in {models.ContentStatus.APPROVED.value, models.ContentStatus.SCHEDULED.value}:
+        raise ConflictError("Content must be approved before publication")
+
+    approval = repositories.get_active_approval(db, content.id, content.current_version_hash)
+    if not approval:
+        raise ConflictError("Active approval for current content version is required")
 
     publisher = publisher or MockPublisher()
     result = publisher.publish(platform=platform, content_id=content.id, version_hash=content.current_version_hash)
