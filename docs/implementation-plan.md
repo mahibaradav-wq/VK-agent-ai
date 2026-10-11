@@ -78,7 +78,7 @@ Deliverables:
 
 ### Этап 2. Настройка Next.js проекта и публичного сайта
 
-Статус: выполняется в текущем поручении.
+Статус: выполнен. Публичный сайт, дизайн-система, metadata, sitemap/robots и формы со статусом настройки добавлены. `npm run lint`, `npm run typecheck` и `npm run build` проходят.
 
 Deliverables:
 
