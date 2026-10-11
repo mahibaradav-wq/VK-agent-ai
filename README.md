@@ -8,6 +8,34 @@ SaaS-платформа для планирования публикаций, AI
 
 - Node.js 22+
 - npm
+- Git
+
+## Windows
+
+Я не могу установить программы на ваш компьютер удалённо. На Windows запустите установку сами:
+
+1. Скачайте репозиторий и откройте папку проекта.
+2. Дважды нажмите `setup.bat`.
+
+Скрипт поставит Git и Node.js LTS через `winget`, переключит ветку `cursor/saas-stage-one-ee77` и выполнит `npm install`.
+
+После этого в новом PowerShell:
+
+```powershell
+cd путь\к\VK-agent-ai
+npm run dev
+```
+
+Откройте:
+
+```text
+http://localhost:3000
+```
+
+Если `winget` недоступен, поставьте вручную:
+
+- Git: https://git-scm.com/download/win
+- Node.js LTS: https://nodejs.org
 
 ## Установка
 
