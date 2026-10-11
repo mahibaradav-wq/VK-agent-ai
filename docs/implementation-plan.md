@@ -78,6 +78,8 @@ Deliverables:
 
 ### Этап 2. Настройка Next.js проекта и публичного сайта
 
+Статус: выполняется в текущем поручении.
+
 Deliverables:
 
 - Next.js App Router;
