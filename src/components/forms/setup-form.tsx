@@ -19,6 +19,7 @@ type Field = {
   autoComplete?: string;
   required?: boolean;
   defaultValue?: string;
+  options?: { value: string; label: string }[];
 };
 
 export function SetupForm({
@@ -47,6 +48,19 @@ export function SetupForm({
                 defaultValue={field.defaultValue}
                 className="min-h-32 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal text-ink"
               />
+            ) : field.type === "select" && field.options ? (
+              <select
+                name={field.name}
+                required={field.required}
+                defaultValue={field.defaultValue}
+                className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal text-ink"
+              >
+                {field.options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             ) : (
               <input
                 name={field.name}

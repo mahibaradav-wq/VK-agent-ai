@@ -127,6 +127,8 @@ Deliverables:
 
 ### Этап 4. Workspaces, проекты, роли и изоляция данных
 
+Статус: выполнен. Добавлены Project, матрица прав Owner/Admin/Editor/Approver/Viewer, server-side `AccessError`, переключение workspace/project и страницы `/app/projects` и `/app/team`.
+
 Deliverables:
 
 - WorkspaceMember;
@@ -140,7 +142,9 @@ Deliverables:
 
 - пользователь не видит чужой workspace;
 - подмена projectId/accountId/mediaId блокируется;
-- роли не могут повышать себя самостоятельно.
+- роли не могут повышать себя самостоятельно;
+- Viewer не создаёт проект;
+- Admin не назначает Owner и не меняет равного Admin.
 
 ### Этап 5. Редактор публикаций и медиатека
 

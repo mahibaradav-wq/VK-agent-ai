@@ -1,14 +1,15 @@
 import { auth } from "@/auth";
 import { PageHeader } from "@/components/marketing/page-header";
-import { StatusBanner } from "@/components/ui/status-banner";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
+import { StatusBanner } from "@/components/ui/status-banner";
 import { createPageMetadata } from "@/lib/metadata";
-import { prisma } from "@/server/db/prisma";
+import { getAppContext } from "@/modules/access/app-context";
+import { hasPermission } from "@/modules/access/permissions";
 
 export const metadata = createPageMetadata({
   title: "Кабинет",
-  description: "Защищённый кабинет Polka Social. На этапе 3 доступны сессия, workspace и выход.",
+  description: "Обзор рабочего пространства, роли и активного проекта.",
   path: "/app",
 });
 
@@ -19,29 +20,32 @@ export default async function AppHomePage() {
     return null;
   }
 
-  const memberships = await prisma.workspaceMember.findMany({
-    where: { userId: session.user.id },
-    include: { workspace: true },
-    orderBy: { createdAt: "asc" },
-  });
+  const { activeMembership, activeProject, projects } = await getAppContext(session.user.id);
 
   return (
     <>
       <PageHeader
-        eyebrow="Кабинет"
-        title="Рабочее пространство создано"
-        description="Это защищённый маршрут. Проекты, календарь и публикации появятся на следующих этапах."
+        eyebrow="Обзор"
+        title={activeMembership?.workspace.name ?? "Нет рабочего пространства"}
+        description="Данные фильтруются по выбранному workspace. Чужой идентификатор на сервере не откроет проекты."
       />
       <Container className="grid gap-5 pb-20">
         <StatusBanner tone="info">
-          Вход выполнен как {session.user.email}. Данные изолированы по workspace и проверяются на сервере.
+          {session.user.email} · роль {activeMembership?.role ?? "нет"} · проектов {projects.length}
         </StatusBanner>
-        {memberships.map((membership) => (
-          <Card key={membership.id}>
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">{membership.role}</p>
-            <h2 className="mt-2 text-2xl font-black text-ink">{membership.workspace.name}</h2>
+        {activeProject ? (
+          <Card>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Активный проект</p>
+            <h2 className="mt-2 text-2xl font-black text-ink">{activeProject.name}</h2>
+            <p className="mt-2 text-ink/70">{activeProject.description || "Описание не задано"}</p>
           </Card>
-        ))}
+        ) : (
+          <StatusBanner tone="warning">
+            {activeMembership && hasPermission(activeMembership.role, "project.create")
+              ? "Создайте первый проект в разделе «Проекты»."
+              : "Проектов пока нет. Создать проект может Editor, Admin или Owner."}
+          </StatusBanner>
+        )}
       </Container>
     </>
   );
