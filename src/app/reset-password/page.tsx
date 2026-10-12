@@ -5,34 +5,41 @@ import { PageHeader } from "@/components/marketing/page-header";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { Container } from "@/components/ui/container";
 import { createPageMetadata } from "@/lib/metadata";
-import { requestAccountSetup } from "@/modules/auth/actions";
+import { resetPassword } from "@/modules/auth/actions";
 
 export const metadata = createPageMetadata({
   title: "Сброс пароля",
-  description: "Страница сброса пароля Polka Social. Токены восстановления появятся вместе с Auth.js.",
+  description: "Установка нового пароля Polka Social по токену из локального почтового стенда.",
   path: "/reset-password",
 });
 
-export default function ResetPasswordPage() {
+export default async function ResetPasswordPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string }>;
+}) {
+  const { token } = await searchParams;
+
   return (
     <>
       <PageHeader
         eyebrow="Сброс пароля"
-        title="Новый пароль пока нельзя сохранить"
-        description="Страница уже существует, чтобы ссылка из письма вела на рабочий маршрут. Сохранение пароля появится на этапе авторизации."
+        title="Задайте новый пароль"
+        description="Токен проверяется на сервере. Просроченная или поддельная ссылка не меняет пароль."
       />
       <Container className="grid max-w-xl gap-6 pb-20">
-        <StatusBanner tone="info">
-          Требуется настройка интеграции: проверка токена восстановления будет добавлена вместе с Auth.js.
-        </StatusBanner>
-        <SetupForm
-          action={requestAccountSetup}
-          submitLabel="Сохранить новый пароль"
-          fields={[
-            { name: "email", label: "Email", type: "email", autoComplete: "email", required: true },
-            { name: "password", label: "Новый пароль", type: "password", autoComplete: "new-password", required: true },
-          ]}
-        />
+        {!token ? (
+          <StatusBanner tone="warning">В ссылке нет токена. Откройте письмо из локального почтового стенда.</StatusBanner>
+        ) : (
+          <SetupForm
+            action={resetPassword}
+            submitLabel="Сохранить новый пароль"
+            fields={[
+              { name: "token", label: "Токен", type: "hidden", defaultValue: token, required: true },
+              { name: "password", label: "Новый пароль", type: "password", autoComplete: "new-password", required: true },
+            ]}
+          />
+        )}
         <Link href="/login" className="text-sm text-ink/70">
           Вернуться ко входу
         </Link>

@@ -4,25 +4,33 @@ import { PageHeader } from "@/components/marketing/page-header";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { Container } from "@/components/ui/container";
 import { createPageMetadata } from "@/lib/metadata";
+import { verifyEmailToken } from "@/modules/auth/actions";
 
 export const metadata = createPageMetadata({
   title: "Подтверждение email",
-  description: "Страница подтверждения email Polka Social. Проверка токена появится после подключения Auth.js.",
+  description: "Подтверждение адреса Polka Social по токену из локального почтового стенда.",
   path: "/verify-email",
 });
 
-export default function VerifyEmailPage() {
+export default async function VerifyEmailPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string }>;
+}) {
+  const { token } = await searchParams;
+  const result = token
+    ? await verifyEmailToken(token)
+    : { status: "invalid" as const, message: "Токен подтверждения отсутствует." };
+
   return (
     <>
       <PageHeader
         eyebrow="Email"
-        title="Подтверждение адреса ещё не активно"
-        description="Маршрут уже существует, чтобы ссылка из письма вела на понятную страницу, а не на 404."
+        title="Подтверждение адреса"
+        description="Токен проверяется на сервере. Повторно использовать просроченную ссылку нельзя."
       />
       <Container className="grid max-w-xl gap-6 pb-20">
-        <StatusBanner tone="info">
-          Требуется настройка интеграции: проверка токена подтверждения email будет добавлена на этапе 3.
-        </StatusBanner>
+        <StatusBanner tone={result.status === "success" ? "success" : "warning"}>{result.message}</StatusBanner>
         <Link href="/login" className="text-sm font-semibold text-brand-dark">
           Перейти ко входу
         </Link>

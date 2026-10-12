@@ -2,7 +2,7 @@
 
 SaaS-платформа для планирования публикаций, AI-подготовки контента, согласований и аналитики соцсетей.
 
-Этап 2: публичный сайт, дизайн-система и рабочие маршруты. Авторизация, база данных и реальные интеграции ещё не подключены.
+Этап 3: PostgreSQL, Prisma, Auth.js, подтверждение email и сброс пароля через локальный почтовый стенд.
 
 ## Требования
 
@@ -37,11 +37,23 @@ http://localhost:3000
 - Git: https://git-scm.com/download/win
 - Node.js LTS: https://nodejs.org
 
+## База данных
+
+```bash
+docker compose up -d
+npx prisma migrate deploy
+```
+
+Без Docker можно использовать локальный PostgreSQL с тем же `DATABASE_URL`, что в `.env.example`.
+
 ## Установка
 
 ```bash
 npm install
+cp .env.example .env
 ```
+
+Заполните `AUTH_SECRET` в `.env`.
 
 ## Запуск
 
@@ -54,6 +66,8 @@ npm run dev
 ```text
 http://localhost:3000
 ```
+
+Регистрация создаёт workspace. Письма подтверждения и сброса пароля не уходят во внешнюю почту — они лежат в `/dev/mailbox`. После подтверждения email вход открывает защищённый кабинет `/app`.
 
 ## Проверки
 

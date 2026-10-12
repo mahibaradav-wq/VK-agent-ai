@@ -8,7 +8,7 @@ import { requestPasswordReset } from "@/modules/auth/actions";
 
 export const metadata = createPageMetadata({
   title: "Восстановление пароля",
-  description: "Запрос восстановления пароля Polka Social. Письмо не отправляется до настройки почтового стенда.",
+  description: "Запрос сброса пароля Polka Social. Ссылка появляется в локальном почтовом стенде, письмо во внешнюю почту не отправляется.",
   path: "/forgot-password",
 });
 
@@ -17,8 +17,8 @@ export default function ForgotPasswordPage() {
     <>
       <PageHeader
         eyebrow="Восстановление"
-        title="Запросите ссылку, когда почта будет подключена"
-        description="Форма принимает email и честно сообщает, что письмо ещё не отправляется."
+        title="Сброс пароля через локальный стенд"
+        description="Мы не сообщаем, что письмо ушло на почту. Если аккаунт есть, ссылка появится в /dev/mailbox."
       />
       <Container className="max-w-xl pb-20">
         <SetupForm

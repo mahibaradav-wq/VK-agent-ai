@@ -104,6 +104,8 @@ Deliverables:
 
 ### Этап 3. PostgreSQL, Prisma и авторизация
 
+Статус: выполняется в текущем поручении.
+
 Deliverables:
 
 - Docker Compose для PostgreSQL;

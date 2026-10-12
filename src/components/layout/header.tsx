@@ -1,10 +1,13 @@
 import Link from "next/link";
 
-import { ButtonLink } from "@/components/ui/button";
+import { auth, signOut } from "@/auth";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { navItems, siteConfig } from "@/lib/site-data";
 
-export function Header() {
+export async function Header() {
+  const session = await auth();
+
   return (
     <header className="sticky top-0 z-50 border-b border-ink/10 bg-cream/85 backdrop-blur-xl">
       <Container className="flex min-h-16 items-center justify-between gap-6">
@@ -19,10 +22,30 @@ export function Header() {
           ))}
         </nav>
         <div className="flex items-center gap-2">
-          <ButtonLink href="/login" variant="ghost" className="hidden sm:inline-flex">
-            Вход
-          </ButtonLink>
-          <ButtonLink href="/register">Начать</ButtonLink>
+          {session?.user ? (
+            <>
+              <ButtonLink href="/app" variant="ghost" className="hidden sm:inline-flex">
+                Кабинет
+              </ButtonLink>
+              <form
+                action={async () => {
+                  "use server";
+                  await signOut({ redirectTo: "/" });
+                }}
+              >
+                <Button type="submit" variant="secondary">
+                  Выйти
+                </Button>
+              </form>
+            </>
+          ) : (
+            <>
+              <ButtonLink href="/login" variant="ghost" className="hidden sm:inline-flex">
+                Вход
+              </ButtonLink>
+              <ButtonLink href="/register">Начать</ButtonLink>
+            </>
+          )}
         </div>
       </Container>
       <details className="border-t border-ink/10 lg:hidden">
@@ -33,7 +56,7 @@ export function Header() {
               {item.label}
             </Link>
           ))}
-          <Link href="/login">Вход</Link>
+          {session?.user ? <Link href="/app">Кабинет</Link> : <Link href="/login">Вход</Link>}
         </nav>
       </details>
     </header>

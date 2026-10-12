@@ -4,11 +4,11 @@ import { SetupForm } from "@/components/forms/setup-form";
 import { PageHeader } from "@/components/marketing/page-header";
 import { Container } from "@/components/ui/container";
 import { createPageMetadata } from "@/lib/metadata";
-import { requestAccountSetup } from "@/modules/auth/actions";
+import { registerUser } from "@/modules/auth/actions";
 
 export const metadata = createPageMetadata({
   title: "Регистрация",
-  description: "Регистрация в Polka Social. Подтверждение email появится после настройки почтового стенда.",
+  description: "Регистрация в Polka Social создаёт workspace и письмо в локальном почтовом стенде.",
   path: "/register",
 });
 
@@ -17,12 +17,12 @@ export default function RegisterPage() {
     <>
       <PageHeader
         eyebrow="Регистрация"
-        title="Создайте аккаунт без ложного письма"
-        description="Мы не сообщаем, что письмо отправлено, пока почтовый провайдер не подключён. Форма уже валидирует данные."
+        title="Создайте аккаунт и workspace"
+        description="После регистрации сразу создаётся рабочее пространство. Письмо подтверждения не уходит во внешнюю почту — оно появляется в локальном стенде."
       />
       <Container className="max-w-xl pb-20">
         <SetupForm
-          action={requestAccountSetup}
+          action={registerUser}
           submitLabel="Зарегистрироваться"
           fields={[
             { name: "email", label: "Email", type: "email", autoComplete: "email", required: true },
