@@ -1,14 +1,8 @@
-import { auth } from "@/auth";
+import NextAuth from "next-auth";
 
-export default auth((request) => {
-  if (!request.auth && request.nextUrl.pathname.startsWith("/app")) {
-    const login = new URL("/login", request.nextUrl.origin);
-    login.searchParams.set("next", request.nextUrl.pathname);
-    return Response.redirect(login);
-  }
+import { authConfig } from "@/auth.config";
 
-  return undefined;
-});
+export default NextAuth(authConfig).auth;
 
 export const config = {
   matcher: ["/app/:path*"],
