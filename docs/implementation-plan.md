@@ -127,7 +127,7 @@ Deliverables:
 
 ### Этап 4. Workspaces, проекты, роли и изоляция данных
 
-Статус: выполнен. Добавлены Project, матрица прав Owner/Admin/Editor/Approver/Viewer, server-side `AccessError`, переключение workspace/project и страницы `/app/projects` и `/app/team`.
+Статус: выполнен. Добавлены Project, матрица прав Owner/Admin/Editor/Approver/Viewer, server-side `AccessError`, переключение workspace/project и страницы `/app/projects` и `/app/team`. `npm run lint`, `npm run typecheck`, `npm test` (13) и `npm run build` проходят. Миграция `20261012194200_add_project` применяется.
 
 Deliverables:
 
