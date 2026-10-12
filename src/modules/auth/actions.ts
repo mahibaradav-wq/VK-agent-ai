@@ -58,7 +58,7 @@ export async function requestPasswordReset(_prev: AuthFormState, formData: FormD
   return {
     status: result.ok ? "success" : "invalid",
     message: result.message,
-    mailboxUrl: result.mailboxUrl,
+    mailboxUrl: result.ok ? result.mailboxUrl : undefined,
   };
 }
 
