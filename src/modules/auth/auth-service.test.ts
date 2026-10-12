@@ -70,15 +70,16 @@ describe("auth service", () => {
     const address = email("expired");
     await auth.register(address, "password123");
     const user = await prisma.user.findUniqueOrThrow({ where: { email: address } });
+    const expiredToken = `expired-token-${address}`;
     await prisma.passwordResetToken.create({
       data: {
         userId: user.id,
-        tokenHash: hashToken("expired-token"),
+        tokenHash: hashToken(expiredToken),
         expires: new Date(Date.now() - 1000),
       },
     });
 
-    const result = await auth.resetPassword("expired-token", "newpassword123");
+    const result = await auth.resetPassword(expiredToken, "newpassword123");
     expect(result.ok).toBe(false);
     expect(result.message).toContain("просрочен");
   });
