@@ -104,7 +104,7 @@ Deliverables:
 
 ### Этап 3. PostgreSQL, Prisma и авторизация
 
-Статус: выполняется в текущем поручении.
+Статус: выполнен. Добавлены Docker Compose, Prisma-миграция, Auth.js, локальный почтовый стенд, создание workspace и защита `/app`. `npm run lint`, `npm run typecheck`, `npm test` и `npm run build` проходят.
 
 Deliverables:
 
