@@ -86,6 +86,12 @@ describe("auth service", () => {
   it("resets a password from a mailbox token", async () => {
     const address = email("reset");
     await auth.register(address, "password123");
+    const verifyMail = await prisma.devMailMessage.findFirst({
+      where: { to: address, kind: "verify_email" },
+      orderBy: { createdAt: "desc" },
+    });
+    const verifyToken = new URL(verifyMail?.url ?? "").searchParams.get("token") ?? "";
+    await auth.verifyEmail(verifyToken);
     const mailRequest = await auth.requestPasswordReset(address);
     const mail = await prisma.devMailMessage.findFirst({
       where: { to: address, kind: "reset_password" },
