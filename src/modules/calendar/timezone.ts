@@ -28,12 +28,25 @@ export function parseTimezone(value: string | undefined | null): DisplayTimezone
 
 export function localDateTimeToUtc(localDateTime: string, timezone: string) {
   const zone = parseTimezone(timezone);
-  const parsed = DateTime.fromISO(localDateTime, { zone, setZone: true });
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(localDateTime);
+  if (!match) {
+    throw new AccessError(400, "Укажите локальные дату и время.");
+  }
+
+  const wall = {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(match[4]),
+    minute: Number(match[5]),
+  };
+  const parsed = DateTime.fromObject(wall, { zone });
 
   if (!parsed.isValid) {
-    if (parsed.invalidReason === "unsupported zone") {
-      throw new AccessError(400, "Неизвестный часовой пояс.");
-    }
+    throw new AccessError(400, "Это локальное время не существует из-за перехода на летнее/зимнее время.");
+  }
+
+  if (parsed.hour !== wall.hour || parsed.minute !== wall.minute || parsed.day !== wall.day) {
     throw new AccessError(400, "Это локальное время не существует из-за перехода на летнее/зимнее время.");
   }
 
