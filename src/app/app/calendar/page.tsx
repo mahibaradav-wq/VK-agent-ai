@@ -177,6 +177,10 @@ export default async function CalendarPage({
                 <option value="scheduled">scheduled</option>
                 <option value="approved">approved</option>
                 <option value="pending_approval">pending_approval</option>
+                <option value="queued">queued</option>
+                <option value="publishing">publishing</option>
+                <option value="published">published</option>
+                <option value="failed">failed</option>
               </select>
             </label>
             <label className="grid gap-1 text-sm font-medium text-ink">

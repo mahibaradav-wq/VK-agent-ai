@@ -104,6 +104,9 @@ export function createPostService(db: PrismaClient) {
     ) {
       await access.requirePermission(userId, workspaceId, "post.update");
       const post = await loadBoundPost(workspaceId, postId);
+      if (["queued", "publishing", "published", "cancelled"].includes(post.status)) {
+        throw new AccessError(403, "Нельзя менять публикацию в текущем статусе.");
+      }
       const title = input.title.trim();
       const body = input.body.trim();
       if (title.length < 2) {

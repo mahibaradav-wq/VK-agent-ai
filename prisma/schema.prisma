@@ -33,6 +33,7 @@ model User {
   posts               Post[]
   postVersions        PostVersion[]
   mediaAssets         MediaAsset[]
+  publishJobs         PublishJob[]
 }
 
 model Account {
@@ -90,6 +91,7 @@ model Workspace {
   postTargets PostTarget[]
   mediaAssets MediaAsset[]
   schedules   Schedule[]
+  publishJobs PublishJob[]
 }
 
 model WorkspaceMember {
@@ -159,6 +161,7 @@ model Post {
   targets     PostTarget[]
   media       PostMedia[]
   schedule    Schedule?
+  publishJobs PublishJob[]
 
   @@index([workspaceId, projectId, status])
 }
@@ -172,8 +175,9 @@ model PostVersion {
   createdById  String
   createdAt    DateTime  @default(now())
   supersededAt DateTime?
-  post         Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  createdBy    User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  post         Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  publishJobs  PublishJob[]
 
   @@unique([postId, number])
 }
@@ -184,10 +188,13 @@ model PostTarget {
   workspaceId String
   platform    String
   status      PostTargetStatus @default(draft)
+  externalId  String?
+  lastError   String?          @db.Text
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   post        Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
   workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  attempts    PublishAttempt[]
 
   @@unique([postId, platform])
 }
@@ -232,6 +239,67 @@ model Schedule {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, startsAt])
+}
+
+enum PublishJobStatus {
+  pending
+  claimed
+  processing
+  completed
+  failed
+  requires_manual_check
+}
+
+enum PublishAttemptKind {
+  success
+  temporary_failure
+  permanent_failure
+  unknown
+}
+
+model PublishJob {
+  id             String           @id @default(cuid())
+  workspaceId    String
+  postId         String
+  postVersionId  String
+  idempotencyKey String           @unique
+  status         PublishJobStatus @default(pending)
+  attemptCount   Int              @default(0)
+  maxAttempts    Int              @default(5)
+  claimedAt      DateTime?
+  claimedBy      String?
+  nextAttemptAt  DateTime?
+  lastError      String?          @db.Text
+  createdById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  workspace      Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  post           Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postVersion    PostVersion      @relation(fields: [postVersionId], references: [id], onDelete: Cascade)
+  createdBy      User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  attempts       PublishAttempt[]
+
+  @@index([workspaceId, status, nextAttemptAt])
+  @@index([postId, status])
+}
+
+model PublishAttempt {
+  id            String              @id @default(cuid())
+  jobId         String
+  targetId      String
+  platform      String
+  kind          PublishAttemptKind
+  attemptNumber Int
+  errorCode     String?
+  errorMessage  String?             @db.Text
+  externalId    String?
+  startedAt     DateTime            @default(now())
+  finishedAt    DateTime
+  job           PublishJob          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  target        PostTarget          @relation(fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, targetId, attemptNumber])
+  @@index([targetId, startedAt])
 }
 
 model DevMailMessage {

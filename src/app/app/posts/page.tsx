@@ -41,7 +41,7 @@ export default async function PostsPage() {
       <PageHeader
         eyebrow="Публикации"
         title="Черновики проекта"
-        description="Содержимое версионируется. Значимое изменение создаёт новую версию и сбрасывает согласование."
+        description="Содержимое версионируется. В очередь публикация попадает с текущей версией; успешные цели повторно не отправляются."
       />
       <Container className="grid gap-6 pb-20">
         {!activeProject ? (
