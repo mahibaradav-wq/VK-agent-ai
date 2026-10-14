@@ -9,6 +9,7 @@ const postInclude = {
   targets: { orderBy: { platform: "asc" as const } },
   media: { include: { media: true }, orderBy: { sortOrder: "asc" as const } },
   project: true,
+  schedule: true,
 } satisfies Prisma.PostInclude;
 
 export type PostRecord = Prisma.PostGetPayload<{ include: typeof postInclude }>;

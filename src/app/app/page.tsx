@@ -41,6 +41,9 @@ export default async function AppHomePage() {
             <h2 className="mt-2 text-2xl font-black text-ink">{activeProject.name}</h2>
             <p className="mt-2 text-ink/70">{activeProject.description || "Описание не задано"}</p>
             <div className="mt-4 flex flex-wrap gap-4 text-sm font-semibold">
+              <Link href="/app/calendar" className="text-brand-dark">
+                Календарь
+              </Link>
               <Link href="/app/posts" className="text-brand-dark">
                 Публикации
               </Link>

@@ -89,6 +89,7 @@ model Workspace {
   posts       Post[]
   postTargets PostTarget[]
   mediaAssets MediaAsset[]
+  schedules   Schedule[]
 }
 
 model WorkspaceMember {
@@ -157,6 +158,7 @@ model Post {
   versions    PostVersion[]
   targets     PostTarget[]
   media       PostMedia[]
+  schedule    Schedule?
 
   @@index([workspaceId, projectId, status])
 }
@@ -216,6 +218,20 @@ model PostMedia {
   media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
 
   @@unique([postId, mediaId])
+}
+
+model Schedule {
+  id          String    @id @default(cuid())
+  postId      String    @unique
+  workspaceId String
+  startsAt    DateTime
+  timezone    String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  post        Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, startsAt])
 }
 
 model DevMailMessage {
