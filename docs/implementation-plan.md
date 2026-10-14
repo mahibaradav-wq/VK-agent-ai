@@ -148,7 +148,7 @@ Deliverables:
 
 ### Этап 5. Редактор публикаций и медиатека
 
-Статус: выполнен. Добавлены Post, PostVersion, PostTarget, MediaAsset, редактор черновиков, медиатека, MIME-проверка и предпросмотр по внутренним шаблонам. S3-адаптер настоящий: без credentials загрузка не имитируется.
+Статус: выполнен. Добавлены Post, PostVersion, PostTarget, MediaAsset, редактор черновиков, медиатека, MIME-проверка и предпросмотр по внутренним шаблонам. S3-адаптер настоящий: без credentials загрузка не имитируется. `npm run lint`, `npm run typecheck`, `npm test` (19) и `npm run build` проходят. Миграция `20261014181100_add_posts_and_media` применяется.
 
 Deliverables:
 
