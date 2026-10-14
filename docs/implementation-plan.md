@@ -193,7 +193,7 @@ Deliverables:
 
 ### Этап 7. Очереди и автопостинг
 
-Статус: выполнен. Добавлены Redis/BullMQ, PublishJob/PublishAttempt, ключ идемпотентности, атомарный claim, экспоненциальный backoff, `requires_manual_check` и агрегированный статус Post. Без credentials адаптер возвращает `integration_not_configured`, успешные цели повторно не отправляются. `npm run lint`, `npm run typecheck`, `npm test` и `npm run build` проходят. Миграция `20261014203000_add_publish_jobs` применяется.
+Статус: выполнен. Добавлены Redis/BullMQ, PublishJob/PublishAttempt, ключ идемпотентности, атомарный claim, экспоненциальный backoff, `requires_manual_check` и агрегированный статус Post. Без credentials адаптер возвращает `integration_not_configured`, успешные цели повторно не отправляются. `npm run lint`, `npm run typecheck`, `npm test` (33) и `npm run build` проходят. Миграция `20261014203000_add_publish_jobs` применяется. В браузере: черновик «Очередь этапа 7» поставлен в очередь, worker обработал job, VK и Telegram получили `permanent_failure` / `integration_not_configured`, фиктивного успеха нет.
 
 Deliverables:
 
