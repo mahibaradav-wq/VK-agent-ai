@@ -7,6 +7,8 @@ import { getAppContext } from "@/modules/access/app-context";
 
 const appNav = [
   { href: "/app", label: "Обзор" },
+  { href: "/app/posts", label: "Публикации" },
+  { href: "/app/media", label: "Медиатека" },
   { href: "/app/projects", label: "Проекты" },
   { href: "/app/team", label: "Команда" },
 ];

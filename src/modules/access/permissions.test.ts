@@ -14,11 +14,15 @@ describe("permission matrix", () => {
   it("gives Viewer read-only project access", () => {
     expect(hasPermission("Viewer", "project.view")).toBe(true);
     expect(hasPermission("Viewer", "project.create")).toBe(false);
+    expect(hasPermission("Viewer", "post.create")).toBe(false);
+    expect(hasPermission("Viewer", "media.upload")).toBe(false);
     expect(hasPermission("Viewer", "members.add")).toBe(false);
   });
 
   it("lets Editor create projects but not archive or manage members", () => {
     expect(hasPermission("Editor", "project.create")).toBe(true);
+    expect(hasPermission("Editor", "post.create")).toBe(true);
+    expect(hasPermission("Editor", "media.upload")).toBe(true);
     expect(hasPermission("Editor", "project.archive")).toBe(false);
     expect(hasPermission("Editor", "members.changeRole")).toBe(false);
   });

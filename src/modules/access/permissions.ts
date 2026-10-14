@@ -19,12 +19,28 @@ export type Permission =
   | "project.view"
   | "project.create"
   | "project.update"
-  | "project.archive";
+  | "project.archive"
+  | "post.view"
+  | "post.create"
+  | "post.update"
+  | "media.view"
+  | "media.upload";
 
 const rolePermissions: Record<WorkspaceRole, Permission[]> = {
-  Viewer: ["workspace.view", "members.view", "project.view"],
-  Approver: ["workspace.view", "members.view", "project.view"],
-  Editor: ["workspace.view", "members.view", "project.view", "project.create", "project.update"],
+  Viewer: ["workspace.view", "members.view", "project.view", "post.view", "media.view"],
+  Approver: ["workspace.view", "members.view", "project.view", "post.view", "media.view"],
+  Editor: [
+    "workspace.view",
+    "members.view",
+    "project.view",
+    "project.create",
+    "project.update",
+    "post.view",
+    "post.create",
+    "post.update",
+    "media.view",
+    "media.upload",
+  ],
   Admin: [
     "workspace.view",
     "workspace.update",
@@ -35,6 +51,11 @@ const rolePermissions: Record<WorkspaceRole, Permission[]> = {
     "project.create",
     "project.update",
     "project.archive",
+    "post.view",
+    "post.create",
+    "post.update",
+    "media.view",
+    "media.upload",
   ],
   Owner: [
     "workspace.view",
@@ -46,6 +67,11 @@ const rolePermissions: Record<WorkspaceRole, Permission[]> = {
     "project.create",
     "project.update",
     "project.archive",
+    "post.view",
+    "post.create",
+    "post.update",
+    "media.view",
+    "media.upload",
   ],
 };
 
@@ -75,7 +101,7 @@ export function parseWorkspaceRole(value: string): WorkspaceRole {
 
 export class AccessError extends Error {
   constructor(
-    public status: 403 | 404,
+    public status: 400 | 403 | 404,
     message: string,
   ) {
     super(message);

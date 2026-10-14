@@ -1,7 +1,7 @@
 {
   "name": "vk-agent-ai-saas",
   "version": "1.0.0",
-  "description": "SaaS-платформа управления соцсетями: этап 4, workspaces, проекты и роли.",
+  "description": "SaaS-платформа управления соцсетями: этап 5, редактор черновиков и медиатека.",
   "private": true,
   "directories": {
     "doc": "docs"
@@ -35,6 +35,7 @@
   "homepage": "https://github.com/mahibaradav-wq/VK-agent-ai#readme",
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
+    "@aws-sdk/client-s3": "^3.1151.0",
     "@prisma/client": "^6.12.0",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",

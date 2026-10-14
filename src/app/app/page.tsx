@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { auth } from "@/auth";
 import { PageHeader } from "@/components/marketing/page-header";
 import { Card } from "@/components/ui/card";
@@ -38,6 +40,14 @@ export default async function AppHomePage() {
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Активный проект</p>
             <h2 className="mt-2 text-2xl font-black text-ink">{activeProject.name}</h2>
             <p className="mt-2 text-ink/70">{activeProject.description || "Описание не задано"}</p>
+            <div className="mt-4 flex flex-wrap gap-4 text-sm font-semibold">
+              <Link href="/app/posts" className="text-brand-dark">
+                Публикации
+              </Link>
+              <Link href="/app/media" className="text-brand-dark">
+                Медиатека
+              </Link>
+            </div>
           </Card>
         ) : (
           <StatusBanner tone="warning">

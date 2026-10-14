@@ -30,6 +30,9 @@ model User {
   memberships         WorkspaceMember[]
   passwordResetTokens PasswordResetToken[]
   auditLogs           AuditLog[]
+  posts               Post[]
+  postVersions        PostVersion[]
+  mediaAssets         MediaAsset[]
 }
 
 model Account {
@@ -77,12 +80,15 @@ model PasswordResetToken {
 }
 
 model Workspace {
-  id        String            @id @default(cuid())
-  name      String
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
-  members   WorkspaceMember[]
-  projects  Project[]
+  id          String            @id @default(cuid())
+  name        String
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  members     WorkspaceMember[]
+  projects    Project[]
+  posts       Post[]
+  postTargets PostTarget[]
+  mediaAssets MediaAsset[]
 }
 
 model WorkspaceMember {
@@ -107,8 +113,109 @@ model Project {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  posts       Post[]
 
   @@index([workspaceId, archivedAt])
+}
+
+enum PostStatus {
+  draft
+  pending_approval
+  approved
+  scheduled
+  queued
+  publishing
+  published
+  failed
+  cancelled
+}
+
+enum PostTargetStatus {
+  draft
+  pending_approval
+  approved
+  scheduled
+  queued
+  publishing
+  published
+  failed
+  cancelled
+  requires_manual_check
+}
+
+model Post {
+  id          String      @id @default(cuid())
+  workspaceId String
+  projectId   String
+  authorId    String
+  status      PostStatus  @default(draft)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author      User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  versions    PostVersion[]
+  targets     PostTarget[]
+  media       PostMedia[]
+
+  @@index([workspaceId, projectId, status])
+}
+
+model PostVersion {
+  id           String    @id @default(cuid())
+  postId       String
+  number       Int
+  title        String
+  body         String    @db.Text
+  createdById  String
+  createdAt    DateTime  @default(now())
+  supersededAt DateTime?
+  post         Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdBy    User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@unique([postId, number])
+}
+
+model PostTarget {
+  id          String           @id @default(cuid())
+  postId      String
+  workspaceId String
+  platform    String
+  status      PostTargetStatus @default(draft)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  post        Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, platform])
+}
+
+model MediaAsset {
+  id            String      @id @default(cuid())
+  workspaceId   String
+  uploadedById  String
+  originalName  String
+  mimeType      String
+  sizeBytes     Int
+  storageKey    String      @unique
+  storageDriver String
+  createdAt     DateTime    @default(now())
+  workspace     Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  uploadedBy    User        @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  posts         PostMedia[]
+
+  @@index([workspaceId, createdAt])
+}
+
+model PostMedia {
+  id        String     @id @default(cuid())
+  postId    String
+  mediaId   String
+  sortOrder Int        @default(0)
+  post      Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, mediaId])
 }
 
 model DevMailMessage {
