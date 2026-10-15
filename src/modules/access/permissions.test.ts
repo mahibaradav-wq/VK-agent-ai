@@ -16,6 +16,8 @@ describe("permission matrix", () => {
     expect(hasPermission("Viewer", "project.create")).toBe(false);
     expect(hasPermission("Viewer", "post.create")).toBe(false);
     expect(hasPermission("Viewer", "media.upload")).toBe(false);
+    expect(hasPermission("Viewer", "social.connect")).toBe(false);
+    expect(hasPermission("Viewer", "social.view")).toBe(true);
     expect(hasPermission("Viewer", "members.add")).toBe(false);
   });
 
@@ -24,6 +26,7 @@ describe("permission matrix", () => {
     expect(hasPermission("Editor", "post.create")).toBe(true);
     expect(hasPermission("Editor", "media.upload")).toBe(true);
     expect(hasPermission("Editor", "project.archive")).toBe(false);
+    expect(hasPermission("Editor", "social.connect")).toBe(false);
     expect(hasPermission("Editor", "members.changeRole")).toBe(false);
   });
 

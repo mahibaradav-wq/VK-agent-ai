@@ -11,6 +11,7 @@ const appNav = [
   { href: "/app/posts", label: "Публикации" },
   { href: "/app/queue", label: "Очередь" },
   { href: "/app/media", label: "Медиатека" },
+  { href: "/app/social-accounts", label: "Аккаунты" },
   { href: "/app/projects", label: "Проекты" },
   { href: "/app/team", label: "Команда" },
 ];

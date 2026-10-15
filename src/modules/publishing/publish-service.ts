@@ -72,7 +72,7 @@ export function createPublishService(
 ) {
   const access = createAccessService(db);
   const queue = options?.queue ?? getPublishQueue();
-  const adapters = options?.adapters ?? createDefaultAdapters();
+  const adapters = options?.adapters ?? createDefaultAdapters(db);
   const backoff = options?.backoff ?? defaultBackoffMs;
   const now = options?.now ?? (() => new Date());
 

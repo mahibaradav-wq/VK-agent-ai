@@ -90,8 +90,9 @@ model Workspace {
   posts       Post[]
   postTargets PostTarget[]
   mediaAssets MediaAsset[]
-  schedules   Schedule[]
-  publishJobs PublishJob[]
+  schedules      Schedule[]
+  publishJobs    PublishJob[]
+  socialAccounts SocialAccount[]
 }
 
 model WorkspaceMember {
@@ -115,8 +116,9 @@ model Project {
   archivedAt  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  posts       Post[]
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  posts          Post[]
+  socialAccounts SocialAccount[]
 
   @@index([workspaceId, archivedAt])
 }
@@ -189,12 +191,14 @@ model PostTarget {
   platform    String
   status      PostTargetStatus @default(draft)
   externalId  String?
-  lastError   String?          @db.Text
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  post        Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
-  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  attempts    PublishAttempt[]
+  lastError       String?          @db.Text
+  socialAccountId String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  post            Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  socialAccount   SocialAccount?   @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
+  attempts        PublishAttempt[]
 
   @@unique([postId, platform])
 }
@@ -239,6 +243,45 @@ model Schedule {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, startsAt])
+}
+
+enum SocialAccountStatus {
+  requires_setup
+  connected
+  token_expired
+  error
+  disconnected
+}
+
+model SocialAccount {
+  id             String                  @id @default(cuid())
+  workspaceId    String
+  projectId      String?
+  platform       String
+  displayName    String
+  externalId     String                  @default("")
+  status         SocialAccountStatus     @default(requires_setup)
+  encryptedToken String?                 @db.Text
+  tokenExpiresAt DateTime?
+  lastError      String?                 @db.Text
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  workspace      Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project        Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  capabilities   SocialAccountCapability[]
+  targets        PostTarget[]
+
+  @@index([workspaceId, platform, status])
+}
+
+model SocialAccountCapability {
+  id              String        @id @default(cuid())
+  socialAccountId String
+  name            String
+  enabled         Boolean       @default(true)
+  socialAccount   SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([socialAccountId, name])
 }
 
 enum PublishJobStatus {

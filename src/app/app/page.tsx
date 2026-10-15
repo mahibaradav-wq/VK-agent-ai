@@ -50,6 +50,9 @@ export default async function AppHomePage() {
               <Link href="/app/queue" className="text-brand-dark">
                 Очередь
               </Link>
+              <Link href="/app/social-accounts" className="text-brand-dark">
+                Аккаунты
+              </Link>
               <Link href="/app/media" className="text-brand-dark">
                 Медиатека
               </Link>

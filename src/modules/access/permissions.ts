@@ -24,11 +24,13 @@ export type Permission =
   | "post.create"
   | "post.update"
   | "media.view"
-  | "media.upload";
+  | "media.upload"
+  | "social.view"
+  | "social.connect";
 
 const rolePermissions: Record<WorkspaceRole, Permission[]> = {
-  Viewer: ["workspace.view", "members.view", "project.view", "post.view", "media.view"],
-  Approver: ["workspace.view", "members.view", "project.view", "post.view", "media.view"],
+  Viewer: ["workspace.view", "members.view", "project.view", "post.view", "media.view", "social.view"],
+  Approver: ["workspace.view", "members.view", "project.view", "post.view", "media.view", "social.view"],
   Editor: [
     "workspace.view",
     "members.view",
@@ -40,6 +42,7 @@ const rolePermissions: Record<WorkspaceRole, Permission[]> = {
     "post.update",
     "media.view",
     "media.upload",
+    "social.view",
   ],
   Admin: [
     "workspace.view",
@@ -56,6 +59,8 @@ const rolePermissions: Record<WorkspaceRole, Permission[]> = {
     "post.update",
     "media.view",
     "media.upload",
+    "social.view",
+    "social.connect",
   ],
   Owner: [
     "workspace.view",
@@ -72,6 +77,8 @@ const rolePermissions: Record<WorkspaceRole, Permission[]> = {
     "post.update",
     "media.view",
     "media.upload",
+    "social.view",
+    "social.connect",
   ],
 };
 

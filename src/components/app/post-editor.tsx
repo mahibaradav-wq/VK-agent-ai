@@ -100,7 +100,9 @@ export function PostEditor({
                 {platform.label}
               </label>
             ))}
-            <p className="text-xs text-ink/60">Социальный аккаунт не подключается на этом этапе. Цель хранится как PostTarget в статусе draft.</p>
+            <p className="text-xs text-ink/60">
+              Цель хранится как PostTarget. Подключение Telegram — в разделе «Аккаунты». Пароль соцсети не нужен.
+            </p>
           </fieldset>
           <fieldset className="grid gap-2">
             <legend className="text-sm font-medium text-ink">Медиа</legend>
