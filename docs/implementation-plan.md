@@ -215,7 +215,7 @@ Deliverables:
 
 ### Этап 8. Первая реальная социальная платформа
 
-Статус: выполнен. Первая официальная интеграция — Telegram Bot API (токен @BotFather, без пароля пользователя). VK ID не подключается: Authorization Code Flow отключён с 25.06.2024, право `wall` выдаётся через поддержку. Добавлены SocialAccount/capabilities, шифрование токенов, обработка `token_expired` и `429`, страница `/app/social-accounts`. `npm run lint`, `npm run typecheck`, `npm test` и `npm run build` проходят. Миграция `20261015180000_add_social_accounts` применяется.
+Статус: выполнен. Первая официальная интеграция — Telegram Bot API (токен @BotFather, без пароля пользователя). VK ID не подключается: Authorization Code Flow отключён с 25.06.2024, право `wall` выдаётся через поддержку. Добавлены SocialAccount/capabilities, шифрование токенов, обработка `token_expired` и `429`, страница `/app/social-accounts`. `npm run lint`, `npm run typecheck`, `npm test` (42) и `npm run build` проходят. Миграция `20261015180000_add_social_accounts` применяется. В браузере: поле пароля соцсети отсутствует; `requires_setup` создаётся без токена; паролеподобный ввод отвергается; фейковый токен получает `Unauthorized` от Telegram, без фиктивного успеха.
 
 Deliverables:
 
