@@ -1,7 +1,7 @@
 {
   "name": "vk-agent-ai-saas",
   "version": "1.0.0",
-  "description": "SaaS-платформа управления соцсетями: этап 8, Telegram Bot API.",
+  "description": "SaaS-платформа управления соцсетями: этап 9, AI-ассистент.",
   "private": true,
   "directories": {
     "doc": "docs"

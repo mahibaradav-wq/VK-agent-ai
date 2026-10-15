@@ -47,6 +47,9 @@ export default async function AppHomePage() {
               <Link href="/app/posts" className="text-brand-dark">
                 Публикации
               </Link>
+              <Link href="/app/ai" className="text-brand-dark">
+                AI
+              </Link>
               <Link href="/app/queue" className="text-brand-dark">
                 Очередь
               </Link>

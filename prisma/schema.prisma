@@ -34,6 +34,7 @@ model User {
   postVersions        PostVersion[]
   mediaAssets         MediaAsset[]
   publishJobs         PublishJob[]
+  aiRequests          AIRequest[]
 }
 
 model Account {
@@ -93,6 +94,8 @@ model Workspace {
   schedules      Schedule[]
   publishJobs    PublishJob[]
   socialAccounts SocialAccount[]
+  aiRequests     AIRequest[]
+  usageRecords   UsageRecord[]
 }
 
 model WorkspaceMember {
@@ -364,4 +367,42 @@ model AuditLog {
   details    String?  @db.Text
   createdAt  DateTime @default(now())
   actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+}
+
+model AIRequest {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  projectId    String?
+  userId       String
+  kind         String
+  prompt       String    @db.Text
+  tone         String
+  length       String
+  platform     String
+  title        String
+  body         String    @db.Text
+  itemsJson    String    @db.Text
+  provider     String
+  model        String
+  inputTokens  Int?
+  outputTokens Int?
+  createdAt    DateTime  @default(now())
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+}
+
+model UsageRecord {
+  id          String    @id @default(cuid())
+  workspaceId String
+  metric      String
+  periodStart DateTime
+  periodEnd   DateTime
+  used        Int       @default(0)
+  limit       Int
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, metric, periodStart])
 }

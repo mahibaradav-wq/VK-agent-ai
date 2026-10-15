@@ -235,6 +235,8 @@ Deliverables:
 
 ### Этап 9. AI-ассистент
 
+Статус: выполнен. Добавлены интерфейс провайдера (OpenAI-compatible), история `AIRequest`, учёт `UsageRecord` с атомарным лимитом, типы идей/поста/заголовков/CTA/хештегов, адаптация тона/длины/платформы и перенос в редактор. Без `AI_API_KEY` сервер показывает настройку, а не фиктивный ответ модели. Ключ во frontend не попадает. `npm run lint`, `npm run typecheck`, `npm test` и `npm run build` проходят. Миграция `20261015194000_add_ai_assistant` применяется.
+
 Deliverables:
 
 - AI provider interface;
