@@ -254,6 +254,8 @@ Deliverables:
 
 ### Этап 10. Аналитика
 
+Статус: выполнен. Добавлены `AnalyticsSnapshot` с nullable метриками и `rawPayload`, сбор `getChatMemberCount` для Telegram, дашборд `/app/analytics` на Recharts, фильтры по датам/проектам/аккаунтам. Недоступные показы/охват не записываются как ноль; без реальных снимков показывается явная демо-метка, демо не смешивается с итогами. `npm run lint`, `npm run typecheck`, `npm test` (56) и `npm run build` проходят. Миграция `20261015200000_add_analytics_snapshots` применяется.
+
 Deliverables:
 
 - normalized analytics layer;

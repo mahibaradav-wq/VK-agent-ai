@@ -93,9 +93,10 @@ model Workspace {
   mediaAssets MediaAsset[]
   schedules      Schedule[]
   publishJobs    PublishJob[]
-  socialAccounts SocialAccount[]
-  aiRequests     AIRequest[]
-  usageRecords   UsageRecord[]
+  socialAccounts      SocialAccount[]
+  aiRequests          AIRequest[]
+  usageRecords        UsageRecord[]
+  analyticsSnapshots  AnalyticsSnapshot[]
 }
 
 model WorkspaceMember {
@@ -119,9 +120,10 @@ model Project {
   archivedAt  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  posts          Post[]
-  socialAccounts SocialAccount[]
+  workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  posts               Post[]
+  socialAccounts      SocialAccount[]
+  analyticsSnapshots  AnalyticsSnapshot[]
 
   @@index([workspaceId, archivedAt])
 }
@@ -271,8 +273,9 @@ model SocialAccount {
   updatedAt      DateTime                @updatedAt
   workspace      Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   project        Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  capabilities   SocialAccountCapability[]
-  targets        PostTarget[]
+  capabilities        SocialAccountCapability[]
+  targets             PostTarget[]
+  analyticsSnapshots  AnalyticsSnapshot[]
 
   @@index([workspaceId, platform, status])
 }
@@ -405,4 +408,30 @@ model UsageRecord {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, metric, periodStart])
+}
+
+model AnalyticsSnapshot {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  projectId       String?
+  socialAccountId String?
+  platform        String
+  source          String
+  collectedAt     DateTime
+  periodStart     DateTime
+  periodEnd       DateTime
+  impressions     Int?
+  reach           Int?
+  followers       Int?
+  engagement      Int?
+  postsPublished  Int?
+  rawPayload      Json
+  createdAt       DateTime  @default(now())
+  workspace       Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project         Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  socialAccount   SocialAccount? @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, periodStart, periodEnd])
+  @@index([workspaceId, socialAccountId, collectedAt])
+  @@index([workspaceId, source, collectedAt])
 }

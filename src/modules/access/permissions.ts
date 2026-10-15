@@ -28,11 +28,31 @@ export type Permission =
   | "social.view"
   | "social.connect"
   | "ai.view"
-  | "ai.generate";
+  | "ai.generate"
+  | "analytics.view"
+  | "analytics.collect";
 
 const rolePermissions: Record<WorkspaceRole, Permission[]> = {
-  Viewer: ["workspace.view", "members.view", "project.view", "post.view", "media.view", "social.view", "ai.view"],
-  Approver: ["workspace.view", "members.view", "project.view", "post.view", "media.view", "social.view", "ai.view"],
+  Viewer: [
+    "workspace.view",
+    "members.view",
+    "project.view",
+    "post.view",
+    "media.view",
+    "social.view",
+    "ai.view",
+    "analytics.view",
+  ],
+  Approver: [
+    "workspace.view",
+    "members.view",
+    "project.view",
+    "post.view",
+    "media.view",
+    "social.view",
+    "ai.view",
+    "analytics.view",
+  ],
   Editor: [
     "workspace.view",
     "members.view",
@@ -47,6 +67,8 @@ const rolePermissions: Record<WorkspaceRole, Permission[]> = {
     "social.view",
     "ai.view",
     "ai.generate",
+    "analytics.view",
+    "analytics.collect",
   ],
   Admin: [
     "workspace.view",
@@ -67,6 +89,8 @@ const rolePermissions: Record<WorkspaceRole, Permission[]> = {
     "social.connect",
     "ai.view",
     "ai.generate",
+    "analytics.view",
+    "analytics.collect",
   ],
   Owner: [
     "workspace.view",
@@ -87,6 +111,8 @@ const rolePermissions: Record<WorkspaceRole, Permission[]> = {
     "social.connect",
     "ai.view",
     "ai.generate",
+    "analytics.view",
+    "analytics.collect",
   ],
 };
 

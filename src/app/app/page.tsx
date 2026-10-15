@@ -50,6 +50,9 @@ export default async function AppHomePage() {
               <Link href="/app/ai" className="text-brand-dark">
                 AI
               </Link>
+              <Link href="/app/analytics" className="text-brand-dark">
+                Аналитика
+              </Link>
               <Link href="/app/queue" className="text-brand-dark">
                 Очередь
               </Link>
