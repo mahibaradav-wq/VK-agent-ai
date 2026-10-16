@@ -109,7 +109,11 @@ export function createBillingService(
 
     async listPlans() {
       await ensureCanonicalPlans(db);
-      const rows = await db.plan.findMany({ orderBy: { priceAmount: "asc" } });
+      const catalogSlugs = PLAN_CATALOG.map((plan) => plan.slug);
+      const rows = await db.plan.findMany({
+        where: { slug: { in: catalogSlugs } },
+      });
+      rows.sort((left, right) => catalogSlugs.indexOf(left.slug) - catalogSlugs.indexOf(right.slug));
       return rows.map((plan) => ({
         ...toPlanLimits(plan),
         id: plan.id,

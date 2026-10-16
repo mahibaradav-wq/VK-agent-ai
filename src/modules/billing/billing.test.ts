@@ -199,5 +199,6 @@ describe("billing and subscriptions", () => {
     await expectAccess(billing.getState(other.userId, owner.workspaceId), 404, /не найдено/);
     const viewerState = await billing.getState(viewer.userId, owner.workspaceId);
     expect(viewerState.paid).toBe(false);
+    expect(viewerState.plans.map((plan) => plan.slug)).toEqual(["start", "team", "business"]);
   });
 });

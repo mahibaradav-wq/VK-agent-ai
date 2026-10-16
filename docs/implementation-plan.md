@@ -292,7 +292,7 @@ Deliverables:
 
 ### Этап 12. Подписки и платежи
 
-Статус: выполнен. Добавлены тарифы `Plan`, `Subscription`, `CheckoutSession`, `PaymentEvent`, HMAC-провайдер с проверкой подписи, атомарная резервация usage и лимиты проектов/участников/аккаунтов/постов. Редирект из checkout не активирует тариф; повтор webhook идемпотентен. `npm run lint`, `npm run typecheck`, `npm test` и `npm run build` проходят. Миграция `20261016200000_add_billing` применяется.
+Статус: выполнен. Добавлены тарифы `Plan`, `Subscription`, `CheckoutSession`, `PaymentEvent`, HMAC-провайдер с проверкой подписи, атомарная резервация usage и лимиты проектов/участников/аккаунтов/постов. Редирект из checkout не активирует тариф; повтор webhook идемпотентен. `npm run lint`, `npm run typecheck`, `npm test` (65) и `npm run build` проходят. Миграция `20261016200000_add_billing` применяется. В браузере: Start бесплатный; checkout Team возвращает на страницу без paidAt; подписанный webhook активирует Team; повтор того же события не меняет состояние.
 
 Deliverables:
 
