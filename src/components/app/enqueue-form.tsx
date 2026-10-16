@@ -35,7 +35,7 @@ export function EnqueueForm({
         <StatusBanner tone="info">
           {locked
             ? "Эта публикация уже в обработке, опубликована или отменена."
-            : "Ставить в очередь могут Editor, Admin и Owner."}
+            : "В очередь можно поставить только согласованную текущую версию. Editor без approval отправить не может."}
         </StatusBanner>
       )}
     </form>

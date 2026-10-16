@@ -35,6 +35,11 @@ model User {
   mediaAssets         MediaAsset[]
   publishJobs         PublishJob[]
   aiRequests          AIRequest[]
+  invitationsSent     Invitation[]
+  comments            Comment[]
+  approvals           Approval[]
+  notifications       Notification[]
+  projectAccesses     ProjectAccess[]
 }
 
 model Account {
@@ -97,6 +102,11 @@ model Workspace {
   aiRequests          AIRequest[]
   usageRecords        UsageRecord[]
   analyticsSnapshots  AnalyticsSnapshot[]
+  invitations         Invitation[]
+  comments            Comment[]
+  approvals           Approval[]
+  notifications       Notification[]
+  projectAccesses     ProjectAccess[]
 }
 
 model WorkspaceMember {
@@ -124,6 +134,7 @@ model Project {
   posts               Post[]
   socialAccounts      SocialAccount[]
   analyticsSnapshots  AnalyticsSnapshot[]
+  projectAccesses     ProjectAccess[]
 
   @@index([workspaceId, archivedAt])
 }
@@ -169,6 +180,8 @@ model Post {
   media       PostMedia[]
   schedule    Schedule?
   publishJobs PublishJob[]
+  comments    Comment[]
+  approvals   Approval[]
 
   @@index([workspaceId, projectId, status])
 }
@@ -185,6 +198,7 @@ model PostVersion {
   post         Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
   createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
   publishJobs  PublishJob[]
+  approvals    Approval[]
 
   @@unique([postId, number])
 }
@@ -434,4 +448,85 @@ model AnalyticsSnapshot {
   @@index([workspaceId, periodStart, periodEnd])
   @@index([workspaceId, socialAccountId, collectedAt])
   @@index([workspaceId, source, collectedAt])
+}
+
+model Invitation {
+  id          String        @id @default(cuid())
+  workspaceId String
+  email       String
+  role        WorkspaceRole
+  tokenHash   String        @unique
+  projectIds  String        @default("")
+  invitedById String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy   User          @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, email, acceptedAt])
+}
+
+model ProjectAccess {
+  id          String    @id @default(cuid())
+  workspaceId String
+  projectId   String
+  userId      String
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([workspaceId, userId])
+}
+
+model Comment {
+  id          String    @id @default(cuid())
+  workspaceId String
+  postId      String
+  authorId    String
+  body        String    @db.Text
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  post        Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+}
+
+model Approval {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  postId          String
+  postVersionId   String
+  actorId         String
+  status          String
+  targetPlatforms String
+  note            String?   @db.Text
+  createdAt       DateTime  @default(now())
+  workspace       Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  post            Post        @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postVersion     PostVersion @relation(fields: [postVersionId], references: [id], onDelete: Cascade)
+  actor           User        @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([postId, postVersionId, status])
+}
+
+model Notification {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  type        String
+  title       String
+  body        String    @db.Text
+  entityType  String
+  entityId    String
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@index([workspaceId, createdAt])
 }

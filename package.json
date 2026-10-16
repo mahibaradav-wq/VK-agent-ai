@@ -1,7 +1,7 @@
 {
   "name": "vk-agent-ai-saas",
   "version": "1.0.0",
-  "description": "SaaS-платформа управления соцсетями: этап 10, аналитика.",
+  "description": "SaaS-платформа управления соцсетями: этап 11, командная работа и согласование.",
   "private": true,
   "directories": {
     "doc": "docs"

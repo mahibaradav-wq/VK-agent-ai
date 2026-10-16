@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient, PostStatus, PostTargetStatus } from "@prisma
 
 import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
+import { invalidateApprovals } from "@/modules/collaboration/approval";
 import { parsePlatforms } from "@/modules/posts/platforms";
 
 const postInclude = {
@@ -201,6 +202,7 @@ export function createPostService(db: PrismaClient) {
             where: { postId: post.id, status: { in: ["pending_approval", "approved"] } },
             data: { status: "draft" },
           });
+          await invalidateApprovals(tx, post.id);
         }
 
         await tx.auditLog.create({

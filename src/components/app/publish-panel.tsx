@@ -48,7 +48,7 @@ export function PublishPanel({
         <p className="text-sm text-ink/60">Задачи ещё нет. Очередь создаст PublishJob с уникальным ключом версии.</p>
       )}
       <p className="text-xs text-ink/60">
-        Реальная соцсеть на этом этапе не вызывается. Адаптер без credentials возвращает integration_not_configured.
+        Очередь принимает только согласованную версию. Без официальной интеграции адаптер не имитирует успех.
       </p>
       <EnqueueForm workspaceId={workspaceId} postId={postId} canEnqueue={canEnqueue} postStatus={postStatus} />
     </Card>

@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AccessError } from "@/modules/access/permissions";
 import { createAuthService } from "@/modules/auth/auth-service";
 import { FIRST_SOCIAL_PLATFORM } from "@/modules/social/catalog";
+import { createCollaborationService } from "@/modules/collaboration/collaboration-service";
 import { createPostService } from "@/modules/posts/post-service";
 import { createProjectService } from "@/modules/projects/project-service";
 import { createPublishService } from "@/modules/publishing/publish-service";
@@ -17,6 +18,12 @@ const auth = createAuthService(prisma, "http://localhost:3000");
 const posts = createPostService(prisma);
 const projects = createProjectService(prisma);
 const workspaces = createWorkspaceService(prisma);
+const collab = createCollaborationService(prisma);
+
+async function approveCurrent(owner: { userId: string; workspaceId: string }, postId: string) {
+  await collab.submitForApproval(owner.userId, owner.workspaceId, postId);
+  await collab.approve(owner.userId, owner.workspaceId, postId);
+}
 
 const BOT_TOKEN = "123456789:AAExampleTokenForTestsAbcdefghijkl";
 
@@ -186,6 +193,7 @@ describe("social accounts", () => {
     });
     const bound = await prisma.postTarget.findFirstOrThrow({ where: { postId: post.id } });
     expect(bound.socialAccountId).toBe(account.id);
+    await approveCurrent(owner, post.id);
 
     const sendOk = scriptedTelegram({
       sendMessage: { ok: true, result: { message_id: 501, chat: { id: 77 } } },
@@ -208,6 +216,7 @@ describe("social accounts", () => {
       platforms: ["telegram"],
       mediaIds: [],
     });
+    await approveCurrent(owner, expiredPost.id);
     const expiredTransport = scriptedTelegram({
       sendMessage: { ok: false, error_code: 401, description: "Unauthorized" },
     });
@@ -228,6 +237,7 @@ describe("social accounts", () => {
       platforms: ["telegram"],
       mediaIds: [],
     });
+    await approveCurrent(owner, limitedPost.id);
     await prisma.socialAccount.update({ where: { id: account.id }, data: { status: "connected" } });
     const limited = scriptedTelegram({
       sendMessage: { ok: false, error_code: 429, description: "Too Many Requests", retry_after: 12 },
@@ -255,6 +265,7 @@ describe("social accounts", () => {
       platforms: ["vk"],
       mediaIds: [],
     });
+    await approveCurrent(owner, post.id);
     const publishing = createPublishService(prisma, { queue: createInlineQueue() });
     const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
     await publishing.processJob(job.id, "worker-vk");

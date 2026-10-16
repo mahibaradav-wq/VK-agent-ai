@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient, PublishAttemptKind, PublishJobStatus } from 
 
 import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
+import { assertApprovedVersion } from "@/modules/collaboration/approval";
 import { aggregatePostStatus } from "@/modules/publishing/aggregate";
 import { defaultBackoffMs, nextBackoffMs } from "@/modules/publishing/backoff";
 import { createDefaultAdapters, type AdapterRegistry, type PublishOutcome } from "@/server/social";
@@ -22,7 +23,7 @@ const jobInclude = {
 
 export type PublishJobRecord = Prisma.PublishJobGetPayload<{ include: typeof jobInclude }>;
 
-const enqueueableTargetStatuses = ["draft", "pending_approval", "approved", "scheduled", "failed", "queued"] as const;
+const enqueueableTargetStatuses = ["approved", "scheduled", "failed", "queued"] as const;
 
 const postLoadInclude = {
   targets: true,
@@ -115,6 +116,7 @@ export function createPublishService(
     if (post.status === "publishing") {
       throw new AccessError(403, "Публикация уже обрабатывается.");
     }
+    await assertApprovedVersion(db, post);
 
     const retryable = post.targets.filter((target) =>
       enqueueableTargetStatuses.includes(target.status as (typeof enqueueableTargetStatuses)[number]),

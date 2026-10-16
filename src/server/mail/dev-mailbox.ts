@@ -5,7 +5,7 @@ export async function storeDevMail(input: {
   subject: string;
   body: string;
   url?: string;
-  kind: "verify_email" | "reset_password" | "contact";
+  kind: "verify_email" | "reset_password" | "contact" | "invitation";
 }) {
   return prisma.devMailMessage.create({
     data: input,

@@ -22,6 +22,8 @@ describe("permission matrix", () => {
     expect(hasPermission("Viewer", "ai.generate")).toBe(false);
     expect(hasPermission("Viewer", "analytics.view")).toBe(true);
     expect(hasPermission("Viewer", "analytics.collect")).toBe(false);
+    expect(hasPermission("Viewer", "post.approve")).toBe(false);
+    expect(hasPermission("Viewer", "comment.create")).toBe(false);
     expect(hasPermission("Viewer", "members.add")).toBe(false);
   });
 
@@ -33,7 +35,16 @@ describe("permission matrix", () => {
     expect(hasPermission("Editor", "social.connect")).toBe(false);
     expect(hasPermission("Editor", "ai.generate")).toBe(true);
     expect(hasPermission("Editor", "analytics.collect")).toBe(true);
+    expect(hasPermission("Editor", "post.approve")).toBe(false);
+    expect(hasPermission("Editor", "comment.create")).toBe(true);
     expect(hasPermission("Editor", "members.changeRole")).toBe(false);
+  });
+
+  it("lets Approver approve and comment but not edit or enqueue", () => {
+    expect(hasPermission("Approver", "post.approve")).toBe(true);
+    expect(hasPermission("Approver", "comment.create")).toBe(true);
+    expect(hasPermission("Approver", "post.update")).toBe(false);
+    expect(hasPermission("Approver", "post.create")).toBe(false);
   });
 
   it("does not let Admin assign Owner or manage an equal Admin", () => {
