@@ -3,6 +3,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
+import { attachFreeSubscription, ensureCanonicalPlans } from "@/modules/billing/plans";
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TOKEN_TTL_MS = 1000 * 60 * 60;
 
@@ -44,6 +46,7 @@ export function createAuthService(db: PrismaClient, siteUrl: string) {
       const workspaceName = `Рабочее пространство ${normalizedEmail.split("@")[0]}`;
 
       try {
+        await ensureCanonicalPlans(db);
         const user = await db.$transaction(async (tx) => {
           const created = await tx.user.create({
             data: {
@@ -58,7 +61,12 @@ export function createAuthService(db: PrismaClient, siteUrl: string) {
                 },
               },
             },
+            include: { memberships: true },
           });
+          const workspaceId = created.memberships[0]?.workspaceId;
+          if (workspaceId) {
+            await attachFreeSubscription(tx, workspaceId);
+          }
 
           await tx.verificationToken.create({
             data: {

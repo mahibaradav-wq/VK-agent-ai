@@ -1,14 +1,14 @@
 import type { PrismaClient } from "@prisma/client";
-import { DateTime } from "luxon";
 
 import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import { parseKind, parseLength, parseTone } from "@/modules/ai/kinds";
+import { getWorkspacePlanLimits } from "@/modules/billing/plans";
+import { getUsage, releaseUsage, reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
 import { parsePlatforms } from "@/modules/posts/platforms";
 import { createPostService } from "@/modules/posts/post-service";
 import { getAiProvider, type AiProvider } from "@/server/ai";
 
-const AI_METRIC = "ai_generations";
 const DEFAULT_MONTHLY_LIMIT = 50;
 
 export type PublicAiRequest = {
@@ -65,14 +65,6 @@ function toPublic(row: {
   };
 }
 
-function monthBounds(at: Date) {
-  const start = DateTime.fromJSDate(at, { zone: "utc" }).startOf("month");
-  return {
-    periodStart: start.toJSDate(),
-    periodEnd: start.endOf("month").toJSDate(),
-  };
-}
-
 export function createAiService(
   db: PrismaClient,
   options?: {
@@ -93,44 +85,15 @@ export function createAiService(
     return row;
   }
 
-  async function reserve(workspaceId: string, at: Date) {
-    const { periodStart, periodEnd } = monthBounds(at);
-    await db.usageRecord.upsert({
-      where: {
-        workspaceId_metric_periodStart: { workspaceId, metric: AI_METRIC, periodStart },
-      },
-      create: {
-        workspaceId,
-        metric: AI_METRIC,
-        periodStart,
-        periodEnd,
-        used: 0,
-        limit: monthlyLimit,
-      },
-      update: { periodEnd, limit: monthlyLimit },
-    });
-    const reserved = await db.$executeRaw`
-      UPDATE "UsageRecord"
-      SET "used" = "used" + 1, "updatedAt" = NOW()
-      WHERE "workspaceId" = ${workspaceId}
-        AND "metric" = ${AI_METRIC}
-        AND "periodStart" = ${periodStart}
-        AND "used" < "limit"
-    `;
-    if (reserved !== 1) {
-      throw new AccessError(400, `Лимит AI-генераций на месяц исчерпан (${monthlyLimit}).`);
+  async function resolveLimit(workspaceId: string) {
+    if (options?.monthlyLimit != null) {
+      return options.monthlyLimit;
     }
-    return periodStart;
-  }
-
-  async function release(workspaceId: string, periodStart: Date) {
-    await db.$executeRaw`
-      UPDATE "UsageRecord"
-      SET "used" = GREATEST("used" - 1, 0), "updatedAt" = NOW()
-      WHERE "workspaceId" = ${workspaceId}
-        AND "metric" = ${AI_METRIC}
-        AND "periodStart" = ${periodStart}
-    `;
+    try {
+      return (await getWorkspacePlanLimits(db, workspaceId, now())).aiGenerations;
+    } catch {
+      return monthlyLimit;
+    }
   }
 
   return {
@@ -144,16 +107,8 @@ export function createAiService(
 
     async usage(userId: string, workspaceId: string) {
       await access.requirePermission(userId, workspaceId, "ai.view");
-      const { periodStart, periodEnd } = monthBounds(now());
-      const row = await db.usageRecord.findUnique({
-        where: { workspaceId_metric_periodStart: { workspaceId, metric: AI_METRIC, periodStart } },
-      });
-      return {
-        used: row?.used ?? 0,
-        limit: row?.limit ?? monthlyLimit,
-        periodStart,
-        periodEnd,
-      };
+      const limit = await resolveLimit(workspaceId);
+      return getUsage(db, workspaceId, USAGE_METRICS.ai, now(), limit);
     },
 
     async list(userId: string, workspaceId: string) {
@@ -192,7 +147,15 @@ export function createAiService(
       }
 
       const at = now();
-      const periodStart = await reserve(workspaceId, at);
+      const limit = await resolveLimit(workspaceId);
+      const periodStart = await reserveUsage(
+        db,
+        workspaceId,
+        USAGE_METRICS.ai,
+        limit,
+        at,
+        `Лимит AI-генераций на месяц исчерпан (${limit}).`,
+      );
       try {
         const generated = await provider.generate({ kind, prompt, tone, length, platform });
         const row = await db.aIRequest.create({
@@ -225,7 +188,7 @@ export function createAiService(
         });
         return toPublic(row);
       } catch (error) {
-        await release(workspaceId, periodStart);
+        await releaseUsage(db, workspaceId, USAGE_METRICS.ai, periodStart);
         throw error;
       }
     },

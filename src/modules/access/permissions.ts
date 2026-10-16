@@ -32,7 +32,9 @@ export type Permission =
   | "analytics.view"
   | "analytics.collect"
   | "post.approve"
-  | "comment.create";
+  | "comment.create"
+  | "billing.view"
+  | "billing.manage";
 
 const rolePermissions: Record<WorkspaceRole, Permission[]> = {
   Viewer: [
@@ -44,6 +46,7 @@ const rolePermissions: Record<WorkspaceRole, Permission[]> = {
     "social.view",
     "ai.view",
     "analytics.view",
+    "billing.view",
   ],
   Approver: [
     "workspace.view",
@@ -56,6 +59,7 @@ const rolePermissions: Record<WorkspaceRole, Permission[]> = {
     "analytics.view",
     "post.approve",
     "comment.create",
+    "billing.view",
   ],
   Editor: [
     "workspace.view",
@@ -74,6 +78,7 @@ const rolePermissions: Record<WorkspaceRole, Permission[]> = {
     "analytics.view",
     "analytics.collect",
     "comment.create",
+    "billing.view",
   ],
   Admin: [
     "workspace.view",
@@ -98,6 +103,8 @@ const rolePermissions: Record<WorkspaceRole, Permission[]> = {
     "analytics.collect",
     "post.approve",
     "comment.create",
+    "billing.view",
+    "billing.manage",
   ],
   Owner: [
     "workspace.view",
@@ -122,6 +129,8 @@ const rolePermissions: Record<WorkspaceRole, Permission[]> = {
     "analytics.collect",
     "post.approve",
     "comment.create",
+    "billing.view",
+    "billing.manage",
   ],
 };
 

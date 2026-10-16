@@ -5,6 +5,8 @@ import type { Prisma, PrismaClient, WorkspaceRole } from "@prisma/client";
 import { AccessError, assertWorkspaceBound, canAssignRole, parseWorkspaceRole } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import { hashToken, isValidEmail } from "@/modules/auth/auth-service";
+import { getWorkspacePlanLimits } from "@/modules/billing/plans";
+import { lockWorkspaceMetric } from "@/modules/billing/usage";
 import { APPROVED_STATUS, REJECTED_STATUS, findActiveApproval } from "@/modules/collaboration/approval";
 import { createPostService } from "@/modules/posts/post-service";
 
@@ -228,6 +230,12 @@ export function createCollaborationService(
         return existing;
       }
       const member = await db.$transaction(async (tx) => {
+        await lockWorkspaceMetric(tx, invitation.workspaceId, "members");
+        const limits = await getWorkspacePlanLimits(tx, invitation.workspaceId);
+        const used = await tx.workspaceMember.count({ where: { workspaceId: invitation.workspaceId } });
+        if (used >= limits.members) {
+          throw new AccessError(400, `Лимит участников тарифа исчерпан (${limits.members}).`);
+        }
         const created = await tx.workspaceMember.create({
           data: { workspaceId: invitation.workspaceId, userId, role: invitation.role },
         });

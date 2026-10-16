@@ -107,6 +107,9 @@ model Workspace {
   approvals           Approval[]
   notifications       Notification[]
   projectAccesses     ProjectAccess[]
+  subscription        Subscription?
+  checkoutSessions    CheckoutSession[]
+  paymentEvents       PaymentEvent[]
 }
 
 model WorkspaceMember {
@@ -528,5 +531,98 @@ model Notification {
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, readAt, createdAt])
+  @@index([workspaceId, createdAt])
+}
+
+enum SubscriptionStatus {
+  free
+  pending_payment
+  active
+  past_due
+  canceled
+}
+
+enum CheckoutSessionStatus {
+  pending
+  completed
+  expired
+  canceled
+}
+
+model Plan {
+  id             String   @id @default(cuid())
+  slug           String   @unique
+  name           String
+  description    String
+  priceAmount    Int
+  currency       String   @default("RUB")
+  interval       String   @default("month")
+  highlighted    Boolean  @default(false)
+  isFree         Boolean  @default(false)
+  aiGenerations  Int
+  projects       Int
+  socialAccounts Int
+  members        Int
+  postsPerMonth  Int
+  featuresJson   String   @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  subscriptions  Subscription[]
+  checkouts      CheckoutSession[]
+}
+
+model Subscription {
+  id                     String             @id @default(cuid())
+  workspaceId            String             @unique
+  planId                 String
+  status                 SubscriptionStatus @default(free)
+  provider               String
+  providerCustomerId     String?
+  providerSubscriptionId String?
+  currentPeriodStart     DateTime
+  currentPeriodEnd       DateTime
+  cancelAtPeriodEnd      Boolean            @default(false)
+  paidAt                 DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  workspace              Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  plan                   Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+  checkouts              CheckoutSession[]
+  paymentEvents          PaymentEvent[]
+}
+
+model CheckoutSession {
+  id             String                @id @default(cuid())
+  workspaceId    String
+  subscriptionId String
+  planId         String
+  status         CheckoutSessionStatus @default(pending)
+  provider       String
+  providerRef    String?               @unique
+  createdAt      DateTime              @default(now())
+  completedAt    DateTime?
+  workspace      Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  subscription   Subscription          @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  plan           Plan                  @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, status])
+}
+
+model PaymentEvent {
+  id              String    @id @default(cuid())
+  provider        String
+  providerEventId String
+  type            String
+  workspaceId     String?
+  subscriptionId  String?
+  checkoutId      String?
+  rawPayload      Json
+  processed       Boolean   @default(false)
+  processedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  workspace       Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  subscription    Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerEventId])
   @@index([workspaceId, createdAt])
 }

@@ -11,6 +11,8 @@ import {
   UsersRound,
 } from "lucide-react";
 
+import { marketingPlans } from "@/modules/billing/plans";
+
 export const siteConfig = {
   name: "Polka Social",
   description:
@@ -111,27 +113,7 @@ export const homeHighlights = [
   },
 ];
 
-export const pricingPlans = [
-  {
-    name: "Start",
-    price: "0 ₽",
-    description: "Для знакомства с платформой и планирования первых публикаций.",
-    features: ["1 workspace", "1 проект", "демо-интеграции", "базовый календарь"],
-  },
-  {
-    name: "Team",
-    price: "по настройке",
-    description: "Для команды, approval workflow и нескольких проектов.",
-    features: ["роли команды", "approval", "медиатека", "аналитика"],
-    highlighted: true,
-  },
-  {
-    name: "Business",
-    price: "по договору",
-    description: "Для брендов с интеграциями, очередями и расширенными лимитами.",
-    features: ["реальные API", "очереди", "S3", "аудит и администрирование"],
-  },
-];
+export const pricingPlans = marketingPlans();
 
 export const faqs = [
   {

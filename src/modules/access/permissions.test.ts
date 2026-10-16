@@ -24,6 +24,8 @@ describe("permission matrix", () => {
     expect(hasPermission("Viewer", "analytics.collect")).toBe(false);
     expect(hasPermission("Viewer", "post.approve")).toBe(false);
     expect(hasPermission("Viewer", "comment.create")).toBe(false);
+    expect(hasPermission("Viewer", "billing.view")).toBe(true);
+    expect(hasPermission("Viewer", "billing.manage")).toBe(false);
     expect(hasPermission("Viewer", "members.add")).toBe(false);
   });
 
@@ -37,6 +39,8 @@ describe("permission matrix", () => {
     expect(hasPermission("Editor", "analytics.collect")).toBe(true);
     expect(hasPermission("Editor", "post.approve")).toBe(false);
     expect(hasPermission("Editor", "comment.create")).toBe(true);
+    expect(hasPermission("Editor", "billing.view")).toBe(true);
+    expect(hasPermission("Editor", "billing.manage")).toBe(false);
     expect(hasPermission("Editor", "members.changeRole")).toBe(false);
   });
 

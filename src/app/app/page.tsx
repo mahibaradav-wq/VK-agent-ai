@@ -62,6 +62,9 @@ export default async function AppHomePage() {
               <Link href="/app/media" className="text-brand-dark">
                 Медиатека
               </Link>
+              <Link href="/app/subscription" className="text-brand-dark">
+                Подписка
+              </Link>
               <Link href="/app/notifications" className="text-brand-dark">
                 Уведомления
               </Link>

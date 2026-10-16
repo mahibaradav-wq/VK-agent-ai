@@ -2,6 +2,8 @@ import type { Prisma, PrismaClient, PostStatus, PostTargetStatus } from "@prisma
 
 import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
+import { getWorkspacePlanLimits } from "@/modules/billing/plans";
+import { reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
 import { invalidateApprovals } from "@/modules/collaboration/approval";
 import { parsePlatforms } from "@/modules/posts/platforms";
 
@@ -66,6 +68,15 @@ export function createPostService(db: PrismaClient) {
 
       const nextTitle = title?.trim() || "Черновик";
       const post = await db.$transaction(async (tx) => {
+        const limits = await getWorkspacePlanLimits(tx, workspaceId);
+        await reserveUsage(
+          tx,
+          workspaceId,
+          USAGE_METRICS.posts,
+          limits.postsPerMonth,
+          new Date(),
+          `Лимит публикаций тарифа на месяц исчерпан (${limits.postsPerMonth}).`,
+        );
         const created = await tx.post.create({
           data: {
             workspaceId,

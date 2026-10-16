@@ -2,6 +2,8 @@ import type { PrismaClient } from "@prisma/client";
 
 import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
+import { getWorkspacePlanLimits } from "@/modules/billing/plans";
+import { lockWorkspaceMetric } from "@/modules/billing/usage";
 
 export function createProjectService(db: PrismaClient) {
   const access = createAccessService(db);
@@ -34,13 +36,21 @@ export function createProjectService(db: PrismaClient) {
         throw new AccessError(403, "Название проекта должно содержать минимум 2 символа.");
       }
 
-      const project = await db.project.create({
-        data: {
-          workspaceId,
-          name,
-          description: input.description?.trim() || null,
-          color: input.color?.trim() || "#cc7a2b",
-        },
+      const project = await db.$transaction(async (tx) => {
+        await lockWorkspaceMetric(tx, workspaceId, "projects");
+        const limits = await getWorkspacePlanLimits(tx, workspaceId);
+        const used = await tx.project.count({ where: { workspaceId, archivedAt: null } });
+        if (used >= limits.projects) {
+          throw new AccessError(400, `Лимит проектов тарифа исчерпан (${limits.projects}).`);
+        }
+        return tx.project.create({
+          data: {
+            workspaceId,
+            name,
+            description: input.description?.trim() || null,
+            color: input.color?.trim() || "#cc7a2b",
+          },
+        });
       });
       await db.auditLog.create({
         data: {

@@ -2,6 +2,8 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 
 import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
+import { getWorkspacePlanLimits } from "@/modules/billing/plans";
+import { lockWorkspaceMetric } from "@/modules/billing/usage";
 import { encryptToken } from "@/server/crypto/token-cipher";
 import { FIRST_SOCIAL_PLATFORM } from "@/modules/social/catalog";
 import {
@@ -110,6 +112,14 @@ export function createSocialService(
       }
 
       const account = await db.$transaction(async (tx) => {
+        await lockWorkspaceMetric(tx, workspaceId, "social_accounts");
+        const limits = await getWorkspacePlanLimits(tx, workspaceId);
+        const used = await tx.socialAccount.count({
+          where: { workspaceId, status: { not: "disconnected" } },
+        });
+        if (used >= limits.socialAccounts) {
+          throw new AccessError(400, `Лимит социальных аккаунтов тарифа исчерпан (${limits.socialAccounts}).`);
+        }
         const created = await tx.socialAccount.create({
           data: {
             workspaceId,
@@ -200,6 +210,14 @@ export function createSocialService(
             include: accountInclude,
           });
         } else {
+          await lockWorkspaceMetric(tx, workspaceId, "social_accounts");
+          const limits = await getWorkspacePlanLimits(tx, workspaceId);
+          const used = await tx.socialAccount.count({
+            where: { workspaceId, status: { not: "disconnected" } },
+          });
+          if (used >= limits.socialAccounts) {
+            throw new AccessError(400, `Лимит социальных аккаунтов тарифа исчерпан (${limits.socialAccounts}).`);
+          }
           saved = await tx.socialAccount.create({
             data: {
               workspaceId,
