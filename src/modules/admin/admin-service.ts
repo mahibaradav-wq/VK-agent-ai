@@ -133,7 +133,7 @@ export function createAdminService(db: PrismaClient) {
           entityType: "plan",
           entityId: updated.id,
           actorId: actor.user.id,
-          details: `${slug}:${updated.aiGenerations}/${updated.projects}/${updated.members}`,
+          details: `${slug}:${updated.aiGenerations}/${updated.projects}/${updated.socialAccounts}/${updated.members}/${updated.postsPerMonth}`,
         },
       });
       return updated;

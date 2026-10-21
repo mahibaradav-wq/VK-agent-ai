@@ -123,8 +123,11 @@ describe("platform admin and email notifications", () => {
     });
     const audit = await prisma.auditLog.findFirst({
       where: { action: "UPDATE_PLAN_LIMITS", actorId: actor.userId },
+      orderBy: { createdAt: "desc" },
     });
-    expect(audit?.details).toContain("start:");
+    expect(audit?.details).toBe(
+      `start:${current!.aiGenerations}/${current!.projects}/${current!.socialAccounts}/${current!.members}/${current!.postsPerMonth}`,
+    );
   });
 
   it("bootstraps Superadmin from ADMIN_EMAILS and hides secrets in integrations", async () => {
