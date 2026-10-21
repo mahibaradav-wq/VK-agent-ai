@@ -311,7 +311,7 @@ Deliverables:
 
 ### Этап 13. Админка и уведомления
 
-Статус: выполнен. Добавлены `PlatformAdmin`, маршруты `/admin`, серверная проверка доступа, адаптер почтовых уведомлений (dev-mailbox / HTTP / unconfigured) и audit на выдачу роли и смену лимитов. Центр уведомлений и mark as read остаются в `/app/notifications`. `npm run lint`, `npm run typecheck`, `npm test` и `npm run build` проходят. Миграция `20261021193000_add_platform_admin` применяется.
+Статус: выполнен. Добавлены `PlatformAdmin`, маршруты `/admin`, серверная проверка доступа, адаптер почтовых уведомлений (dev-mailbox / HTTP / unconfigured) и audit на выдачу роли и смену лимитов. Центр уведомлений и mark as read остаются в `/app/notifications`. `npm run lint`, `npm run typecheck`, `npm test` (70) и `npm run build` проходят. Миграция `20261021193000_add_platform_admin` применяется.
 
 Deliverables:
 

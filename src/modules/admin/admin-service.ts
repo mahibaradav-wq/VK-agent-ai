@@ -160,19 +160,19 @@ export function createAdminService(db: PrismaClient) {
           name: "AI",
           ready: getAiStatus().ready,
           provider: getAiStatus().provider,
-          note: getAiStatus().ready ? getAiStatus().model : "нет AI_API_KEY",
+          note: getAiStatus().ready ? getAiStatus().model : "ключ модели не задан",
         },
         {
           name: "Биллинг",
           ready: getBillingStatus().ready,
           provider: getBillingStatus().provider,
-          note: getBillingStatus().ready ? "webhook secret задан" : "нет BILLING_WEBHOOK_SECRET",
+          note: getBillingStatus().ready ? "проверка webhook включена" : "секрет webhook не задан",
         },
         {
           name: "Почта",
           ready: getEmailStatus().ready,
           provider: getEmailStatus().provider,
-          note: getEmailStatus().ready ? "адаптер готов" : "нет AUTH_DEV_MAILBOX и EMAIL_API_KEY",
+          note: getEmailStatus().ready ? "адаптер готов" : "почтовый провайдер не задан",
         },
         {
           name: "Telegram",

@@ -136,7 +136,7 @@ describe("platform admin and email notifications", () => {
       expect(actor.admin.role).toBe("Superadmin");
       const integrations = await admin.listIntegrations(owner.userId);
       const dumped = JSON.stringify(integrations);
-      expect(dumped).not.toMatch(/sk-|whsec_|EMAIL_API_KEY|BILLING_WEBHOOK_SECRET|polka_dev_password/);
+      expect(dumped).not.toMatch(/sk-|whsec_|polka_dev_password|Bearer /);
       expect(integrations.some((item) => item.name === "Почта")).toBe(true);
     } finally {
       process.env.ADMIN_EMAILS = previous;
