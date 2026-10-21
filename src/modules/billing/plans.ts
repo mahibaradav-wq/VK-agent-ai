@@ -156,11 +156,6 @@ export async function ensureCanonicalPlans(db: DbClient) {
         interval: plan.interval,
         highlighted: plan.highlighted,
         isFree: plan.isFree,
-        aiGenerations: plan.aiGenerations,
-        projects: plan.projects,
-        socialAccounts: plan.socialAccounts,
-        members: plan.members,
-        postsPerMonth: plan.postsPerMonth,
         featuresJson: JSON.stringify(plan.features),
       },
     });

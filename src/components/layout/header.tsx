@@ -4,9 +4,12 @@ import { auth, signOut } from "@/auth";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { navItems, siteConfig } from "@/lib/site-data";
+import { isPlatformAdmin } from "@/modules/admin/access";
+import { prisma } from "@/server/db/prisma";
 
 export async function Header() {
   const session = await auth();
+  const showAdmin = session?.user?.id ? await isPlatformAdmin(prisma, session.user.id) : false;
 
   return (
     <header className="sticky top-0 z-50 border-b border-ink/10 bg-cream/85 backdrop-blur-xl">
@@ -27,6 +30,11 @@ export async function Header() {
               <ButtonLink href="/app" variant="ghost" className="hidden sm:inline-flex">
                 Кабинет
               </ButtonLink>
+              {showAdmin ? (
+                <ButtonLink href="/admin" variant="ghost" className="hidden sm:inline-flex">
+                  Админка
+                </ButtonLink>
+              ) : null}
               <form
                 action={async () => {
                   "use server";
@@ -57,6 +65,7 @@ export async function Header() {
             </Link>
           ))}
           {session?.user ? <Link href="/app">Кабинет</Link> : <Link href="/login">Вход</Link>}
+          {showAdmin ? <Link href="/admin">Админка</Link> : null}
         </nav>
       </details>
     </header>

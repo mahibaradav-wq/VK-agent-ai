@@ -22,7 +22,7 @@ export default async function DevMailboxPage() {
       <PageHeader
         eyebrow="Dev mail"
         title="Локальный почтовый стенд"
-        description="Это не внешняя почта. Письма показываются здесь, пока не подключён SMTP-провайдер."
+        description="Это не внешняя почта. Сюда попадают подтверждение, сброс пароля, приглашения и уведомления, пока нет EMAIL_API_KEY."
       />
       <Container className="grid gap-5 pb-20">
         {!enabled ? (

@@ -8,7 +8,9 @@ import { hashToken, isValidEmail } from "@/modules/auth/auth-service";
 import { getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { lockWorkspaceMetric } from "@/modules/billing/usage";
 import { APPROVED_STATUS, REJECTED_STATUS, findActiveApproval } from "@/modules/collaboration/approval";
+import { deliverNotifications } from "@/modules/notifications/dispatch";
 import { createPostService } from "@/modules/posts/post-service";
+import { getEmailAdapter, type EmailNotificationAdapter } from "@/server/notifications";
 
 const INVITE_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const submitableStatuses = ["draft", "scheduled", "failed"] as const;
@@ -19,12 +21,13 @@ function currentVersion<T extends { supersededAt: Date | null }>(versions: T[]) 
 
 export function createCollaborationService(
   db: PrismaClient,
-  options?: { siteUrl?: string; now?: () => Date },
+  options?: { siteUrl?: string; now?: () => Date; email?: EmailNotificationAdapter },
 ) {
   const access = createAccessService(db);
   const posts = createPostService(db);
   const siteUrl = options?.siteUrl ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
   const now = options?.now ?? (() => new Date());
+  const email = options?.email ?? getEmailAdapter();
 
   async function loadBoundPost(workspaceId: string, postId: string) {
     const post = await db.post.findUnique({
@@ -54,21 +57,7 @@ export function createCollaborationService(
       exceptUserId?: string;
     },
   ) {
-    const recipients = [...new Set(input.userIds)].filter((userId) => userId && userId !== input.exceptUserId);
-    if (recipients.length === 0) {
-      return;
-    }
-    await tx.notification.createMany({
-      data: recipients.map((userId) => ({
-        workspaceId: input.workspaceId,
-        userId,
-        type: input.type,
-        title: input.title,
-        body: input.body,
-        entityType: input.entityType,
-        entityId: input.entityId,
-      })),
-    });
+    await deliverNotifications(tx, input, email);
   }
 
   async function approvalRecipients(workspaceId: string, projectId: string) {

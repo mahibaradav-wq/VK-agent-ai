@@ -11,6 +11,7 @@ import {
   toPlanLimits,
 } from "@/modules/billing/plans";
 import { getUsage, USAGE_METRICS } from "@/modules/billing/usage";
+import { deliverNotifications } from "@/modules/notifications/dispatch";
 import { getBillingProvider, type BillingProvider } from "@/server/billing";
 
 const subscriptionInclude = { plan: true } satisfies Prisma.SubscriptionInclude;
@@ -86,16 +87,15 @@ export function createBillingService(
     if (members.length === 0) {
       return;
     }
-    await db.notification.createMany({
-      data: members.map((member) => ({
-        workspaceId,
-        userId: member.userId,
-        type: "billing",
-        title,
-        body,
-        entityType: "subscription",
-        entityId,
-      })),
+    await deliverNotifications(db, {
+      workspaceId,
+      userIds: members.map((member) => member.userId),
+      type: "billing",
+      title,
+      body,
+      entityType: "subscription",
+      entityId,
+      url: "/app/subscription",
     });
   }
 

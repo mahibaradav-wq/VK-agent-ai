@@ -9,7 +9,8 @@ export const authConfig = {
   providers: [],
   callbacks: {
     authorized({ auth, request }) {
-      if (request.nextUrl.pathname.startsWith("/app")) {
+      const path = request.nextUrl.pathname;
+      if (path.startsWith("/app") || path.startsWith("/admin")) {
         return Boolean(auth?.user);
       }
       return true;
