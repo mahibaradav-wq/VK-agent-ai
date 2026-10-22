@@ -329,7 +329,7 @@ Deliverables:
 
 ### Этап 14. Полное тестирование, безопасность, документация и deploy
 
-Статус: в работе. Добавлены security headers, rate limit auth-форм, `/api/health`, проверка `AUTH_SECRET` при старте, e2e критического среза и документация запуска.
+Статус: выполнен. Добавлены security headers, rate limit auth-форм, `/api/health`, проверка `AUTH_SECRET` при старте, Playwright e2e и вертикальный срез register → очередь → `integration_not_configured`. `npm run lint`, `npm run typecheck`, `npm test` (77), `npm run test:e2e` (6) и `npm run build` проходят. Миграции применяются к пустой БД. `/api/health` отвечает `{ ok: true, db: "up" }`.
 
 Deliverables:
 
