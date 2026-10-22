@@ -1,5 +1,9 @@
 import { prisma } from "@/server/db/prisma";
 
+export function isDevMailboxEnabled() {
+  return process.env.AUTH_DEV_MAILBOX === "true";
+}
+
 export async function storeDevMail(input: {
   to: string;
   subject: string;

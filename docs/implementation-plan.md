@@ -329,6 +329,8 @@ Deliverables:
 
 ### Этап 14. Полное тестирование, безопасность, документация и deploy
 
+Статус: в работе. Добавлены security headers, rate limit auth-форм, `/api/health`, проверка `AUTH_SECRET` при старте, e2e критического среза и документация запуска.
+
 Deliverables:
 
 - security review;

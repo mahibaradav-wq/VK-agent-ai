@@ -5,7 +5,7 @@ import { StatusBanner } from "@/components/ui/status-banner";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { createPageMetadata } from "@/lib/metadata";
-import { listDevMail } from "@/server/mail/dev-mailbox";
+import { isDevMailboxEnabled, listDevMail } from "@/server/mail/dev-mailbox";
 
 export const metadata = createPageMetadata({
   title: "Локальный почтовый стенд",
@@ -14,7 +14,7 @@ export const metadata = createPageMetadata({
 });
 
 export default async function DevMailboxPage() {
-  const enabled = process.env.AUTH_DEV_MAILBOX === "true";
+  const enabled = isDevMailboxEnabled();
   const messages = enabled ? await listDevMail() : [];
 
   return (
@@ -22,7 +22,7 @@ export default async function DevMailboxPage() {
       <PageHeader
         eyebrow="Dev mail"
         title="Локальный почтовый стенд"
-        description="Это не внешняя почта. Сюда попадают подтверждение, сброс пароля, приглашения и уведомления, пока нет EMAIL_API_KEY."
+        description="Это не внешняя почта. Сюда попадают подтверждение, сброс пароля, приглашения и уведомления, пока почтовый провайдер не задан."
       />
       <Container className="grid gap-5 pb-20">
         {!enabled ? (

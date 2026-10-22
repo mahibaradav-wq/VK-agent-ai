@@ -2,7 +2,7 @@
 
 SaaS-платформа для планирования публикаций, AI-подготовки контента, согласований и аналитики соцсетей.
 
-Этап 13: админка платформы и почтовые уведомления. Доступ к /admin только у PlatformAdmin (серверная проверка). Обычный Owner workspace админку не видит.
+Этап 14: безопасность, e2e критических потоков, миграции с чистой БД и документация запуска. Доступ к /admin только у PlatformAdmin.
 
 ## Требования
 
@@ -76,8 +76,11 @@ http://localhost:3000
 npm run lint
 npm run typecheck
 npm test
+npm run test:e2e
 npm run build
 ```
+
+Запуск после сборки: `npm start`, проверка `curl -fsS http://127.0.0.1:3000/api/health`.
 
 ## Основные страницы
 
@@ -119,3 +122,8 @@ npm run build
 - [Архитектура](docs/architecture.md)
 - [План реализации](docs/implementation-plan.md)
 - [Исследование соцплатформ](docs/social-platforms.md)
+- [Безопасность](docs/security.md)
+- [Переменные окружения](docs/environment.md)
+- [Запуск и выкладка](docs/deploy.md)
+- [Очереди](docs/runbooks/queues.md)
+- [Интеграции](docs/runbooks/integrations.md)

@@ -6,7 +6,7 @@ import { helpArticles } from "@/lib/site-data";
 
 export const metadata = createPageMetadata({
   title: "Справочный центр",
-  description: "Справка по текущему этапу Polka Social: публичный сайт, формы и статус настройки интеграций.",
+  description: "Справка Polka Social: регистрация, согласование, очереди и статусы интеграций без фиктивного успеха.",
   path: "/help",
 });
 
@@ -16,7 +16,7 @@ export default function HelpPage() {
       <PageHeader
         eyebrow="Справка"
         title="Короткие ответы по текущему этапу"
-        description="Справочный центр описывает то, что уже можно проверить на сайте, без обещаний ещё не собранных модулей."
+        description="Справочный центр описывает рабочие сценарии кабинета и то, почему интеграции без credentials не рисуют успех."
       />
       <Container className="grid gap-5 pb-20 md:grid-cols-3">
         {helpArticles.map((article) => (

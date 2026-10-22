@@ -3,6 +3,7 @@ import type { Prisma, PrismaClient, PublishAttemptKind, PublishJobStatus } from 
 import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import { assertApprovedVersion } from "@/modules/collaboration/approval";
+import { deliverNotifications } from "@/modules/notifications/dispatch";
 import { aggregatePostStatus } from "@/modules/publishing/aggregate";
 import { defaultBackoffMs, nextBackoffMs } from "@/modules/publishing/backoff";
 import { createDefaultAdapters, type AdapterRegistry, type PublishOutcome } from "@/server/social";
@@ -459,6 +460,22 @@ export function createPublishService(
         where: { id: jobId },
         data: { status: jobStatus, nextAttemptAt, lastError },
       });
+
+      if (jobStatus === "completed" || jobStatus === "failed" || jobStatus === "requires_manual_check") {
+        const owners = await db.workspaceMember.findMany({
+          where: { workspaceId: claimed.workspaceId, role: { in: ["Owner", "Admin"] } },
+          select: { userId: true },
+        });
+        await deliverNotifications(db, {
+          workspaceId: claimed.workspaceId,
+          userIds: [...owners.map((item) => item.userId), claimed.createdById ?? ""],
+          type: "publish_job",
+          title: jobStatus === "completed" ? "Публикация выполнена" : "Публикация не выполнена",
+          body: lastError?.slice(0, 180) || "Задание очереди завершено.",
+          entityType: "publish_job",
+          entityId: jobId,
+        });
+      }
 
       return {
         skipped: false as const,

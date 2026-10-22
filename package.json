@@ -1,7 +1,7 @@
 {
   "name": "vk-agent-ai-saas",
   "version": "1.0.0",
-  "description": "SaaS-платформа управления соцсетями: этап 13, админка и уведомления.",
+  "description": "SaaS-платформа управления соцсетями: этап 14, безопасность, e2e и документация запуска.",
   "private": true,
   "directories": {
     "doc": "docs"
@@ -13,6 +13,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:all": "vitest run && playwright test",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
@@ -55,6 +57,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.56.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/bcryptjs": "^2.4.6",
     "@types/luxon": "^3.7.6",
