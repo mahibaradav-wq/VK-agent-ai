@@ -4,6 +4,9 @@ import { securityHeaders } from "./src/server/security/headers";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  experimental: {
+    agentUpgrade: "security",
+  },
   async headers() {
     return [
       {
