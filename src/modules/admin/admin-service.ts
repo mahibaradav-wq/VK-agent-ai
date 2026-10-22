@@ -142,6 +142,7 @@ export function createAdminService(db: PrismaClient) {
     async listIntegrations(userId: string) {
       await requireAdmin(userId);
       const queue = getPublishQueue();
+      const ai = getAiStatus();
       return [
         { name: "PostgreSQL", ready: true, provider: "prisma", note: "Основная БД" },
         {
@@ -158,9 +159,9 @@ export function createAdminService(db: PrismaClient) {
         },
         {
           name: "AI",
-          ready: getAiStatus().ready,
-          provider: getAiStatus().provider,
-          note: getAiStatus().ready ? getAiStatus().model : "ключ модели не задан",
+          ready: ai.ready && ai.imageReady,
+          provider: ai.provider,
+          note: ai.ready && ai.imageReady ? `${ai.model} / ${ai.imageModel}` : "ключ модели не задан",
         },
         {
           name: "Биллинг",

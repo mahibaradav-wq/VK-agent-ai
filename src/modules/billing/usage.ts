@@ -38,7 +38,11 @@ export async function reserveUsage(
   limit: number,
   at: Date,
   exhaustedMessage: string,
+  units = 1,
 ) {
+  if (!Number.isInteger(units) || units < 1) {
+    throw new AccessError(400, "Некорректный резерв использования.");
+  }
   const { periodStart, periodEnd } = monthBounds(at);
   await db.usageRecord.upsert({
     where: {
@@ -56,11 +60,11 @@ export async function reserveUsage(
   });
   const reserved = await db.$executeRaw`
     UPDATE "UsageRecord"
-    SET "used" = "used" + 1, "updatedAt" = NOW()
+    SET "used" = "used" + ${units}, "updatedAt" = NOW()
     WHERE "workspaceId" = ${workspaceId}
       AND "metric" = ${metric}
       AND "periodStart" = ${periodStart}
-      AND "used" < "limit"
+      AND "used" + ${units} <= "limit"
   `;
   if (reserved !== 1) {
     throw new AccessError(400, exhaustedMessage);
@@ -68,10 +72,16 @@ export async function reserveUsage(
   return periodStart;
 }
 
-export async function releaseUsage(db: DbClient, workspaceId: string, metric: string, periodStart: Date) {
+export async function releaseUsage(
+  db: DbClient,
+  workspaceId: string,
+  metric: string,
+  periodStart: Date,
+  units = 1,
+) {
   await db.$executeRaw`
     UPDATE "UsageRecord"
-    SET "used" = GREATEST("used" - 1, 0), "updatedAt" = NOW()
+    SET "used" = GREATEST("used" - ${units}, 0), "updatedAt" = NOW()
     WHERE "workspaceId" = ${workspaceId}
       AND "metric" = ${metric}
       AND "periodStart" = ${periodStart}
