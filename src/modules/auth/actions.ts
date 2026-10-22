@@ -6,6 +6,7 @@ import { signIn, signOut } from "@/auth";
 import { createAuthService } from "@/modules/auth/auth-service";
 import { storeDevMail } from "@/server/mail/dev-mailbox";
 import { prisma } from "@/server/db/prisma";
+import { publicSiteUrl } from "@/lib/public-url";
 import { AUTH_RATE_LIMITS, consumeRateLimit } from "@/server/security/rate-limit";
 
 export type AuthFormState = {
@@ -14,15 +15,13 @@ export type AuthFormState = {
   mailboxUrl?: string;
 };
 
-const initialSiteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-
 function readField(formData: FormData, name: string) {
   const value = formData.get(name);
   return typeof value === "string" ? value.trim() : "";
 }
 
 function service() {
-  return createAuthService(prisma, initialSiteUrl);
+  return createAuthService(prisma, publicSiteUrl());
 }
 
 const rateLimited: AuthFormState = {

@@ -39,7 +39,7 @@ export function createBillingService(
   const access = createAccessService(db);
   const provider = options?.provider ?? getBillingProvider();
   const now = options?.now ?? (() => new Date());
-  const siteUrl = options?.siteUrl ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const siteUrl = options?.siteUrl ?? process.env.AUTH_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
   async function loadSubscription(workspaceId: string) {
     await ensureCanonicalPlans(db);

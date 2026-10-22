@@ -20,7 +20,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         ]);
         const result = await createAuthService(
           prisma,
-          process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+          process.env.AUTH_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
         ).authenticate(email, password);
 
         if (!result.ok) {

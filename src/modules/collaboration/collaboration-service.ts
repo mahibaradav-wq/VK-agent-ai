@@ -25,7 +25,7 @@ export function createCollaborationService(
 ) {
   const access = createAccessService(db);
   const posts = createPostService(db);
-  const siteUrl = options?.siteUrl ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const siteUrl = options?.siteUrl ?? process.env.AUTH_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
   const now = options?.now ?? (() => new Date());
   const email = options?.email ?? getEmailAdapter();
 
