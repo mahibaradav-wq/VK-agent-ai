@@ -38,26 +38,66 @@ function parseContent(content: string, kind: string): Pick<AiGenerateOutput, "ti
 }
 
 type ImageResponse = {
-  data?: Array<{ b64_json?: string }>;
+  data?: Array<{ b64_json?: string; url?: string }>;
 };
+
+async function readGeneratedImageBytes(
+  json: ImageResponse,
+  fetchImpl: typeof fetch,
+): Promise<Uint8Array> {
+  const encoded = json.data?.[0]?.b64_json;
+  if (encoded && typeof encoded === "string") {
+    return Uint8Array.from(Buffer.from(encoded, "base64"));
+  }
+
+  const url = json.data?.[0]?.url;
+  if (!url || typeof url !== "string") {
+    throw new AccessError(400, "Провайдер изображений не вернул файл. Это не замена картинки.");
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new AccessError(400, "Провайдер изображений вернул повреждённую ссылку.");
+  }
+  if (parsed.protocol !== "https:") {
+    throw new AccessError(400, "Провайдер изображений вернул небезопасную ссылку.");
+  }
+
+  let response: Response;
+  try {
+    response = await fetchImpl(parsed.toString());
+  } catch {
+    throw new AccessError(400, "Не удалось скачать сгенерированное изображение.");
+  }
+  if (!response.ok) {
+    throw new AccessError(400, "Не удалось скачать сгенерированное изображение.");
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
 
 export function createOpenAiCompatibleProvider(options: {
   apiKey: string;
   baseUrl: string;
   model: string;
   imageModel?: string;
+  imageReady?: boolean;
+  name?: string;
   fetchImpl?: typeof fetch;
 }): AiProvider {
   const fetchImpl = options.fetchImpl ?? fetch;
   const baseUrl = options.baseUrl.replace(/\/$/, "");
   const imageModel = options.imageModel?.trim() || "dall-e-3";
+  const name = options.name?.trim() || "openai-compatible";
+  const imageReady = options.imageReady ?? true;
 
   return {
-    name: "openai-compatible",
+    name,
     model: options.model,
-    imageModel,
+    imageModel: imageReady ? imageModel : "none",
     ready: true,
-    imageReady: true,
+    imageReady,
     async generate(input: AiGenerateInput): Promise<AiGenerateOutput> {
       let response: Response;
       try {
@@ -94,13 +134,19 @@ export function createOpenAiCompatibleProvider(options: {
       return {
         ...parsed,
         raw: content,
-        provider: "openai-compatible",
+        provider: name,
         model: json.model || options.model,
         inputTokens: json.usage?.prompt_tokens,
         outputTokens: json.usage?.completion_tokens,
       };
     },
     async generateImage(input: AiImageInput): Promise<AiImageOutput> {
+      if (!imageReady) {
+        throw new AccessError(
+          400,
+          "Этот провайдер не генерирует картинки. Для визуала подключите ChatGPT или Qwen.",
+        );
+      }
       const prompt = input.prompt.trim();
       if (prompt.length < 3) {
         throw new AccessError(400, "Опишите визуал минимум тремя символами.");
@@ -131,17 +177,7 @@ export function createOpenAiCompatibleProvider(options: {
       }
 
       const json = (await response.json()) as ImageResponse;
-      const encoded = json.data?.[0]?.b64_json;
-      if (!encoded || typeof encoded !== "string") {
-        throw new AccessError(400, "Провайдер изображений не вернул файл. Это не замена картинки.");
-      }
-
-      let bytes: Uint8Array;
-      try {
-        bytes = Uint8Array.from(Buffer.from(encoded, "base64"));
-      } catch {
-        throw new AccessError(400, "Провайдер изображений вернул повреждённые данные.");
-      }
+      const bytes = await readGeneratedImageBytes(json, fetchImpl);
 
       if (bytes.byteLength === 0 || bytes.byteLength > MAX_MEDIA_BYTES) {
         throw new AccessError(400, "Сгенерированное изображение пустое или больше 8 МБ.");
@@ -155,7 +191,7 @@ export function createOpenAiCompatibleProvider(options: {
       return {
         bytes,
         mimeType,
-        provider: "openai-compatible",
+        provider: name,
         model: imageModel,
       };
     },

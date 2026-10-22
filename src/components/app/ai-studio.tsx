@@ -128,10 +128,14 @@ export function AiStudio({
             готового хранилища картинка не подменяется макетом.
           </p>
         </div>
-        {!ready || !imageReady ? (
+        {!ready ? (
           <StatusBanner tone="warning">
-            Требуется настройка интеграции: задайте AI_API_KEY на сервере. Агент не напишет пост и не нарисует картинку
-            без ключа. Макет ниже — не ответ модели.
+            Подключите ChatGPT или Qwen выше. Агент не напишет пост и не нарисует картинку без ключа. Макет ниже — не
+            ответ модели.
+          </StatusBanner>
+        ) : !imageReady ? (
+          <StatusBanner tone="warning">
+            Этот провайдер пишет текст, но не рисует картинки. Для визуала подключите ChatGPT или Qwen.
           </StatusBanner>
         ) : !storageReady ? (
           <StatusBanner tone="warning">
@@ -171,7 +175,7 @@ export function AiStudio({
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Макет интерфейса, не ответ модели</p>
             <p className="mt-2 font-semibold text-ink">Весеннее меню на кухне</p>
             <p className="mt-1">
-              Пример карточки. Без AI_API_KEY сервер не подставит выдуманный текст и не приложит фейковую картинку.
+              Пример карточки. Без ключа ChatGPT, DeepSeek или Qwen сервер не подставит выдуманный текст и не приложит фейковую картинку.
             </p>
           </div>
         ) : null}
@@ -181,8 +185,7 @@ export function AiStudio({
         <Card className="grid gap-4">
           {!ready ? (
             <StatusBanner tone="warning">
-              Требуется настройка интеграции: задайте AI_API_KEY на сервере. Макет ниже — не ответ модели. Ключ во frontend
-              не передаётся.
+              Подключите ChatGPT, DeepSeek или Qwen выше. Макет ниже — не ответ модели. Ключ во frontend не передаётся.
             </StatusBanner>
           ) : (
             <StatusBanner tone="info">
@@ -229,7 +232,7 @@ export function AiStudio({
             <div className="rounded-2xl ring-1 ring-ink/10 p-4 text-sm text-ink/60">
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Макет интерфейса, не ответ модели</p>
               <p className="mt-2 font-semibold text-ink">Весеннее меню на кухне</p>
-              <p className="mt-1">Пример карточки, чтобы увидеть форму. Без AI_API_KEY сервер не подставит выдуманный текст.</p>
+              <p className="mt-1">Пример карточки, чтобы увидеть форму. Без ключа сервер не подставит выдуманный текст.</p>
             </div>
           ) : null}
         </Card>

@@ -28,6 +28,7 @@ export type Permission =
   | "social.view"
   | "social.connect"
   | "ai.view"
+  | "ai.connect"
   | "ai.generate"
   | "analytics.view"
   | "analytics.collect"
@@ -98,6 +99,7 @@ const rolePermissions: Record<WorkspaceRole, Permission[]> = {
     "social.view",
     "social.connect",
     "ai.view",
+    "ai.connect",
     "ai.generate",
     "analytics.view",
     "analytics.collect",
@@ -124,6 +126,7 @@ const rolePermissions: Record<WorkspaceRole, Permission[]> = {
     "social.view",
     "social.connect",
     "ai.view",
+    "ai.connect",
     "ai.generate",
     "analytics.view",
     "analytics.collect",

@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { AiProviderBoard } from "@/components/app/ai-provider-board";
 import { AiStudio } from "@/components/app/ai-studio";
 import { PageHeader } from "@/components/marketing/page-header";
 import { Container } from "@/components/ui/container";
@@ -27,7 +28,7 @@ export default async function AiPage() {
   }
 
   const ai = createAiService(prisma);
-  const status = ai.status();
+  const status = await ai.workspaceStatus(session.user.id, activeMembership.workspaceId);
   const usage = await ai.usage(session.user.id, activeMembership.workspaceId);
   const history = await ai.list(session.user.id, activeMembership.workspaceId);
 
@@ -36,9 +37,14 @@ export default async function AiPage() {
       <PageHeader
         eyebrow="AI"
         title="Ассистент контента"
-        description="Агент создаёт пост с визуалом в активный проект. Отдельно можно сгенерировать только текст. Без ключа провайдера генерация не имитируется."
+        description="Подключите ChatGPT, DeepSeek или Qwen API-ключом. Агент создаёт пост с визуалом, если провайдер умеет рисовать. Без ключа генерация не имитируется."
       />
-      <Container className="pb-20">
+      <Container className="grid gap-6 pb-20">
+        <AiProviderBoard
+          workspaceId={activeMembership.workspaceId}
+          canConnect={hasPermission(activeMembership.role, "ai.connect")}
+          connection={status.connection}
+        />
         <AiStudio
           workspaceId={activeMembership.workspaceId}
           projectId={activeProject?.id}
