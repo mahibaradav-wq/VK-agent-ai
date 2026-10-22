@@ -26,9 +26,26 @@ export type AiGenerateOutput = {
   outputTokens?: number;
 };
 
+export type AiImageSize = "1024x1024";
+
+export type AiImageInput = {
+  prompt: string;
+  size?: AiImageSize;
+};
+
+export type AiImageOutput = {
+  bytes: Uint8Array;
+  mimeType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+  provider: string;
+  model: string;
+};
+
 export type AiProvider = {
   name: string;
   model: string;
+  imageModel: string;
   ready: boolean;
+  imageReady: boolean;
   generate: (input: AiGenerateInput) => Promise<AiGenerateOutput>;
+  generateImage: (input: AiImageInput) => Promise<AiImageOutput>;
 };

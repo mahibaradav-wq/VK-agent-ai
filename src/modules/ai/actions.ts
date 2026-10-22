@@ -15,6 +15,8 @@ export type AiFormState = {
   title?: string;
   body?: string;
   items?: string[];
+  postId?: string;
+  mediaId?: string;
 };
 
 async function requireUserId() {
@@ -67,4 +69,35 @@ export async function applyAiToPost(formData: FormData) {
     readField(formData, "projectId"),
   );
   redirect(`/app/posts/${post.id}`);
+}
+
+export async function composeAgentPost(_prev: AiFormState, formData: FormData): Promise<AiFormState> {
+  try {
+    const result = await createAiService(prisma).composeAgentPost(
+      await requireUserId(),
+      readField(formData, "workspaceId"),
+      {
+        prompt: readField(formData, "prompt"),
+        tone: readField(formData, "tone"),
+        length: readField(formData, "length"),
+        platform: readField(formData, "platform"),
+        projectId: readField(formData, "projectId"),
+      },
+    );
+    revalidatePath("/app/ai");
+    revalidatePath("/app/posts");
+    revalidatePath(`/app/posts/${result.post.id}`);
+    return {
+      status: "success",
+      message: "Черновик создан. Агент приложил визуал — откройте редактор, чтобы проверить и опубликовать.",
+      requestId: result.request.id,
+      title: result.request.title,
+      body: result.request.body,
+      postId: result.post.id,
+      mediaId: result.mediaId,
+    };
+  } catch (error) {
+    const message = error instanceof AccessError ? error.message : "Не удалось создать пост с визуалом.";
+    return { status: "invalid", message };
+  }
 }

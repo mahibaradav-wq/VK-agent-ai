@@ -1,5 +1,6 @@
 import { AccessError } from "@/modules/access/permissions";
-import type { AiGenerateInput, AiGenerateOutput, AiProvider } from "@/server/ai/types";
+import { detectMediaType, MAX_MEDIA_BYTES } from "@/modules/media/file-validation";
+import type { AiGenerateInput, AiGenerateOutput, AiImageInput, AiImageOutput, AiProvider } from "@/server/ai/types";
 
 type ChatResponse = {
   model?: string;
@@ -36,19 +37,27 @@ function parseContent(content: string, kind: string): Pick<AiGenerateOutput, "ti
   }
 }
 
+type ImageResponse = {
+  data?: Array<{ b64_json?: string }>;
+};
+
 export function createOpenAiCompatibleProvider(options: {
   apiKey: string;
   baseUrl: string;
   model: string;
+  imageModel?: string;
   fetchImpl?: typeof fetch;
 }): AiProvider {
   const fetchImpl = options.fetchImpl ?? fetch;
   const baseUrl = options.baseUrl.replace(/\/$/, "");
+  const imageModel = options.imageModel?.trim() || "dall-e-3";
 
   return {
     name: "openai-compatible",
     model: options.model,
+    imageModel,
     ready: true,
+    imageReady: true,
     async generate(input: AiGenerateInput): Promise<AiGenerateOutput> {
       let response: Response;
       try {
@@ -89,6 +98,65 @@ export function createOpenAiCompatibleProvider(options: {
         model: json.model || options.model,
         inputTokens: json.usage?.prompt_tokens,
         outputTokens: json.usage?.completion_tokens,
+      };
+    },
+    async generateImage(input: AiImageInput): Promise<AiImageOutput> {
+      const prompt = input.prompt.trim();
+      if (prompt.length < 3) {
+        throw new AccessError(400, "Опишите визуал минимум тремя символами.");
+      }
+
+      let response: Response;
+      try {
+        response = await fetchImpl(`${baseUrl}/images/generations`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${options.apiKey}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            model: imageModel,
+            prompt,
+            n: 1,
+            size: input.size ?? "1024x1024",
+            response_format: "b64_json",
+          }),
+        });
+      } catch {
+        throw new AccessError(400, "Провайдер изображений недоступен. Это не замена картинки.");
+      }
+
+      if (!response.ok) {
+        throw new AccessError(400, `Провайдер изображений вернул ошибку ${response.status}. Ключ в ответ не попадает.`);
+      }
+
+      const json = (await response.json()) as ImageResponse;
+      const encoded = json.data?.[0]?.b64_json;
+      if (!encoded || typeof encoded !== "string") {
+        throw new AccessError(400, "Провайдер изображений не вернул файл. Это не замена картинки.");
+      }
+
+      let bytes: Uint8Array;
+      try {
+        bytes = Uint8Array.from(Buffer.from(encoded, "base64"));
+      } catch {
+        throw new AccessError(400, "Провайдер изображений вернул повреждённые данные.");
+      }
+
+      if (bytes.byteLength === 0 || bytes.byteLength > MAX_MEDIA_BYTES) {
+        throw new AccessError(400, "Сгенерированное изображение пустое или больше 8 МБ.");
+      }
+
+      const mimeType = detectMediaType(bytes);
+      if (!mimeType) {
+        throw new AccessError(400, "Провайдер вернул файл, который нельзя сохранить как изображение.");
+      }
+
+      return {
+        bytes,
+        mimeType,
+        provider: "openai-compatible",
+        model: imageModel,
       };
     },
   };

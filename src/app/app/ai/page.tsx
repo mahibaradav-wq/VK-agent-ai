@@ -11,7 +11,7 @@ import { prisma } from "@/server/db/prisma";
 
 export const metadata = createPageMetadata({
   title: "AI-ассистент",
-  description: "Генерация идей, постов, заголовков, CTA и хештегов. Ключ провайдера только на сервере.",
+  description: "Агент пишет пост и визуал, либо отдельно генерирует идеи и тексты. Ключ провайдера только на сервере.",
   path: "/app/ai",
 });
 
@@ -36,7 +36,7 @@ export default async function AiPage() {
       <PageHeader
         eyebrow="AI"
         title="Ассистент контента"
-        description="Идеи, посты, заголовки, CTA и хештеги с учётом тона, длины и платформы. Без ключа провайдера генерация не имитируется."
+        description="Агент создаёт пост с визуалом в активный проект. Отдельно можно сгенерировать только текст. Без ключа провайдера генерация не имитируется."
       />
       <Container className="pb-20">
         <AiStudio
@@ -45,8 +45,11 @@ export default async function AiPage() {
           canGenerate={hasPermission(activeMembership.role, "ai.generate")}
           canApply={hasPermission(activeMembership.role, "post.create")}
           ready={status.ready}
+          imageReady={status.imageReady}
+          storageReady={status.storageReady}
           provider={status.provider}
           model={status.model}
+          imageModel={status.imageModel}
           used={usage.used}
           limit={usage.limit}
           history={history.map((item) => ({

@@ -52,3 +52,13 @@ export function parseTone(value: string): AiTone {
 export function parseLength(value: string): AiLength {
   return pick(value, aiLengths, "medium", "длины");
 }
+
+export function displayKind(kind: string) {
+  if (kind === "agent") {
+    return "Агент: пост + визуал";
+  }
+  if ((aiKinds as readonly string[]).includes(kind)) {
+    return kindLabels[kind as AiKind];
+  }
+  return kind;
+}
