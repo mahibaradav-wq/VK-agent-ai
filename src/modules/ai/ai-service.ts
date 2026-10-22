@@ -3,6 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import { parseKind, parseLength, parseTone } from "@/modules/ai/kinds";
+import { createAiConnectionService } from "@/modules/ai/provider-service";
 import { getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { getUsage, releaseUsage, reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
 import { createMediaService } from "@/modules/media/media-service";
@@ -104,6 +105,7 @@ export function createAiService(
   db: PrismaClient,
   options?: {
     provider?: AiProvider;
+    connections?: ReturnType<typeof createAiConnectionService>;
     storage?: StorageDriver;
     monthlyLimit?: number;
     now?: () => Date;
@@ -113,9 +115,17 @@ export function createAiService(
   const posts = createPostService(db);
   const storageDriver = options?.storage ?? defaultStorage;
   const media = createMediaService(db, storageDriver);
-  const provider = options?.provider ?? getAiProvider();
+  const connections = options?.connections ?? createAiConnectionService(db);
+  const injected = options?.provider;
   const monthlyLimit = options?.monthlyLimit ?? Number(process.env.AI_MONTHLY_LIMIT ?? DEFAULT_MONTHLY_LIMIT);
   const now = options?.now ?? (() => new Date());
+
+  async function providerFor(workspaceId: string) {
+    if (injected) {
+      return injected;
+    }
+    return connections.resolveProvider(workspaceId);
+  }
 
   async function loadBoundRequest(workspaceId: string, requestId: string) {
     const row = await db.aIRequest.findUnique({ where: { id: requestId } });
@@ -136,6 +146,7 @@ export function createAiService(
 
   return {
     status() {
+      const provider = injected ?? getAiProvider();
       return {
         ready: provider.ready,
         imageReady: provider.imageReady,
@@ -143,6 +154,20 @@ export function createAiService(
         provider: provider.name,
         model: provider.ready ? provider.model : "не настроен",
         imageModel: provider.imageReady ? provider.imageModel : "не настроен",
+      };
+    },
+
+    async workspaceStatus(userId: string, workspaceId: string) {
+      const connection = await connections.get(userId, workspaceId);
+      const provider = await providerFor(workspaceId);
+      return {
+        ready: provider.ready,
+        imageReady: provider.imageReady,
+        storageReady: storageDriver.ready,
+        provider: provider.name,
+        model: provider.ready ? provider.model : "не настроен",
+        imageModel: provider.imageReady ? provider.imageModel : "не настроен",
+        connection,
       };
     },
 
@@ -180,10 +205,11 @@ export function createAiService(
         const project = await db.project.findUnique({ where: { id: input.projectId } });
         assertWorkspaceBound(workspaceId, project, "Проект");
       }
+      const provider = await providerFor(workspaceId);
       if (!provider.ready) {
         throw new AccessError(
           400,
-          "Генерация недоступна: требуется настройка интеграции AI. Это не ответ модели.",
+          "Генерация недоступна: подключите ChatGPT, DeepSeek или Qwen. Это не ответ модели.",
         );
       }
 
@@ -282,10 +308,17 @@ export function createAiService(
       const length = parseLength(input.length ?? "");
       const platform = input.platform ? parsePlatforms([input.platform])[0] ?? "" : "";
 
-      if (!provider.ready || !provider.imageReady) {
+      const provider = await providerFor(workspaceId);
+      if (!provider.ready) {
         throw new AccessError(
           400,
-          "Генерация поста и визуала недоступна: требуется настройка интеграции AI. Это не ответ модели.",
+          "Генерация поста и визуала недоступна: подключите ChatGPT или Qwen. Это не ответ модели.",
+        );
+      }
+      if (!provider.imageReady) {
+        throw new AccessError(
+          400,
+          "Этот провайдер не генерирует картинки. Для визуала подключите ChatGPT или Qwen.",
         );
       }
       if (!storageDriver.ready) {

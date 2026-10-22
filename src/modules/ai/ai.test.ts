@@ -132,7 +132,7 @@ describe("AI assistant", () => {
     await expectAccess(
       ai.generate(owner.userId, owner.workspaceId, { kind: "post", prompt: "борщ" }),
       400,
-      /требуется настройка интеграции AI/,
+      /подключите ChatGPT, DeepSeek или Qwen/,
     );
     expect(await prisma.aIRequest.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
     const usage = await ai.usage(owner.userId, owner.workspaceId);
@@ -254,7 +254,7 @@ describe("AI assistant", () => {
         projectId: owner.projectId,
       }),
       400,
-      /требуется настройка интеграции AI/,
+      /подключите ChatGPT или Qwen/,
     );
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
     expect(await prisma.mediaAsset.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
@@ -393,5 +393,29 @@ describe("AI assistant", () => {
         }),
     });
     await expectAccess(junk.generateImage({ prompt: "мусор" }), 400, /нельзя сохранить как изображение/);
+  });
+
+  it("accepts an HTTPS image URL when the provider does not return b64", async () => {
+    const provider = createOpenAiCompatibleProvider({
+      apiKey: "sk-test-secret-key",
+      baseUrl: "https://dashscope.test/v1",
+      model: "qwen-plus",
+      imageModel: "qwen-image-plus",
+      name: "qwen",
+      fetchImpl: async (url) => {
+        if (String(url).endsWith("/images/generations")) {
+          return new Response(JSON.stringify({ data: [{ url: "https://cdn.example.test/visual.png" }] }), {
+            status: 200,
+          });
+        }
+        if (String(url) === "https://cdn.example.test/visual.png") {
+          return new Response(png, { status: 200 });
+        }
+        return new Response("{}", { status: 500 });
+      },
+    });
+    const image = await provider.generateImage({ prompt: "тарелка борща" });
+    expect(image.provider).toBe("qwen");
+    expect(image.mimeType).toBe("image/png");
   });
 });

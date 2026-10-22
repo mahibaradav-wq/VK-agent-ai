@@ -13,6 +13,7 @@ export type {
   AiTone,
 } from "@/server/ai/types";
 export { aiKinds, aiLengths, aiTones } from "@/server/ai/types";
+export { aiProviderCatalog, aiProviderIds, getAiProviderSpec } from "@/server/ai/catalog";
 export { createOpenAiCompatibleProvider } from "@/server/ai/openai-compatible";
 export { createUnconfiguredAiProvider } from "@/server/ai/unconfigured";
 

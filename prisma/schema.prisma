@@ -41,6 +41,7 @@ model User {
   notifications       Notification[]
   projectAccesses     ProjectAccess[]
   platformAdmin       PlatformAdmin?
+  aiConnections       WorkspaceAiConnection[]
 }
 
 model Account {
@@ -111,6 +112,7 @@ model Workspace {
   subscription        Subscription?
   checkoutSessions    CheckoutSession[]
   paymentEvents       PaymentEvent[]
+  aiConnection        WorkspaceAiConnection?
 }
 
 model WorkspaceMember {
@@ -412,6 +414,24 @@ model AIRequest {
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, createdAt])
+}
+
+model WorkspaceAiConnection {
+  id              String   @id @default(cuid())
+  workspaceId     String   @unique
+  provider        String
+  encryptedApiKey String   @db.Text
+  model           String
+  imageModel      String   @default("")
+  status          String   @default("connected")
+  lastError       String?  @db.Text
+  connectedById   String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  connectedBy     User      @relation(fields: [connectedById], references: [id], onDelete: Cascade)
+
+  @@index([connectedById])
 }
 
 model UsageRecord {

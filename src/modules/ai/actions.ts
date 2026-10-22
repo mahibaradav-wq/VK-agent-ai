@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AccessError } from "@/modules/access/permissions";
 import { createAiService } from "@/modules/ai/ai-service";
+import { createAiConnectionService } from "@/modules/ai/provider-service";
 import { prisma } from "@/server/db/prisma";
 
 export type AiFormState = {
@@ -69,6 +70,41 @@ export async function applyAiToPost(formData: FormData) {
     readField(formData, "projectId"),
   );
   redirect(`/app/posts/${post.id}`);
+}
+
+export async function connectAiProvider(_prev: AiFormState, formData: FormData): Promise<AiFormState> {
+  try {
+    const connection = await createAiConnectionService(prisma).connect(
+      await requireUserId(),
+      readField(formData, "workspaceId"),
+      {
+        provider: readField(formData, "provider"),
+        apiKey: readField(formData, "apiKey"),
+      },
+    );
+    revalidatePath("/app/ai");
+    return {
+      status: "success",
+      message: `${connection.label} подключён. Ключ зашифрован на сервере и во frontend не возвращается.`,
+    };
+  } catch (error) {
+    const message = error instanceof AccessError ? error.message : "Не удалось подключить AI.";
+    return { status: "invalid", message };
+  }
+}
+
+export async function disconnectAiProvider(_prev: AiFormState, formData: FormData): Promise<AiFormState> {
+  try {
+    await createAiConnectionService(prisma).disconnect(
+      await requireUserId(),
+      readField(formData, "workspaceId"),
+    );
+    revalidatePath("/app/ai");
+    return { status: "success", message: "AI-провайдер отключён. Генерация больше не имитируется." };
+  } catch (error) {
+    const message = error instanceof AccessError ? error.message : "Не удалось отключить AI.";
+    return { status: "invalid", message };
+  }
 }
 
 export async function composeAgentPost(_prev: AiFormState, formData: FormData): Promise<AiFormState> {

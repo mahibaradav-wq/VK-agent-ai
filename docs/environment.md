@@ -25,7 +25,7 @@
 |---|---|---|
 | `TOKEN_ENCRYPTION_KEY` | Ключ AES для токенов соцаккаунтов | Берётся `AUTH_SECRET` |
 | `REDIS_URL` + `QUEUE_DRIVER=redis` | BullMQ | Задачи пишутся в PostgreSQL, диспетчер Redis не стартует |
-| `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_IMAGE_MODEL`, `AI_MONTHLY_LIMIT` | AI-ассистент и визуал агента | UI показывает настройку |
+| `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_IMAGE_MODEL`, `AI_MONTHLY_LIMIT` | запасной AI, если в кабинете нет ключа | UI предлагает подключить ChatGPT / DeepSeek / Qwen |
 | `BILLING_WEBHOOK_SECRET` | HMAC оплаты | Checkout не имитирует оплату |
 | `ADMIN_EMAILS` | Email через запятую → Superadmin при первом заходе в `/admin` | Админка пуста, пока роль не выдана |
 | `EMAIL_API_KEY`, `EMAIL_API_URL`, `EMAIL_FROM` | Внешняя почта уведомлений | Без mailbox и без ключа письмо не отправляется |
