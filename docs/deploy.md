@@ -13,7 +13,7 @@ npm install
 npm run dev
 ```
 
-Откройте `http://localhost:3000`. Письма — `/dev/mailbox`. Очередь worker:
+Откройте `http://localhost:3000`. На Windows достаточно `start.bat` (PostgreSQL через Docker, миграции, `npm run dev`). Письма — `/dev/mailbox`. Очередь worker:
 
 ```bash
 npm run worker

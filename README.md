@@ -12,30 +12,27 @@ SaaS-платформа для планирования публикаций, AI
 
 ## Windows
 
-Я не могу установить программы на ваш компьютер удалённо. На Windows запустите установку сами:
+Сайт на `127.0.0.1` открывается только на том компьютере, где сейчас запущен `start.bat`. Облачный агент Cursor — другой компьютер: его localhost до вашего Chrome не достучаться.
 
-1. Скачайте репозиторий и откройте папку проекта.
-2. Дважды нажмите `setup.bat`.
+Ошибка «Сайт 127.0.0.1 не позволяет установить соединение» значит: на вашем ПК нет процесса на порту 3000 (окно сервера закрыто, Docker не запущен, или открыт адрес без `:3000`).
 
-Скрипт поставит Git и Node.js LTS через `winget`, переключит ветку `cursor/saas-stage-one-ee77` и выполнит `npm install`.
-
-После этого в новом PowerShell:
-
-```powershell
-cd путь\к\VK-agent-ai
-npm run dev
-```
-
-Откройте:
+1. Поставьте [Docker Desktop](https://www.docker.com/products/docker-desktop/) и дождитесь, пока он запустится.
+2. Скачайте репозиторий и откройте папку проекта.
+3. Один раз: `setup.bat` (Git, Node.js LTS, `npm install`).
+4. Каждый запуск: `start.bat`. Не закрывайте чёрное окно.
+5. Когда в окне появится `Ready`, откройте:
 
 ```text
 http://localhost:3000
 ```
 
+Письма подтверждения: `http://localhost:3000/dev/mailbox`. Жив ли сервер: `http://localhost:3000/api/health`.
+
 Если `winget` недоступен, поставьте вручную:
 
 - Git: https://git-scm.com/download/win
 - Node.js LTS: https://nodejs.org
+- Docker Desktop: https://www.docker.com/products/docker-desktop/
 
 ## База данных
 

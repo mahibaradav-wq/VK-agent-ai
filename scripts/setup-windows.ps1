@@ -34,7 +34,14 @@ if (Test-Path (Join-Path $root ".git")) {
 Write-Host "Устанавливаю зависимости npm..."
 npm install
 
+if (-not (Test-Command "docker")) {
+  Write-Host ""
+  Write-Host "Docker Desktop не найден. Он нужен для PostgreSQL." -ForegroundColor Yellow
+  Write-Host "Скачайте: https://www.docker.com/products/docker-desktop/"
+  Write-Host "После установки откройте Docker Desktop и дождитесь зелёного статуса."
+}
+
 Write-Host ""
-Write-Host "Готово. Запуск:" -ForegroundColor Green
-Write-Host "  npm run dev"
-Write-Host "Затем откройте http://localhost:3000"
+Write-Host "Установка зависимостей готова. Это ещё не запуск сайта." -ForegroundColor Green
+Write-Host "Дважды нажмите start.bat в папке проекта."
+Write-Host "Затем в браузере откройте именно http://localhost:3000"
