@@ -10,7 +10,7 @@ const TOKEN_TTL_MS = 1000 * 60 * 60;
 
 export type AuthServiceResult =
   | { ok: true; message: string; mailboxUrl?: string; email?: string }
-  | { ok: false; message: string };
+  | { ok: false; message: string; email?: string };
 
 export function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -105,15 +105,68 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
       }
     },
 
-    async verifyEmail(token: string): Promise<AuthServiceResult> {
+    async findMailboxUser(token: string) {
       if (!token) {
-        return { ok: false, message: "Токен подтверждения отсутствует." };
+        return null;
+      }
+      const mail = await db.devMailMessage.findFirst({
+        where: { kind: "verify_email", url: { contains: token } },
+        orderBy: { createdAt: "desc" },
+      });
+      if (!mail) {
+        return null;
+      }
+      return db.user.findUnique({ where: { email: mail.to } });
+    },
+
+    async inspectEmailToken(token: string) {
+      if (!token) {
+        return { status: "missing" as const, message: "Токен подтверждения отсутствует." };
+      }
+      const record = await db.verificationToken.findUnique({
+        where: { token: hashToken(token) },
+      });
+      if (record && record.expires >= new Date()) {
+        return {
+          status: "pending" as const,
+          email: record.identifier,
+          message: "Нажмите кнопку ниже, чтобы подтвердить email и открыть вход.",
+        };
+      }
+      const known = await this.findMailboxUser(token);
+      if (known?.emailVerified) {
+        return {
+          status: "already" as const,
+          email: known.email,
+          message: "Email уже подтверждён. Войдите в кабинет.",
+        };
+      }
+      if (record && record.expires < new Date()) {
+        return {
+          status: "expired" as const,
+          email: record.identifier,
+          message: "Ссылка устарела. Запросите новое письмо подтверждения.",
+        };
+      }
+      return {
+        status: "invalid" as const,
+        email: known?.email,
+        message: "Токен подтверждения недействителен или уже использован. Если почтовый стенд только что открывался, войдите — адрес мог подтвердиться заранее.",
+      };
+    },
+
+    async verifyEmail(token: string): Promise<AuthServiceResult> {
+      const inspected = await this.inspectEmailToken(token);
+      if (inspected.status === "already" && inspected.email) {
+        return { ok: true, message: inspected.message, email: inspected.email };
+      }
+      if (inspected.status !== "pending" || !inspected.email) {
+        return { ok: false, message: inspected.message, ...(inspected.email ? { email: inspected.email } : {}) };
       }
 
       const record = await db.verificationToken.findUnique({
         where: { token: hashToken(token) },
       });
-
       if (!record || record.expires < new Date()) {
         return { ok: false, message: "Токен подтверждения недействителен или просрочен." };
       }
@@ -129,6 +182,50 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
       await writeAudit("VERIFY_EMAIL", user.id, user.id);
 
       return { ok: true, message: "Email подтверждён. Войдите в кабинет.", email: user.email };
+    },
+
+    async resendVerification(email: string): Promise<AuthServiceResult> {
+      const normalizedEmail = email.trim().toLowerCase();
+      if (!isValidEmail(normalizedEmail)) {
+        return { ok: false, message: "Укажите корректный email." };
+      }
+      const user = await db.user.findUnique({ where: { email: normalizedEmail } });
+      if (!user) {
+        return {
+          ok: true,
+          message: "Если аккаунт существует, новое письмо появится в локальном почтовом стенде.",
+          mailboxUrl: "/dev/mailbox",
+        };
+      }
+      if (user.emailVerified) {
+        return { ok: true, message: "Email уже подтверждён. Войдите в кабинет.", email: user.email };
+      }
+      const token = randomBytes(32).toString("hex");
+      await db.$transaction([
+        db.verificationToken.deleteMany({ where: { identifier: normalizedEmail } }),
+        db.verificationToken.create({
+          data: {
+            identifier: normalizedEmail,
+            token: hashToken(token),
+            expires: new Date(Date.now() + TOKEN_TTL_MS),
+          },
+        }),
+        db.devMailMessage.create({
+          data: {
+            to: normalizedEmail,
+            subject: "Подтверждение email",
+            body: "Откройте ссылку из локального почтового стенда, чтобы подтвердить адрес.",
+            url: `/verify-email?token=${token}`,
+            kind: "verify_email",
+          },
+        }),
+      ]);
+      return {
+        ok: true,
+        message: "Новое письмо подтверждения лежит в локальном почтовом стенде.",
+        mailboxUrl: "/dev/mailbox",
+        email: normalizedEmail,
+      };
     },
 
     async requestPasswordReset(email: string): Promise<AuthServiceResult> {

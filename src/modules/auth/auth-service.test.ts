@@ -52,6 +52,38 @@ describe("auth service", () => {
     expect(result.message).toContain("недействителен");
   });
 
+  it("does not consume a token when the mailbox page is only inspected", async () => {
+    const address = email("peek");
+    await auth.register(address, "password123");
+    const mail = await prisma.devMailMessage.findFirstOrThrow({
+      where: { to: address, kind: "verify_email" },
+    });
+    const token = mailboxToken(mail.url);
+    const first = await auth.inspectEmailToken(token);
+    const second = await auth.inspectEmailToken(token);
+    expect(first.status).toBe("pending");
+    expect(second.status).toBe("pending");
+    expect((await prisma.verificationToken.count({ where: { identifier: address } }))).toBe(1);
+    const verified = await auth.verifyEmail(token);
+    expect(verified.ok).toBe(true);
+  });
+
+  it("treats a second click as already verified instead of a dead token", async () => {
+    const address = email("twice");
+    await auth.register(address, "password123");
+    const mail = await prisma.devMailMessage.findFirstOrThrow({
+      where: { to: address, kind: "verify_email" },
+    });
+    const token = mailboxToken(mail.url);
+    expect((await auth.verifyEmail(token)).ok).toBe(true);
+    const again = await auth.verifyEmail(token);
+    expect(again.ok).toBe(true);
+    if (again.ok) {
+      expect(again.email).toBe(address);
+      expect(again.message).toContain("уже подтверждён");
+    }
+  });
+
   it("verifies email from the local mailbox token", async () => {
     const address = email("verify");
     await auth.register(address, "password123");

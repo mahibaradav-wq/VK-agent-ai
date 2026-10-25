@@ -1,10 +1,11 @@
-import { ButtonLink } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { PageHeader } from "@/components/marketing/page-header";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { createPageMetadata } from "@/lib/metadata";
-import { mailboxActionUrl } from "@/lib/mailbox-url";
+import { mailboxActionUrl, mailboxToken } from "@/lib/mailbox-url";
+import { confirmMailboxEmail } from "@/modules/auth/actions";
 import { isDevMailboxEnabled, listDevMail } from "@/server/mail/dev-mailbox";
 
 export const metadata = createPageMetadata({
@@ -68,9 +69,16 @@ export default async function DevMailboxPage() {
               <h2 className="mt-2 text-xl font-black text-ink">{message.subject}</h2>
               <p className="mt-2 text-sm text-ink/60">Кому: {message.to}</p>
               <p className="mt-3 leading-7 text-ink/70">{message.body}</p>
-              {href ? (
+              {message.kind === "verify_email" && mailboxToken(message.url) ? (
+                <form action={confirmMailboxEmail} className="mt-5">
+                  <input type="hidden" name="token" value={mailboxToken(message.url)} />
+                  <Button>{copy.action}</Button>
+                </form>
+              ) : href ? (
                 <div className="mt-5">
-                  <ButtonLink href={href}>{copy.action}</ButtonLink>
+                  <ButtonLink href={href} prefetch={false}>
+                    {copy.action}
+                  </ButtonLink>
                 </div>
               ) : null}
             </Card>

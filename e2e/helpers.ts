@@ -10,11 +10,11 @@ export async function registerVerifyAndLogin(page: Page, label = "e2e") {
   await expect(page.getByText("Аккаунт создан")).toBeVisible({ timeout: 15_000 });
 
   await page.goto("/dev/mailbox");
-  const verifyLink = page
+  const verifyButton = page
     .locator(`[data-mail-to="${email}"]`)
-    .getByRole("link", { name: /подтвердить email и открыть вход/i });
-  await expect(verifyLink).toBeVisible();
-  await verifyLink.click();
+    .getByRole("button", { name: /подтвердить email и открыть вход/i });
+  await expect(verifyButton).toBeVisible();
+  await verifyButton.click();
   await expect(page.getByText("Email подтверждён")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: "Войти" })).toBeVisible();
 

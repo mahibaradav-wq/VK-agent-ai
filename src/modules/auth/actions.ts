@@ -1,6 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 
 import { signIn, signOut } from "@/auth";
 import { createAuthService } from "@/modules/auth/auth-service";
@@ -117,7 +118,40 @@ export async function verifyEmailToken(token: string): Promise<AuthFormState> {
   return {
     status: result.ok ? "success" : "invalid",
     message: result.message,
-    email: result.ok ? result.email : undefined,
+    email: result.email,
+  };
+}
+
+export async function inspectEmailToken(token: string) {
+  return service().inspectEmailToken(token);
+}
+
+export async function confirmMailboxEmail(formData: FormData) {
+  const token = readField(formData, "token");
+  const result = await service().verifyEmail(token);
+  if (result.ok && result.email) {
+    redirect(`/verify-email?confirmed=1&email=${encodeURIComponent(result.email)}`);
+  }
+  const email = result.email ? `&email=${encodeURIComponent(result.email)}` : "";
+  redirect(`/verify-email?error=1${email}`);
+}
+
+export async function resendVerification(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
+  const email = readField(formData, "email");
+  const gate = consumeRateLimit(
+    await clientKey("resend", email.toLowerCase()),
+    AUTH_RATE_LIMITS.reset.limit,
+    AUTH_RATE_LIMITS.reset.windowMs,
+  );
+  if (!gate.ok) {
+    return rateLimited;
+  }
+  const result = await service().resendVerification(email);
+  return {
+    status: result.ok ? "success" : "invalid",
+    message: result.message,
+    mailboxUrl: result.ok ? result.mailboxUrl : undefined,
+    email: result.email,
   };
 }
 

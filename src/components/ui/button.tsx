@@ -18,11 +18,12 @@ type ButtonLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
   href: string;
   children: ReactNode;
   variant?: ButtonVariant;
+  prefetch?: boolean;
 };
 
-export function ButtonLink({ href, children, className, variant = "primary", ...props }: ButtonLinkProps) {
+export function ButtonLink({ href, children, className, variant = "primary", prefetch = false, ...props }: ButtonLinkProps) {
   return (
-    <Link href={href} className={cn(baseClass, variants[variant], className)} {...props}>
+    <Link href={href} prefetch={prefetch} className={cn(baseClass, variants[variant], className)} {...props}>
       {children}
     </Link>
   );
