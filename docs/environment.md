@@ -9,6 +9,9 @@
 | `DATABASE_URL` | PostgreSQL. Пример: `postgresql://polka:пароль@localhost:5432/polka_social` |
 | `AUTH_SECRET` | Секрет сессий Auth.js, минимум 32 случайных символа |
 | `NEXT_PUBLIC_SITE_URL` | Публичный URL сайта, без завершающего `/` |
+| `AUTH_URL` | Тот же публичный URL для Auth.js и писем. На хостинге равен `https://ваш-домен` |
+| `SITE_DOMAIN` | Домен без `https://`, только для `docker-compose.prod.yml` и Caddy |
+| `ACME_EMAIL` | Почта для Let's Encrypt. Caddy выпускает HTTPS-сертификат |
 
 ## Локальная разработка
 

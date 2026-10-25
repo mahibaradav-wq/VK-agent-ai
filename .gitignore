@@ -4,6 +4,7 @@ out/
 dist/
 coverage/
 .env
+.env.production
 .env*.local
 *.log
 .DS_Store
