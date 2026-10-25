@@ -240,11 +240,11 @@ export function createPublishService(
     },
 
     async publishNow(userId: string, workspaceId: string, postId: string) {
-      const membership = await access.requirePermission(userId, workspaceId, "post.approve");
-      await access.requirePermission(userId, workspaceId, "post.update");
+      const membership = await access.requirePermission(userId, workspaceId, "post.update");
       if (membership.role !== "Owner" && membership.role !== "Admin") {
         throw new AccessError(403, "Опубликовать сразу могут Owner и Admin. Editor отправляет на согласование.");
       }
+      await access.requirePermission(userId, workspaceId, "post.approve");
 
       let post = await loadBoundPost(workspaceId, postId);
       if (post.targets.length === 0) {
