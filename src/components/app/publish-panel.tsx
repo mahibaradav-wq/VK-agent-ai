@@ -6,6 +6,7 @@ export function PublishPanel({
   postId,
   postStatus,
   canEnqueue,
+  canPublishNow,
   targets,
   job,
 }: {
@@ -13,6 +14,7 @@ export function PublishPanel({
   postId: string;
   postStatus: string;
   canEnqueue: boolean;
+  canPublishNow: boolean;
   targets: Array<{ platform: string; status: string; lastError: string | null }>;
   job: {
     status: string;
@@ -24,8 +26,8 @@ export function PublishPanel({
 }) {
   return (
     <Card className="grid gap-3">
-      <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Очередь публикации</p>
-      <p className="text-sm text-ink/70">Статус поста: {postStatus}</p>
+      <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Публикация</p>
+      <p className="text-sm text-ink/70">Статус поста: {postStatus}. Telegram подставится сам, если цель не отмечена.</p>
       <p className="text-sm text-ink/70">
         Цели: {targets.map((target) => `${target.platform}:${target.status}`).join(", ") || "не выбраны"}
       </p>
@@ -48,9 +50,16 @@ export function PublishPanel({
         <p className="text-sm text-ink/60">Задачи ещё нет. Очередь создаст PublishJob с уникальным ключом версии.</p>
       )}
       <p className="text-xs text-ink/60">
-        Очередь принимает только согласованную версию. Без официальной интеграции адаптер не имитирует успех.
+        Owner и Admin могут опубликовать сразу. Editor по-прежнему идёт через согласование. Без официальной интеграции
+        адаптер не имитирует успех.
       </p>
-      <EnqueueForm workspaceId={workspaceId} postId={postId} canEnqueue={canEnqueue} postStatus={postStatus} />
+      <EnqueueForm
+        workspaceId={workspaceId}
+        postId={postId}
+        canEnqueue={canEnqueue}
+        canPublishNow={canPublishNow}
+        postStatus={postStatus}
+      />
     </Card>
   );
 }

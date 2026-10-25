@@ -34,6 +34,29 @@ function revalidatePublish(postId?: string) {
   }
 }
 
+export async function publishNowPost(_prev: PublishFormState, formData: FormData): Promise<PublishFormState> {
+  const postId = readField(formData, "postId");
+  try {
+    const job = await createPublishService(prisma).publishNow(
+      await requireUserId(),
+      readField(formData, "workspaceId"),
+      postId,
+    );
+    revalidatePublish(postId);
+    const attempt = job?.attempts[0];
+    const outcome =
+      attempt?.kind === "success"
+        ? "Пост ушёл в Telegram."
+        : attempt?.errorCode
+          ? `Очередь обработана: ${attempt.kind} (${attempt.errorCode}).`
+          : `Задача ${job?.status ?? "обработана"}.`;
+    return { status: "success", message: outcome };
+  } catch (error) {
+    const message = error instanceof AccessError ? error.message : "Не удалось опубликовать сейчас.";
+    return { status: "invalid", message };
+  }
+}
+
 export async function enqueuePost(_prev: PublishFormState, formData: FormData): Promise<PublishFormState> {
   const postId = readField(formData, "postId");
   try {

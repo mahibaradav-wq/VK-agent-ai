@@ -46,28 +46,36 @@ export default async function PostEditorPage({ params }: { params: Promise<{ id:
     const canEnqueue =
       hasPermission(activeMembership.role, "post.update") &&
       ["approved", "scheduled", "failed"].includes(post.status);
+    const canPublishNow =
+      hasPermission(activeMembership.role, "post.approve") &&
+      hasPermission(activeMembership.role, "post.update") &&
+      ["draft", "pending_approval", "approved", "scheduled", "failed"].includes(post.status);
 
     return (
       <>
         <PageHeader
           eyebrow="Редактор"
           title={version?.title ?? "Черновик"}
-          description="В очередь уходит только согласованная текущая версия. Изменение текста сбрасывает approval."
+          description="Напишите текст, сохраните, затем «Опубликовать сейчас». Согласование нужно только команде."
         />
         <Container className="grid gap-6 pb-20">
-          <ApprovalPanel
+          <PostEditor
             workspaceId={activeMembership.workspaceId}
             postId={post.id}
-            postStatus={post.status}
-            canSubmit={hasPermission(activeMembership.role, "post.update")}
-            canApprove={hasPermission(activeMembership.role, "post.approve")}
-            versionLabel={version ? `версия ${version.number}` : "нет версии"}
+            versionNumber={version?.number ?? 1}
+            title={version?.title ?? ""}
+            body={version?.body ?? ""}
+            platforms={post.targets.map((target) => target.platform)}
+            media={media.map((item) => ({ id: item.id, originalName: item.originalName, mimeType: item.mimeType }))}
+            selectedMediaIds={post.media.map((item) => item.mediaId)}
+            canEdit={canEdit}
           />
           <PublishPanel
             workspaceId={activeMembership.workspaceId}
             postId={post.id}
             postStatus={post.status}
             canEnqueue={canEnqueue}
+            canPublishNow={canPublishNow}
             targets={post.targets.map((target) => ({
               platform: target.platform,
               status: target.status,
@@ -90,17 +98,16 @@ export default async function PostEditorPage({ params }: { params: Promise<{ id:
                 : null
             }
           />
-          <PostEditor
-            workspaceId={activeMembership.workspaceId}
-            postId={post.id}
-            versionNumber={version?.number ?? 1}
-            title={version?.title ?? ""}
-            body={version?.body ?? ""}
-            platforms={post.targets.map((target) => target.platform)}
-            media={media.map((item) => ({ id: item.id, originalName: item.originalName, mimeType: item.mimeType }))}
-            selectedMediaIds={post.media.map((item) => item.mediaId)}
-            canEdit={canEdit}
-          />
+          {canPublishNow ? null : (
+            <ApprovalPanel
+              workspaceId={activeMembership.workspaceId}
+              postId={post.id}
+              postStatus={post.status}
+              canSubmit={hasPermission(activeMembership.role, "post.update")}
+              canApprove={hasPermission(activeMembership.role, "post.approve")}
+              versionLabel={version ? `версия ${version.number}` : "нет версии"}
+            />
+          )}
           <CommentThread
             workspaceId={activeMembership.workspaceId}
             postId={post.id}
