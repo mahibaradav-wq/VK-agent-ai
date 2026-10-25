@@ -28,11 +28,17 @@ describe("auth service", () => {
       where: { email: address },
       include: { memberships: true },
     });
+    const starter = user?.memberships[0]?.workspaceId
+      ? await prisma.project.findFirst({
+          where: { workspaceId: user.memberships[0].workspaceId, archivedAt: null },
+        })
+      : null;
 
     expect(first.ok).toBe(true);
     expect(second.ok).toBe(false);
     expect(second.message).toContain("занят");
     expect(user?.memberships[0]?.role).toBe("Owner");
+    expect(starter?.name).toBe("Первый проект");
   });
 
   it("rejects login before email verification", async () => {
