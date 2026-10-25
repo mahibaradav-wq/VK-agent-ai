@@ -1,5 +1,5 @@
-import Link from "next/link";
-
+import { LoginForm } from "@/components/auth/login-form";
+import { ButtonLink } from "@/components/ui/button";
 import { PageHeader } from "@/components/marketing/page-header";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { Container } from "@/components/ui/container";
@@ -20,20 +20,24 @@ export default async function VerifyEmailPage({
   const { token } = await searchParams;
   const result = token
     ? await verifyEmailToken(token)
-    : { status: "invalid" as const, message: "Токен подтверждения отсутствует." };
+    : { status: "invalid" as const, message: "Токен подтверждения отсутствует.", email: undefined };
 
   return (
     <>
       <PageHeader
         eyebrow="Email"
         title="Подтверждение адреса"
-        description="Токен проверяется на сервере. Повторно использовать просроченную ссылку нельзя."
+        description="После подтверждения сразу открывается форма входа. Повторно использовать ссылку нельзя."
       />
       <Container className="grid max-w-xl gap-6 pb-20">
         <StatusBanner tone={result.status === "success" ? "success" : "warning"}>{result.message}</StatusBanner>
-        <Link href="/login" className="text-sm font-semibold text-brand-dark">
-          Перейти ко входу
-        </Link>
+        {result.status === "success" ? (
+          <LoginForm email={result.email} />
+        ) : (
+          <ButtonLink href="/dev/mailbox" variant="secondary">
+            Открыть локальный почтовый стенд
+          </ButtonLink>
+        )}
       </Container>
     </>
   );

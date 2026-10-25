@@ -9,7 +9,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TOKEN_TTL_MS = 1000 * 60 * 60;
 
 export type AuthServiceResult =
-  | { ok: true; message: string; mailboxUrl?: string }
+  | { ok: true; message: string; mailboxUrl?: string; email?: string }
   | { ok: false; message: string };
 
 export function hashToken(token: string) {
@@ -20,7 +20,7 @@ export function isValidEmail(email: string) {
   return EMAIL_RE.test(email);
 }
 
-export function createAuthService(db: PrismaClient, siteUrl: string) {
+export function createAuthService(db: PrismaClient, _siteUrl: string) {
   async function writeAudit(action: string, entityId: string, actorId?: string, details?: string) {
     await db.auditLog.create({
       data: {
@@ -81,7 +81,7 @@ export function createAuthService(db: PrismaClient, siteUrl: string) {
               to: normalizedEmail,
               subject: "Подтверждение email",
               body: "Откройте ссылку из локального почтового стенда, чтобы подтвердить адрес.",
-              url: `${siteUrl}/verify-email?token=${token}`,
+              url: `/verify-email?token=${token}`,
               kind: "verify_email",
             },
           });
@@ -128,7 +128,7 @@ export function createAuthService(db: PrismaClient, siteUrl: string) {
       });
       await writeAudit("VERIFY_EMAIL", user.id, user.id);
 
-      return { ok: true, message: "Email подтверждён. Теперь можно войти." };
+      return { ok: true, message: "Email подтверждён. Войдите в кабинет.", email: user.email };
     },
 
     async requestPasswordReset(email: string): Promise<AuthServiceResult> {
@@ -154,7 +154,7 @@ export function createAuthService(db: PrismaClient, siteUrl: string) {
             to: normalizedEmail,
             subject: "Сброс пароля",
             body: "Откройте ссылку из локального почтового стенда, чтобы задать новый пароль.",
-            url: `${siteUrl}/reset-password?token=${token}`,
+            url: `/reset-password?token=${token}`,
             kind: "reset_password",
           },
         });

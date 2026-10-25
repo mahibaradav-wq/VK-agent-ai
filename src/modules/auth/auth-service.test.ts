@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { mailboxToken } from "@/lib/mailbox-url";
 import { createAuthService, hashToken } from "@/modules/auth/auth-service";
 import { prisma } from "@/server/db/prisma";
 
@@ -58,11 +59,15 @@ describe("auth service", () => {
       where: { to: address, kind: "verify_email" },
       orderBy: { createdAt: "desc" },
     });
-    const token = new URL(mail?.url ?? "").searchParams.get("token") ?? "";
+    const token = mailboxToken(mail?.url);
     const verified = await auth.verifyEmail(token);
     const login = await auth.authenticate(address, "password123");
 
+    expect(mail?.url?.startsWith("/verify-email?token=")).toBe(true);
     expect(verified.ok).toBe(true);
+    if (verified.ok) {
+      expect(verified.email).toBe(address);
+    }
     expect(login.ok).toBe(true);
   });
 
@@ -91,14 +96,14 @@ describe("auth service", () => {
       where: { to: address, kind: "verify_email" },
       orderBy: { createdAt: "desc" },
     });
-    const verifyToken = new URL(verifyMail?.url ?? "").searchParams.get("token") ?? "";
+    const verifyToken = mailboxToken(verifyMail?.url);
     await auth.verifyEmail(verifyToken);
     const mailRequest = await auth.requestPasswordReset(address);
     const mail = await prisma.devMailMessage.findFirst({
       where: { to: address, kind: "reset_password" },
       orderBy: { createdAt: "desc" },
     });
-    const token = new URL(mail?.url ?? "").searchParams.get("token") ?? "";
+    const token = mailboxToken(mail?.url);
     const reset = await auth.resetPassword(token, "newpassword123");
     const login = await auth.authenticate(address, "newpassword123");
 
