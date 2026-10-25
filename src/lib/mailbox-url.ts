@@ -1,5 +1,12 @@
 const MAIL_PATHS = ["/verify-email", "/reset-password", "/accept-invite"];
 
+export const AUTOMATED_MAILBOX_DOMAIN = "example.test";
+
+export function isAutomatedMailboxAddress(email?: string | null) {
+  const value = email?.trim().toLowerCase() ?? "";
+  return value.endsWith(`@${AUTOMATED_MAILBOX_DOMAIN}`);
+}
+
 export function mailboxActionUrl(raw?: string | null) {
   if (!raw?.trim()) {
     return "";
