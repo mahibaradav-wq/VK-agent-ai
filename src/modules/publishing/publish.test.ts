@@ -278,4 +278,40 @@ describe("publishing queue", () => {
     expect((await prisma.post.findUniqueOrThrow({ where: { id: created.id } })).status).toBe("queued");
     expect(queue.jobs.length).toBeGreaterThan(0);
   });
+
+  it("lets an Owner publish a draft immediately without a separate approval click", async () => {
+    const owner = await registerOwner("pub-now");
+    const post = await draftWithTargets(owner, ["telegram"], "Сразу в Telegram");
+    const telegram = scripted("telegram", [{ kind: "success", externalId: "42" }]);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: createAdapterRegistry([telegram]),
+    });
+
+    const job = await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
+    const stored = await prisma.post.findUniqueOrThrow({
+      where: { id: post.id },
+      include: { targets: true },
+    });
+
+    expect(telegram.calls).toBe(1);
+    expect(stored.status).toBe("published");
+    expect(stored.targets[0]?.status).toBe("published");
+    expect(job?.attempts[0]?.kind).toBe("success");
+  });
+
+  it("does not let an Editor skip approval via publishNow", async () => {
+    const owner = await registerOwner("pub-now-own");
+    const editor = await registerOwner("pub-now-ed");
+    await workspaces.addMember(owner.userId, owner.workspaceId, editor.address, "Editor");
+    const post = await draftWithTargets(owner, ["telegram"], "Только Owner");
+    const publishing = createPublishService(prisma, { queue: createInlineQueue() });
+
+    await expectAccess(
+      publishing.publishNow(editor.userId, owner.workspaceId, post.id),
+      403,
+      /Owner и Admin/,
+    );
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("draft");
+  });
 });

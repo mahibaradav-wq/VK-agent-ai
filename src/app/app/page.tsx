@@ -83,7 +83,7 @@ export default async function AppHomePage() {
       <PageHeader
         eyebrow="Обзор"
         title={activeMembership?.workspace.name ?? "Нет рабочего пространства"}
-        description="Дальше — черновик, Telegram и AI. Оплата пока не нужна."
+        description="Дальше — черновик и кнопка «Опубликовать сейчас». Оплата пока не нужна."
       />
       <Container className="grid gap-5 pb-20">
         <StatusBanner tone="info">

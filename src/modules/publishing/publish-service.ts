@@ -3,6 +3,7 @@ import type { Prisma, PrismaClient, PublishAttemptKind, PublishJobStatus } from 
 import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import { assertApprovedVersion } from "@/modules/collaboration/approval";
+import { createCollaborationService } from "@/modules/collaboration/collaboration-service";
 import { deliverNotifications } from "@/modules/notifications/dispatch";
 import { aggregatePostStatus } from "@/modules/publishing/aggregate";
 import { defaultBackoffMs, nextBackoffMs } from "@/modules/publishing/backoff";
@@ -236,6 +237,47 @@ export function createPublishService(
         await dispatch(job.id);
       }
       return db.publishJob.findUniqueOrThrow({ where: { id: job.id }, include: jobInclude });
+    },
+
+    async publishNow(userId: string, workspaceId: string, postId: string) {
+      const membership = await access.requirePermission(userId, workspaceId, "post.approve");
+      await access.requirePermission(userId, workspaceId, "post.update");
+      if (membership.role !== "Owner" && membership.role !== "Admin") {
+        throw new AccessError(403, "Опубликовать сразу могут Owner и Admin. Editor отправляет на согласование.");
+      }
+
+      let post = await loadBoundPost(workspaceId, postId);
+      if (post.targets.length === 0) {
+        const account = await db.socialAccount.findFirst({
+          where: { workspaceId, platform: "telegram", status: "connected" },
+          orderBy: { updatedAt: "desc" },
+        });
+        if (!account) {
+          throw new AccessError(400, "Сначала подключите Telegram или отметьте цель в черновике.");
+        }
+        await db.postTarget.create({
+          data: {
+            workspaceId,
+            postId: post.id,
+            platform: "telegram",
+            socialAccountId: account.id,
+            status: "draft",
+          },
+        });
+        post = await loadBoundPost(workspaceId, postId);
+      }
+
+      const collab = createCollaborationService(db);
+      if (post.status === "draft" || post.status === "scheduled" || post.status === "failed") {
+        await collab.submitForApproval(userId, workspaceId, post.id);
+        await collab.approve(userId, workspaceId, post.id, "Самосогласование Owner");
+      } else if (post.status === "pending_approval") {
+        await collab.approve(userId, workspaceId, post.id, "Самосогласование Owner");
+      }
+
+      const job = await this.enqueue(userId, workspaceId, post.id);
+      const processed = await this.processJob(job.id, `publish-now:${userId}`);
+      return processed.job ?? job;
     },
 
     async enqueueDueSchedules(at = now(), workspaceId?: string) {

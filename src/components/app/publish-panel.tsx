@@ -6,6 +6,7 @@ export function PublishPanel({
   postId,
   postStatus,
   canEnqueue,
+  canPublishNow,
   targets,
   job,
 }: {
@@ -13,6 +14,7 @@ export function PublishPanel({
   postId: string;
   postStatus: string;
   canEnqueue: boolean;
+  canPublishNow: boolean;
   targets: Array<{ platform: string; status: string; lastError: string | null }>;
   job: {
     status: string;
@@ -48,9 +50,16 @@ export function PublishPanel({
         <p className="text-sm text-ink/60">Задачи ещё нет. Очередь создаст PublishJob с уникальным ключом версии.</p>
       )}
       <p className="text-xs text-ink/60">
-        Очередь принимает только согласованную версию. Без официальной интеграции адаптер не имитирует успех.
+        Owner и Admin могут опубликовать сразу. Editor по-прежнему идёт через согласование. Без официальной интеграции
+        адаптер не имитирует успех.
       </p>
-      <EnqueueForm workspaceId={workspaceId} postId={postId} canEnqueue={canEnqueue} postStatus={postStatus} />
+      <EnqueueForm
+        workspaceId={workspaceId}
+        postId={postId}
+        canEnqueue={canEnqueue}
+        canPublishNow={canPublishNow}
+        postStatus={postStatus}
+      />
     </Card>
   );
 }

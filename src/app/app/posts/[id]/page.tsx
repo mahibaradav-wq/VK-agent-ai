@@ -46,6 +46,10 @@ export default async function PostEditorPage({ params }: { params: Promise<{ id:
     const canEnqueue =
       hasPermission(activeMembership.role, "post.update") &&
       ["approved", "scheduled", "failed"].includes(post.status);
+    const canPublishNow =
+      hasPermission(activeMembership.role, "post.approve") &&
+      hasPermission(activeMembership.role, "post.update") &&
+      ["draft", "pending_approval", "approved", "scheduled", "failed"].includes(post.status);
 
     return (
       <>
@@ -68,6 +72,7 @@ export default async function PostEditorPage({ params }: { params: Promise<{ id:
             postId={post.id}
             postStatus={post.status}
             canEnqueue={canEnqueue}
+            canPublishNow={canPublishNow}
             targets={post.targets.map((target) => ({
               platform: target.platform,
               status: target.status,
