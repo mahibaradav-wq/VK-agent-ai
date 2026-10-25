@@ -1,9 +1,48 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 
 import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import { getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { lockWorkspaceMetric } from "@/modules/billing/usage";
+
+export const STARTER_PROJECT_NAME = "Первый проект";
+export const STARTER_PROJECT_DESCRIPTION =
+  "Стартовый проект рабочего пространства. Можно переименовать или создать свой.";
+
+type DbClient = PrismaClient | Prisma.TransactionClient;
+
+export async function createStarterProjectIfMissing(db: DbClient, workspaceId: string, actorId?: string) {
+  const existing = await db.project.findFirst({
+    where: { workspaceId, archivedAt: null },
+    orderBy: { createdAt: "asc" },
+  });
+  if (existing) {
+    return { project: existing, created: false };
+  }
+
+  const project = await db.project.create({
+    data: {
+      workspaceId,
+      name: STARTER_PROJECT_NAME,
+      description: STARTER_PROJECT_DESCRIPTION,
+      color: "#cc7a2b",
+    },
+  });
+
+  if (actorId) {
+    await db.auditLog.create({
+      data: {
+        action: "CREATE_PROJECT",
+        entityType: "project",
+        entityId: project.id,
+        actorId,
+        details: workspaceId,
+      },
+    });
+  }
+
+  return { project, created: true };
+}
 
 export function createProjectService(db: PrismaClient) {
   const access = createAccessService(db);

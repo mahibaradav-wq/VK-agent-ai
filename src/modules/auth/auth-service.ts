@@ -4,6 +4,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 import { attachFreeSubscription, ensureCanonicalPlans } from "@/modules/billing/plans";
+import { createStarterProjectIfMissing } from "@/modules/projects/project-service";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TOKEN_TTL_MS = 1000 * 60 * 60;
@@ -66,6 +67,7 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
           const workspaceId = created.memberships[0]?.workspaceId;
           if (workspaceId) {
             await attachFreeSubscription(tx, workspaceId);
+            await createStarterProjectIfMissing(tx, workspaceId, created.id);
           }
 
           await tx.verificationToken.create({
