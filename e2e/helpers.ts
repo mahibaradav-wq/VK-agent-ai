@@ -22,7 +22,7 @@ export async function registerVerifyAndLogin(page: Page, label = "e2e") {
   await page.locator('input[name="password"]').fill("password123");
   await page.getByRole("button", { name: "Войти" }).click();
   await page.waitForURL(/\/app/, { timeout: 15_000 });
-  await expect(page.getByText(email)).toBeVisible();
+  await expect(page.getByText(email, { exact: true })).toBeVisible();
 
   return email;
 }
