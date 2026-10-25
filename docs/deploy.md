@@ -48,14 +48,72 @@ curl -fsS http://127.0.0.1:3000/api/health
 npm run test:e2e
 ```
 
-## Выкладка на свой хост
+## Выкладка на свой хост и домен
 
-1. Поднимите PostgreSQL 16. Redis и S3 — только если включены в `.env`.
-2. Задайте секреты в окружении процесса, не в git.
-3. Выполните `npx prisma migrate deploy` **до** старта новой версии приложения.
-4. Соберите `npm run build` и запускайте `npm start` (или процесс-менеджер) плюс `npm run worker`, если нужна фоновая очередь.
-5. Поставьте HTTPS на прокси. Там же включите HSTS.
-6. Проверьте `/api/health`, вход, `/dev/mailbox` (должен быть выключен) и что `/admin` закрыт для обычного Owner.
-7. Первый Superadmin: `ADMIN_EMAILS` с email уже зарегистрированного пользователя, затем заход в `/admin`.
+Быстрый туннель Cloudflare (`*.trycloudflare.com`) для продакшена не подходит: адрес меняется и сам истекает. Нужны свой домен и VPS.
 
-Готового облачного деплоя в репозитории нет: нет фиктивного «успешно задеплоено на Vercel» без ваших credentials.
+Я не могу купить домен или оплатить хостинг с этой машины: нужны ваш аккаунт регистратора и SSH к серверу.
+
+### Что купить
+
+1. **Домен**, например `polkasocial.ru` или `dom-po-polochkam.ru`, у REG.RU, Timeweb или nic.ru.
+2. **VPS** Ubuntu 22.04/24.04, от 2 ГБ RAM, открытые порты 22/80/443. Подойдут Timeweb Cloud, Selectel, REG.RU VPS, FirstVDS.
+
+Vercel/Railway для этого проекта хуже: нужны PostgreSQL, воркер очереди, файлы медиатеки и постоянный `AUTH_URL`. Один VPS с Docker закрывает всё.
+
+### DNS
+
+В панели домена создайте A-запись на IP сервера:
+
+| Тип | Имя | Значение |
+|---|---|---|
+| A | `@` | публичный IPv4 вашего VPS |
+| A | `www` | тот же IPv4 |
+
+Подождите, пока `ping ваш-домен.ru` начнёт отвечать с IP сервера. До этого Caddy не получит сертификат.
+
+### На сервере
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git docker.io docker-compose-v2
+sudo usermod -aG docker "$USER"
+# перелогиньтесь, чтобы группа docker применилась
+git clone https://github.com/mahibaradav-wq/VK-agent-ai.git
+cd VK-agent-ai
+git pull
+cp .env.production.example .env.production
+```
+
+В `.env.production` замените заглушки:
+
+```bash
+SITE_DOMAIN=ваш-домен.ru
+ACME_EMAIL=ваш@email.ru
+NEXT_PUBLIC_SITE_URL=https://ваш-домен.ru
+AUTH_URL=https://ваш-домен.ru
+AUTH_SECRET=$(openssl rand -hex 32)
+POSTGRES_PASSWORD=$(openssl rand -hex 16)
+```
+
+`AUTH_DEV_MAILBOX` не задавайте. Затем:
+
+```bash
+bash scripts/vps-up.sh
+curl -fsS https://ваш-домен.ru/api/health
+# {"ok":true,"db":"up"}
+```
+
+Стек: Caddy (HTTPS) → Next.js → PostgreSQL, плюс воркер очереди. Медиа лежат в Docker-томе `media_data`.
+
+Обновление после `git pull`:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+```
+
+Остановка: `npm run hosting:down` или тот же `docker compose ... down`.
+
+Проверьте вход, что `/dev/mailbox` закрыт, и что `/admin` недоступен обычному Owner. Первый Superadmin: `ADMIN_EMAILS` с email уже зарегистрированного пользователя.
+
+Секреты только в `.env.production` на сервере, не в git. Без ваших SSH-ключей и оплаченного VPS выкладка с этой машины невозможна.
