@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mailboxActionUrl, mailboxToken } from "@/lib/mailbox-url";
+import { isAutomatedMailboxAddress, mailboxActionUrl, mailboxToken } from "@/lib/mailbox-url";
 
 describe("mailboxActionUrl", () => {
   it("keeps a relative confirmation link on the current host", () => {
@@ -17,5 +17,16 @@ describe("mailboxActionUrl", () => {
   it("extracts the token from either form", () => {
     expect(mailboxToken("https://example.test/verify-email?token=secret")).toBe("secret");
     expect(mailboxToken("/reset-password?token=secret")).toBe("secret");
+  });
+});
+
+describe("isAutomatedMailboxAddress", () => {
+  it("recognizes Playwright and vitest @example.test inboxes", () => {
+    expect(isAutomatedMailboxAddress("e2e.cabinet.1792924520616.3af4d604f6be@example.test")).toBe(true);
+    expect(isAutomatedMailboxAddress("taken.1@Example.Test")).toBe(true);
+    expect(isAutomatedMailboxAddress("you@gmail.com")).toBe(false);
+    expect(isAutomatedMailboxAddress("user@example.com")).toBe(false);
+    expect(isAutomatedMailboxAddress("")).toBe(false);
+    expect(isAutomatedMailboxAddress(null)).toBe(false);
   });
 });

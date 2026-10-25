@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { Button, ButtonLink } from "@/components/ui/button";
 import { PageHeader } from "@/components/marketing/page-header";
 import { StatusBanner } from "@/components/ui/status-banner";
@@ -6,7 +8,7 @@ import { Container } from "@/components/ui/container";
 import { createPageMetadata } from "@/lib/metadata";
 import { mailboxActionUrl, mailboxToken } from "@/lib/mailbox-url";
 import { confirmMailboxEmail } from "@/modules/auth/actions";
-import { isDevMailboxEnabled, listDevMail } from "@/server/mail/dev-mailbox";
+import { countAutomatedDevMail, isDevMailboxEnabled, listDevMail } from "@/server/mail/dev-mailbox";
 
 export const metadata = createPageMetadata({
   title: "Локальный почтовый стенд",
@@ -32,17 +34,24 @@ function kindRank(kind: string) {
   return 2;
 }
 
-export default async function DevMailboxPage() {
+export default async function DevMailboxPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ all?: string }>;
+}) {
+  const params = await searchParams;
+  const showAll = params.all === "1";
   const enabled = isDevMailboxEnabled();
-  const messages = enabled
-    ? [...(await listDevMail())].sort((left, right) => {
-        const rank = kindRank(left.kind) - kindRank(right.kind);
-        if (rank !== 0) {
-          return rank;
-        }
-        return right.createdAt.getTime() - left.createdAt.getTime();
-      })
-    : [];
+  const [rawMessages, automatedCount] = enabled
+    ? await Promise.all([listDevMail({ includeAutomated: showAll }), countAutomatedDevMail()])
+    : [[], 0];
+  const messages = [...rawMessages].sort((left, right) => {
+    const rank = kindRank(left.kind) - kindRank(right.kind);
+    if (rank !== 0) {
+      return rank;
+    }
+    return right.createdAt.getTime() - left.createdAt.getTime();
+  });
 
   return (
     <>
@@ -57,8 +66,29 @@ export default async function DevMailboxPage() {
             Требуется настройка интеграции: установите AUTH_DEV_MAILBOX=true, чтобы видеть локальные письма.
           </StatusBanner>
         ) : null}
+        {enabled && !showAll && automatedCount > 0 ? (
+          <StatusBanner tone="info">
+            Письма автопроверок (@example.test) скрыты: {automatedCount}. Подтверждайте только своё письмо.{" "}
+            <Link href="/dev/mailbox?all=1" className="font-semibold underline">
+              Показать все
+            </Link>
+          </StatusBanner>
+        ) : null}
+        {enabled && showAll ? (
+          <StatusBanner tone="warning">
+            Показаны все письма, включая автопроверки Playwright. Не подтверждайте адрес @example.test, если входите в
+            свой кабинет.{" "}
+            <Link href="/dev/mailbox" className="font-semibold underline">
+              Скрыть тесты
+            </Link>
+          </StatusBanner>
+        ) : null}
         {enabled && messages.length === 0 ? (
-          <StatusBanner tone="info">Писем пока нет. Зарегистрируйтесь или запросите сброс пароля.</StatusBanner>
+          <StatusBanner tone="info">
+            {showAll
+              ? "Писем пока нет. Зарегистрируйтесь или запросите сброс пароля."
+              : "Писем на ваши адреса пока нет. Зарегистрируйтесь своим email — не подтверждайте письма @example.test."}
+          </StatusBanner>
         ) : null}
         {messages.map((message) => {
           const copy = kindCopy[message.kind] ?? { title: message.subject, action: "Открыть ссылку из письма" };
