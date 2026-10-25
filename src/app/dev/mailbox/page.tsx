@@ -34,7 +34,7 @@ export default async function DevMailboxPage() {
           <StatusBanner tone="info">Писем пока нет. Зарегистрируйтесь или запросите сброс пароля.</StatusBanner>
         ) : null}
         {messages.map((message) => (
-          <Card key={message.id}>
+          <Card key={message.id} data-mail-to={message.to}>
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">{message.kind}</p>
             <h2 className="mt-2 text-xl font-black text-ink">{message.subject}</h2>
             <p className="mt-2 text-sm text-ink/60">Кому: {message.to}</p>
