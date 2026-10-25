@@ -116,4 +116,6 @@ docker compose -f docker-compose.prod.yml --env-file .env.production up -d --bui
 
 Проверьте вход, что `/dev/mailbox` закрыт, и что `/admin` недоступен обычному Owner. Первый Superadmin: `ADMIN_EMAILS` с email уже зарегистрированного пользователя.
 
+В кабинете ЮKassa укажите HTTP-уведомления на `https://ваш-домен.ru/api/webhooks/billing` (события `payment.succeeded` и `payment.canceled`). Ключи — `YOOKASSA_SHOP_ID` и `YOOKASSA_SECRET_KEY` в `.env.production`.
+
 Секреты только в `.env.production` на сервере, не в git. Без ваших SSH-ключей и оплаченного VPS выкладка с этой машины невозможна.

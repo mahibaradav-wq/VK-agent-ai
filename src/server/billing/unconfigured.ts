@@ -8,11 +8,11 @@ export function createUnconfiguredBillingProvider(): BillingProvider {
     async createCheckout() {
       throw new AccessError(
         400,
-        "Оплата недоступна: требуется настройка BILLING_WEBHOOK_SECRET. Редирект не считается оплатой.",
+        "Оплата недоступна: задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY. Редирект не считается оплатой.",
       );
     },
     async verifyWebhook() {
-      throw new AccessError(400, "Проверка webhook недоступна: требуется настройка BILLING_WEBHOOK_SECRET.");
+      throw new AccessError(400, "Проверка webhook недоступна: задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY.");
     },
   };
 }

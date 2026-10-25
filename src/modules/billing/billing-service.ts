@@ -205,7 +205,7 @@ export function createBillingService(
       if (!provider.ready) {
         throw new AccessError(
           400,
-          "Оплата недоступна: требуется настройка BILLING_WEBHOOK_SECRET. Редирект не считается оплатой.",
+          "Оплата недоступна: задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY. Редирект не считается оплатой.",
         );
       }
       const definition = PLAN_CATALOG.find((plan) => plan.slug === planSlug);
@@ -419,7 +419,7 @@ export function createBillingService(
         await notifyOwners(
           applied.workspaceId,
           "Оплата подтверждена",
-          `Тариф ${applied.planName} активирован после проверки подписанного webhook.`,
+          `Тариф ${applied.planName} активирован после проверки платежа провайдером.`,
           applied.subscriptionId,
         );
       }

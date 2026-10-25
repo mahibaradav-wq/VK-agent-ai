@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     return Response.json({ ok: true, replay: result.replay, status: result.status });
   } catch (error) {
     const message = error instanceof AccessError ? error.message : "Webhook отклонён.";
-    const status = error instanceof AccessError ? error.status : 400;
+    const status = error instanceof AccessError ? error.status : 502;
     return Response.json({ ok: false, error: message }, { status });
   }
 }

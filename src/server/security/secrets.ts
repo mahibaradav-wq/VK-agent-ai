@@ -1,5 +1,5 @@
 export const SECRET_LEAK_RE =
-  /AUTH_SECRET|TOKEN_ENCRYPTION_KEY|BILLING_WEBHOOK_SECRET|EMAIL_API_KEY|sk-|whsec_|polka_dev_password|Bearer [A-Za-z0-9._-]{8,}/;
+  /AUTH_SECRET|TOKEN_ENCRYPTION_KEY|BILLING_WEBHOOK_SECRET|YOOKASSA_SECRET_KEY|EMAIL_API_KEY|sk-|whsec_|polka_dev_password|Bearer [A-Za-z0-9._-]{8,}/;
 
 export function assertAuthSecret(secret = process.env.AUTH_SECRET) {
   if (!secret || secret.length < 32) {

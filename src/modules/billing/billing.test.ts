@@ -8,7 +8,12 @@ import { reserveUsage } from "@/modules/billing/usage";
 import { createProjectService } from "@/modules/projects/project-service";
 import { createWorkspaceService } from "@/modules/workspaces/workspace-service";
 import { prisma } from "@/server/db/prisma";
-import { createBillingSignature, createHmacBillingProvider, createUnconfiguredBillingProvider } from "@/server/billing";
+import {
+  createBillingSignature,
+  createHmacBillingProvider,
+  createUnconfiguredBillingProvider,
+  createYookassaBillingProvider,
+} from "@/server/billing";
 
 const auth = createAuthService(prisma, "http://localhost:3000");
 const projects = createProjectService(prisma);
@@ -72,7 +77,7 @@ describe("billing and subscriptions", () => {
     await expectAccess(
       unconfigured.startCheckout(owner.userId, owner.workspaceId, "team"),
       400,
-      /требуется настройка BILLING_WEBHOOK_SECRET/,
+      /YOOKASSA_SHOP_ID/,
     );
     const afterAttempt = await prisma.subscription.findUniqueOrThrow({ where: { workspaceId: owner.workspaceId } });
     expect(afterAttempt.status).toBe("free");
@@ -127,6 +132,62 @@ describe("billing and subscriptions", () => {
     expect(afterReplay.subscription.paidAt?.toISOString()).toBe(paidAt?.toISOString());
     expect(await prisma.paymentEvent.count({ where: { providerEventId: payload.id } })).toBe(1);
     expect(paid.limits.aiGenerations).toBe(500);
+  });
+
+  it("activates Team only after ЮKassa API confirms the payment", async () => {
+    const owner = await registerOwner("bill-yk");
+    let checkoutId = "";
+    let paymentStatus = "pending";
+    const paymentId = `pay_yk_${owner.workspaceId}`;
+    const billing = createBillingService(prisma, {
+      provider: createYookassaBillingProvider({
+        shopId: "shop-test",
+        secretKey: "secret-test",
+        fetchImpl: async (url, init) => {
+          if (String(url).endsWith("/payments") && init?.method === "POST") {
+            const body = JSON.parse(String(init.body)) as { metadata: { checkoutId: string } };
+            checkoutId = body.metadata.checkoutId;
+            return new Response(
+              JSON.stringify({
+                id: paymentId,
+                status: "pending",
+                confirmation: { confirmation_url: `https://yoomoney.ru/checkout/${paymentId}` },
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              id: paymentId,
+              status: paymentStatus,
+              amount: { value: "4900.00", currency: "RUB" },
+              metadata: { checkoutId, workspaceId: owner.workspaceId, planSlug: "team" },
+            }),
+            { status: 200 },
+          );
+        },
+      }),
+      siteUrl: "http://localhost:3000",
+    });
+
+    const started = await billing.startCheckout(owner.userId, owner.workspaceId, "team");
+    expect(started.checkoutUrl).toBe(`https://yoomoney.ru/checkout/${paymentId}`);
+    expect(checkoutId).toBe(started.checkoutId);
+
+    const notice = JSON.stringify({
+      type: "notification",
+      event: "payment.succeeded",
+      object: { id: paymentId },
+    });
+    paymentStatus = "pending";
+    await expectAccess(billing.handleWebhook(notice, ""), 400, /не подтвердила платёж/);
+    expect((await billing.getState(owner.userId, owner.workspaceId)).paid).toBe(false);
+
+    paymentStatus = "succeeded";
+    const first = await billing.handleWebhook(notice, "");
+    expect(first).toMatchObject({ replay: false, status: "active" });
+    expect((await billing.getState(owner.userId, owner.workspaceId)).paid).toBe(true);
+    expect((await billing.getState(owner.userId, owner.workspaceId)).subscription.plan.slug).toBe("team");
   });
 
   it("rejects an invalid webhook signature and does not mark the workspace as paid", async () => {

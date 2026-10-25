@@ -43,7 +43,7 @@ export default async function SubscriptionPage({
       <PageHeader
         eyebrow="Биллинг"
         title="Подписка и тарифы"
-        description="Платный статус появляется только после проверки подписанного webhook. Возврат с страницы оплаты сам по себе ничего не активирует."
+        description="Платный статус появляется только после проверки платежа в ЮKassa. Возврат со страницы оплаты сам по себе ничего не активирует."
       />
       <Container className="pb-20">
         <SubscriptionBoard

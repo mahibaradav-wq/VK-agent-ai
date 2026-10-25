@@ -167,7 +167,9 @@ export function createAdminService(db: PrismaClient) {
           name: "Биллинг",
           ready: getBillingStatus().ready,
           provider: getBillingStatus().provider,
-          note: getBillingStatus().ready ? "проверка webhook включена" : "секрет webhook не задан",
+          note: getBillingStatus().ready
+            ? `провайдер ${getBillingStatus().provider}`
+            : "ЮKassa не задана",
         },
         {
           name: "Почта",
