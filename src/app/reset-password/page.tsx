@@ -1,11 +1,8 @@
-import Link from "next/link";
-
-import { SetupForm } from "@/components/forms/setup-form";
+import { ResetPasswordForm } from "@/components/auth/reset-password-form";
 import { PageHeader } from "@/components/marketing/page-header";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { Container } from "@/components/ui/container";
 import { createPageMetadata } from "@/lib/metadata";
-import { resetPassword } from "@/modules/auth/actions";
 
 export const metadata = createPageMetadata({
   title: "Сброс пароля",
@@ -25,24 +22,14 @@ export default async function ResetPasswordPage({
       <PageHeader
         eyebrow="Сброс пароля"
         title="Задайте новый пароль"
-        description="Токен проверяется на сервере. Просроченная или поддельная ссылка не меняет пароль."
+        description="После сохранения пароля сразу откроется форма входа. Просроченная ссылка пароль не меняет."
       />
       <Container className="grid max-w-xl gap-6 pb-20">
         {!token ? (
           <StatusBanner tone="warning">В ссылке нет токена. Откройте письмо из локального почтового стенда.</StatusBanner>
         ) : (
-          <SetupForm
-            action={resetPassword}
-            submitLabel="Сохранить новый пароль"
-            fields={[
-              { name: "token", label: "Токен", type: "hidden", defaultValue: token, required: true },
-              { name: "password", label: "Новый пароль", type: "password", autoComplete: "new-password", required: true },
-            ]}
-          />
+          <ResetPasswordForm token={token} />
         )}
-        <Link href="/login" className="text-sm text-ink/70">
-          Вернуться ко входу
-        </Link>
       </Container>
     </>
   );

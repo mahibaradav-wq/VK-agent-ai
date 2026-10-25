@@ -13,6 +13,7 @@ export type AuthFormState = {
   status: "idle" | "invalid" | "success";
   message: string;
   mailboxUrl?: string;
+  email?: string;
 };
 
 function readField(formData: FormData, name: string) {
@@ -116,6 +117,7 @@ export async function verifyEmailToken(token: string): Promise<AuthFormState> {
   return {
     status: result.ok ? "success" : "invalid",
     message: result.message,
+    email: result.ok ? result.email : undefined,
   };
 }
 
