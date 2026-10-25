@@ -29,7 +29,8 @@
 | `TOKEN_ENCRYPTION_KEY` | Ключ AES для токенов соцаккаунтов | Берётся `AUTH_SECRET` |
 | `REDIS_URL` + `QUEUE_DRIVER=redis` | BullMQ | Задачи пишутся в PostgreSQL, диспетчер Redis не стартует |
 | `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_IMAGE_MODEL`, `AI_MONTHLY_LIMIT` | запасной AI, если в кабинете нет ключа | UI предлагает подключить ChatGPT / DeepSeek / Qwen |
-| `BILLING_WEBHOOK_SECRET` | HMAC оплаты | Checkout не имитирует оплату |
+| `YOOKASSA_SHOP_ID` + `YOOKASSA_SECRET_KEY` | ЮKassa (самозанятый / ИП) | Checkout не имитирует оплату |
+| `BILLING_WEBHOOK_SECRET` | запасной HMAC-стенд для тестов | Не нужен, если задана ЮKassa |
 | `ADMIN_EMAILS` | Email через запятую → Superadmin при первом заходе в `/admin` | Админка пуста, пока роль не выдана |
 | `EMAIL_API_KEY`, `EMAIL_API_URL`, `EMAIL_FROM` | Внешняя почта уведомлений | Без mailbox и без ключа письмо не отправляется |
 | `STORAGE_DRIVER=s3` и `S3_*` | Объектное хранилище | Локальный диск или отказ загрузки |

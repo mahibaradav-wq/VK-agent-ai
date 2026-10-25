@@ -23,8 +23,11 @@
 
 ## Биллинг
 
-- `/app/subscription` рисует checkout URL, но оплата = только проверенный webhook.
-- Без `BILLING_WEBHOOK_SECRET` webhook не принимается.
+- Предпочтительный провайдер — ЮKassa (`YOOKASSA_SHOP_ID` + `YOOKASSA_SECRET_KEY`) для самозанятого или ИП.
+- `/app/subscription` открывает `confirmation_url` ЮKassa. Редирект назад не ставит paid.
+- Webhook `POST /api/webhooks/billing`: статус берётся повторным `GET /payments/{id}`, не из тела уведомления.
+- Без ключей ЮKassa кнопка оплаты показывает настройку и не имитирует успех.
+- `BILLING_WEBHOOK_SECRET` — только тестовый HMAC-стенд.
 - Replay того же `PaymentEvent` не меняет подписку.
 
 ## Хранилище

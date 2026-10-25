@@ -78,13 +78,13 @@ export function SubscriptionBoard({
     <div className="grid gap-6">
       {!ready ? (
         <StatusBanner tone="warning">
-          Требуется настройка интеграции: задайте BILLING_WEBHOOK_SECRET на сервере. Кнопка оплаты не имитирует
-          успешный платёж. Секрет во frontend не передаётся.
+          Требуется настройка интеграции: задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY на сервере. Кнопка оплаты
+          не имитирует успешный платёж. Секреты во frontend не передаются.
         </StatusBanner>
       ) : (
         <StatusBanner tone="info">
-          Провайдер {provider}. Оплаченным workspace становится только после проверки подписанного webhook, не после
-          редиректа.
+          Провайдер {provider}. Оплаченным workspace становится только после проверки платежа в ЮKassa, не после
+          возврата со страницы оплаты.
         </StatusBanner>
       )}
 
@@ -94,7 +94,7 @@ export function SubscriptionBoard({
           {statusLabels[returnCheckout.subscriptionStatus] ?? returnCheckout.subscriptionStatus}.{" "}
           {returnCheckout.paid
             ? "Оплата уже подтверждена webhook."
-            : "Редирект не считается оплатой. Ждём подписанный webhook."}
+            : "Редирект не считается оплатой. Ждём подтверждение платежа от ЮKassa."}
         </StatusBanner>
       ) : null}
 

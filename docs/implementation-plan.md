@@ -348,6 +348,10 @@ Deliverables:
 - DB migrations from clean state;
 - documented launch procedure works.
 
+### Этап 15. ЮKassa для самозанятого
+
+Статус: выполнен. Добавлен провайдер `yookassa`: создание платежа через API, редирект на `confirmation_url`, активация тарифа только после `GET /payments/{id}` со статусом `succeeded`. Без shopId/секрета checkout не имитируется. HMAC-стенд остаётся запасным для тестов.
+
 ## 5. Минимальный вертикальный срез
 
 Цель: получить маленький, но полностью рабочий SaaS-path без фиктивных успехов.
