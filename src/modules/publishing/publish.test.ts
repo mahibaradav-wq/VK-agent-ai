@@ -300,6 +300,19 @@ describe("publishing queue", () => {
     expect(job?.attempts[0]?.kind).toBe("success");
   });
 
+  it("does not publish an empty draft immediately", async () => {
+    const owner = await registerOwner("pub-now-empty");
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Пусто");
+    const publishing = createPublishService(prisma, { queue: createInlineQueue() });
+
+    await expectAccess(
+      publishing.publishNow(owner.userId, owner.workspaceId, post.id),
+      400,
+      /Сохраните заголовок и текст/,
+    );
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("draft");
+  });
+
   it("does not let an Editor skip approval via publishNow", async () => {
     const owner = await registerOwner("pub-now-own");
     const editor = await registerOwner("pub-now-ed");

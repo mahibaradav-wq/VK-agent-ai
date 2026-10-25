@@ -247,6 +247,10 @@ export function createPublishService(
       await access.requirePermission(userId, workspaceId, "post.approve");
 
       let post = await loadBoundPost(workspaceId, postId);
+      const version = currentVersion(post);
+      if (!version?.title.trim() || !version.body.trim()) {
+        throw new AccessError(400, "Сохраните заголовок и текст, прежде чем публиковать.");
+      }
       if (post.targets.length === 0) {
         const account = await db.socialAccount.findFirst({
           where: { workspaceId, platform: "telegram", status: "connected" },

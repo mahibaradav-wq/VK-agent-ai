@@ -26,8 +26,8 @@ export function PublishPanel({
 }) {
   return (
     <Card className="grid gap-3">
-      <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Очередь публикации</p>
-      <p className="text-sm text-ink/70">Статус поста: {postStatus}</p>
+      <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Публикация</p>
+      <p className="text-sm text-ink/70">Статус поста: {postStatus}. Telegram подставится сам, если цель не отмечена.</p>
       <p className="text-sm text-ink/70">
         Цели: {targets.map((target) => `${target.platform}:${target.status}`).join(", ") || "не выбраны"}
       </p>
