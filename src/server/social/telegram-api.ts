@@ -1,3 +1,5 @@
+import { ProxyAgent, fetch as undiciFetch } from "undici";
+
 export type TelegramApiFailure = {
   ok: false;
   error_code: number;
@@ -43,14 +45,29 @@ type TelegramJson = {
   parameters?: { retry_after?: number };
 };
 
-export function createTelegramTransport(fetchImpl: typeof fetch = fetch): TelegramTransport {
+export function telegramApiRoot() {
+  return (process.env.TELEGRAM_API_BASE_URL ?? "https://api.telegram.org").replace(/\/$/, "");
+}
+
+export function createTelegramFetch(): typeof fetch {
+  const proxy = process.env.TELEGRAM_PROXY_URL?.trim() || process.env.HTTPS_PROXY?.trim();
+  if (!proxy) {
+    return fetch;
+  }
+  const dispatcher = new ProxyAgent(proxy);
+  return ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
+    undiciFetch(String(input), { ...(init as object), dispatcher } as never)) as unknown as typeof fetch;
+}
+
+export function createTelegramTransport(fetchImpl: typeof fetch = createTelegramFetch()): TelegramTransport {
   return {
     async request(token, method, body) {
       try {
-        const response = await fetchImpl(`https://api.telegram.org/bot${token}/${method}`, {
+        const response = await fetchImpl(`${telegramApiRoot()}/bot${token}/${method}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: body ? JSON.stringify(body) : undefined,
+          signal: AbortSignal.timeout(12_000),
         });
         const json = (await response.json()) as TelegramJson;
         if (json.ok) {
