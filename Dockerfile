@@ -31,5 +31,6 @@ COPY --from=builder /app/src ./src
 COPY --from=builder /app/tsconfig.json ./
 COPY --from=builder /app/next.config.ts ./
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+RUN npx prisma generate
 EXPOSE 3000
 CMD ["sh", "-c", "npx prisma migrate deploy && npm start -- --hostname 0.0.0.0 --port 3000"]
