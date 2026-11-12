@@ -1,7 +1,7 @@
 import { LoginForm } from "@/components/auth/login-form";
 import { ResendVerificationForm } from "@/components/auth/resend-verification-form";
-import { Button } from "@/components/ui/button";
-import { ButtonLink } from "@/components/ui/button";
+import { DevMailboxButton } from "@/components/auth/dev-mailbox-link";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { PageHeader } from "@/components/marketing/page-header";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { Container } from "@/components/ui/container";
@@ -65,9 +65,7 @@ export default async function VerifyEmailPage({
           </ButtonLink>
         ) : null}
         {!success && !pending ? <ResendVerificationForm email={loginEmail} /> : null}
-        <ButtonLink href="/dev/mailbox" variant="secondary">
-          Открыть локальный почтовый стенд
-        </ButtonLink>
+        <DevMailboxButton />
       </Container>
     </>
   );

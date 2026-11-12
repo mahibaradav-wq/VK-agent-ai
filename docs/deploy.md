@@ -114,7 +114,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.production up -d --bui
 
 Остановка: `npm run hosting:down` или тот же `docker compose ... down`.
 
-Проверьте вход, что `/dev/mailbox` закрыт, и что `/admin` недоступен обычному Owner. Первый Superadmin: `ADMIN_EMAILS` с email уже зарегистрированного пользователя.
+Проверьте вход, что `/dev/mailbox` закрыт, и что `/admin` недоступен обычному Owner. Первый аккаунт на рабочем сайте подтверждается сразу, без письма. Superadmin: `ADMIN_EMAILS` с email уже зарегистрированного пользователя.
 
 В кабинете ЮKassa укажите HTTP-уведомления на `https://ваш-домен.ru/api/webhooks/billing` (события `payment.succeeded` и `payment.canceled`). Ключи — `YOOKASSA_SHOP_ID` и `YOOKASSA_SECRET_KEY` в `.env.production`.
 

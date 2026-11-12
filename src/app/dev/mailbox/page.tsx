@@ -63,7 +63,8 @@ export default async function DevMailboxPage({
       <Container className="grid gap-5 pb-20">
         {!enabled ? (
           <StatusBanner tone="warning">
-            Требуется настройка интеграции: установите AUTH_DEV_MAILBOX=true, чтобы видеть локальные письма.
+            Локальный почтовый стенд выключен. На рабочем сайте его не включают: письма с токенами стали бы
+            публичными. Первый владелец входит сразу после регистрации.
           </StatusBanner>
         ) : null}
         {enabled && !showAll && automatedCount > 0 ? (
