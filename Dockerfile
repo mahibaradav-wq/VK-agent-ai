@@ -7,6 +7,7 @@ FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+RUN mkdir -p public
 ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -30,5 +31,6 @@ COPY --from=builder /app/src ./src
 COPY --from=builder /app/tsconfig.json ./
 COPY --from=builder /app/next.config.ts ./
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+RUN npx prisma generate
 EXPOSE 3000
 CMD ["sh", "-c", "npx prisma migrate deploy && npm start -- --hostname 0.0.0.0 --port 3000"]
