@@ -36,6 +36,7 @@ describe("production hosting stack", () => {
     expect(envExample).toMatch(/# AUTH_DEV_MAILBOX=/);
     expect(envExample).not.toMatch(/^AUTH_DEV_MAILBOX=true$/m);
     expect(upScript).toContain("AUTH_DEV_MAILBOX нельзя включать");
+    expect(deploy).toContain("Первый аккаунт на рабочем сайте подтверждается сразу");
   });
 
   it("documents VPS + DNS instead of a fake cloud deploy", () => {

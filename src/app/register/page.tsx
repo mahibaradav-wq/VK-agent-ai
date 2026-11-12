@@ -5,10 +5,11 @@ import { PageHeader } from "@/components/marketing/page-header";
 import { Container } from "@/components/ui/container";
 import { createPageMetadata } from "@/lib/metadata";
 import { registerUser } from "@/modules/auth/actions";
+import { isDevMailboxEnabled } from "@/server/mail/dev-mailbox";
 
 export const metadata = createPageMetadata({
   title: "Регистрация",
-  description: "Регистрация в Polka Social создаёт workspace и письмо в локальном почтовом стенде.",
+  description: "Регистрация в Polka Social создаёт рабочее пространство.",
   path: "/register",
 });
 
@@ -18,7 +19,11 @@ export default function RegisterPage() {
       <PageHeader
         eyebrow="Регистрация"
         title="Создайте аккаунт и workspace"
-        description="После регистрации сразу создаётся рабочее пространство. Письмо подтверждения не уходит во внешнюю почту — оно появляется в локальном стенде."
+        description={
+          isDevMailboxEnabled()
+            ? "После регистрации сразу создаётся рабочее пространство. Письмо подтверждения не уходит во внешнюю почту — оно появляется в локальном стенде."
+            : "После регистрации сразу создаётся рабочее пространство. Первый владелец входит без письма."
+        }
       />
       <Container className="max-w-xl pb-20">
         <SetupForm

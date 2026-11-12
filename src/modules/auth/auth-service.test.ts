@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { mailboxToken } from "@/lib/mailbox-url";
-import { createAuthService, hashToken } from "@/modules/auth/auth-service";
+import { createAuthService, hashToken, shouldAutoVerifyEmail } from "@/modules/auth/auth-service";
 import { prisma } from "@/server/db/prisma";
 
 const siteUrl = "http://localhost:3000";
@@ -125,6 +125,36 @@ describe("auth service", () => {
     const result = await auth.resetPassword(expiredToken, "newpassword123");
     expect(result.ok).toBe(false);
     expect(result.message).toContain("просрочен");
+  });
+
+  it("does not auto-verify when the local mailbox stand is on", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("AUTH_DEV_MAILBOX", "true");
+    expect(shouldAutoVerifyEmail("owner@example.test", 0)).toBe(false);
+    vi.unstubAllEnvs();
+  });
+
+  it("auto-verifies the first production owner when the mailbox stand is off", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("AUTH_DEV_MAILBOX", "");
+    const address = email("prod-owner");
+    vi.stubEnv("ADMIN_EMAILS", address);
+    try {
+      const registered = await auth.register(address, "password123");
+      const login = await auth.authenticate(address, "password123");
+      const mail = await prisma.devMailMessage.findFirst({
+        where: { to: address, kind: "verify_email" },
+      });
+      expect(registered.ok).toBe(true);
+      if (registered.ok) {
+        expect(registered.mailboxUrl).toBeUndefined();
+        expect(registered.message).toContain("Войдите в кабинет");
+      }
+      expect(mail).toBeNull();
+      expect(login.ok).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("resets a password from a mailbox token", async () => {

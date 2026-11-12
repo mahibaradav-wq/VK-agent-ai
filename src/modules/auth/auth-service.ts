@@ -5,9 +5,31 @@ import bcrypt from "bcryptjs";
 
 import { attachFreeSubscription, ensureCanonicalPlans } from "@/modules/billing/plans";
 import { createStarterProjectIfMissing } from "@/modules/projects/project-service";
+import { isDevMailboxEnabled } from "@/server/mail/dev-mailbox";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TOKEN_TTL_MS = 1000 * 60 * 60;
+
+export function listedAdminEmails() {
+  return (process.env.ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+export function shouldAutoVerifyEmail(email: string, existingUserCount: number) {
+  if (isDevMailboxEnabled() || process.env.NODE_ENV !== "production") {
+    return false;
+  }
+  if (listedAdminEmails().includes(email.trim().toLowerCase())) {
+    return true;
+  }
+  return existingUserCount === 0;
+}
+
+function mailboxUrlIfEnabled() {
+  return isDevMailboxEnabled() ? "/dev/mailbox" : undefined;
+}
 
 export type AuthServiceResult =
   | { ok: true; message: string; mailboxUrl?: string; email?: string }
@@ -49,10 +71,12 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
       try {
         await ensureCanonicalPlans(db);
         const user = await db.$transaction(async (tx) => {
+          const autoVerify = shouldAutoVerifyEmail(normalizedEmail, await tx.user.count());
           const created = await tx.user.create({
             data: {
               email: normalizedEmail,
               passwordHash,
+              emailVerified: autoVerify ? new Date() : null,
               memberships: {
                 create: {
                   role: "Owner",
@@ -70,34 +94,45 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
             await createStarterProjectIfMissing(tx, workspaceId, created.id);
           }
 
-          await tx.verificationToken.create({
-            data: {
-              identifier: normalizedEmail,
-              token: hashToken(token),
-              expires: new Date(Date.now() + TOKEN_TTL_MS),
-            },
-          });
+          if (!autoVerify) {
+            await tx.verificationToken.create({
+              data: {
+                identifier: normalizedEmail,
+                token: hashToken(token),
+                expires: new Date(Date.now() + TOKEN_TTL_MS),
+              },
+            });
 
-          await tx.devMailMessage.create({
-            data: {
-              to: normalizedEmail,
-              subject: "Подтверждение email",
-              body: "Откройте ссылку из локального почтового стенда, чтобы подтвердить адрес.",
-              url: `/verify-email?token=${token}`,
-              kind: "verify_email",
-            },
-          });
+            await tx.devMailMessage.create({
+              data: {
+                to: normalizedEmail,
+                subject: "Подтверждение email",
+                body: "Откройте ссылку из локального почтового стенда, чтобы подтвердить адрес.",
+                url: `/verify-email?token=${token}`,
+                kind: "verify_email",
+              },
+            });
+          }
 
-          return created;
+          return { created, autoVerify };
         });
 
-        await writeAudit("REGISTER", user.id, user.id, normalizedEmail);
+        await writeAudit("REGISTER", user.created.id, user.created.id, normalizedEmail);
+
+        if (user.autoVerify) {
+          return {
+            ok: true,
+            message: "Аккаунт создан. Войдите в кабинет — подтверждение письма для первого владельца не требуется.",
+            email: normalizedEmail,
+          };
+        }
 
         return {
           ok: true,
-          message:
-            "Аккаунт создан. Письмо не отправлялось во внешнюю почту. Ссылка подтверждения лежит в локальном почтовом стенде.",
-          mailboxUrl: "/dev/mailbox",
+          message: isDevMailboxEnabled()
+            ? "Аккаунт создан. Письмо не отправлялось во внешнюю почту. Ссылка подтверждения лежит в локальном почтовом стенде."
+            : "Аккаунт создан. Подтверждение email недоступно, пока не настроена почтовая отправка.",
+          mailboxUrl: mailboxUrlIfEnabled(),
         };
       } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -195,8 +230,10 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
       if (!user) {
         return {
           ok: true,
-          message: "Если аккаунт существует, новое письмо появится в локальном почтовом стенде.",
-          mailboxUrl: "/dev/mailbox",
+          message: isDevMailboxEnabled()
+            ? "Если аккаунт существует, новое письмо появится в локальном почтовом стенде."
+            : "Если аккаунт существует, новое письмо будет отправлено, когда настроена почта.",
+          mailboxUrl: mailboxUrlIfEnabled(),
         };
       }
       if (user.emailVerified) {
@@ -224,8 +261,10 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
       ]);
       return {
         ok: true,
-        message: "Новое письмо подтверждения лежит в локальном почтовом стенде.",
-        mailboxUrl: "/dev/mailbox",
+        message: isDevMailboxEnabled()
+          ? "Новое письмо подтверждения лежит в локальном почтовом стенде."
+          : "Новое письмо подтверждения сохранено. Почтовая отправка на рабочем сайте не настроена.",
+        mailboxUrl: mailboxUrlIfEnabled(),
         email: normalizedEmail,
       };
     },
@@ -262,9 +301,10 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
 
       return {
         ok: true,
-        message:
-          "Письмо не отправлялось во внешнюю почту. Если аккаунт существует, ссылка появилась в локальном почтовом стенде.",
-        mailboxUrl: "/dev/mailbox",
+        message: isDevMailboxEnabled()
+          ? "Письмо не отправлялось во внешнюю почту. Если аккаунт существует, ссылка появилась в локальном почтовом стенде."
+          : "Если аккаунт существует, ссылка сброса будет отправлена, когда настроена почта.",
+        mailboxUrl: mailboxUrlIfEnabled(),
       };
     },
 
@@ -313,7 +353,12 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
       }
 
       if (!user.emailVerified) {
-        return { ok: false as const, message: "Сначала подтвердите email через локальный почтовый стенд." };
+        return {
+          ok: false as const,
+          message: isDevMailboxEnabled()
+            ? "Сначала подтвердите email через локальный почтовый стенд."
+            : "Сначала подтвердите email.",
+        };
       }
 
       return {

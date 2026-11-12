@@ -181,6 +181,6 @@ export async function requestContact(_prev: AuthFormState, formData: FormData): 
   return {
     status: "success",
     message: "Письмо не отправлялось во внешнюю почту. Сообщение сохранено в локальном почтовом стенде.",
-    mailboxUrl: "/dev/mailbox",
+    mailboxUrl: process.env.AUTH_DEV_MAILBOX === "true" ? "/dev/mailbox" : undefined,
   };
 }
