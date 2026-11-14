@@ -21,11 +21,11 @@ export const aiProviderCatalog: AiProviderSpec[] = [
     shortLabel: "ChatGPT",
     baseUrl: "https://api.openai.com/v1",
     model: "gpt-4o-mini",
-    imageModel: "dall-e-3",
+    imageModel: "gpt-image-1.5",
     imageReady: true,
     keyUrl: "https://platform.openai.com/api-keys",
     keyHint: "Ключ с platform.openai.com, начинается с sk-. Пароль ChatGPT не подходит.",
-    notes: "Пишет текст и рисует визуал (DALL·E).",
+    notes: "Пишет текст (gpt-4o-mini) и рисует визуал (GPT Image). DALL·E снят.",
   },
   {
     id: "deepseek",
