@@ -4,6 +4,7 @@ import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions"
 import { createAccessService } from "@/modules/access/access-service";
 import { createAiService, type PublicAiRequest } from "@/modules/ai/ai-service";
 import { parseVkCommunitySource } from "@/modules/watch/parse";
+import { RECOMMENDED_WATCH_COMMUNITIES } from "@/modules/watch/recommended";
 import { createPostService } from "@/modules/posts/post-service";
 import { decryptToken, encryptToken } from "@/server/crypto/token-cipher";
 import {
@@ -18,8 +19,9 @@ import {
 } from "@/server/social/vk-api";
 
 export const WATCH_IDEAS_KIND = "watch_ideas";
-const MAX_COMMUNITIES = 10;
-const POSTS_PER_COMMUNITY = 8;
+const MAX_COMMUNITIES = 25;
+const POSTS_PER_COMMUNITY = 4;
+const MAX_IDEA_POSTS = 40;
 
 export type PublicWatchCommunity = {
   id: string;
@@ -109,6 +111,7 @@ export function createWatchService(
   const ai = options?.ai ?? createAiService(db);
   const posts = createPostService(db);
   const now = options?.now ?? (() => new Date());
+  const paceVk = !options?.vk;
 
   async function requireToken(workspaceId: string) {
     const row = await db.vkWatchCredential.findUnique({ where: { workspaceId } });
@@ -300,6 +303,25 @@ export function createWatchService(
       }
     },
 
+    async addRecommended(userId: string, workspaceId: string) {
+      const added: PublicWatchCommunity[] = [];
+      const skipped: { source: string; message: string }[] = [];
+      for (const item of RECOMMENDED_WATCH_COMMUNITIES) {
+        try {
+          added.push(await this.addCommunity(userId, workspaceId, item.source));
+          if (paceVk) {
+            await new Promise((resolve) => setTimeout(resolve, 350));
+          }
+        } catch (error) {
+          skipped.push({
+            source: item.source,
+            message: error instanceof AccessError ? error.message : "Не удалось добавить сообщество.",
+          });
+        }
+      }
+      return { added, skipped };
+    },
+
     async removeCommunity(userId: string, workspaceId: string, communityId: string) {
       await access.requirePermission(userId, workspaceId, "ai.generate");
       const row = await db.vkWatchCommunity.findUnique({ where: { id: communityId } });
@@ -356,7 +378,10 @@ export function createWatchService(
         });
       }
 
-      if (posts.length === 0) {
+      posts.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+      const ideaPosts = posts.slice(0, MAX_IDEA_POSTS);
+
+      if (ideaPosts.length === 0) {
         throw new AccessError(
           400,
           "Не удалось прочитать посты ни у одного сообщества. Ключ не подходит, стена закрыта, или сеть до api.vk.ru недоступна. Идеи не выдумываются.",
@@ -368,7 +393,7 @@ export function createWatchService(
       const prompt = [
         `Бриф бренда:\n${brief}`,
         "Недавние посты сообществ ВКонтакте, которые мы наблюдаем (не копировать, а предложить свои темы):",
-        summarizePosts(posts),
+        summarizePosts(ideaPosts),
         "Предложи 6 оригинальных идей постов для нашего бренда.",
         "Каждый item: «Заголовок || Почему сейчас || Хук первой строки».",
         "Не выдумывай охват и не обещай публикацию во ВК.",
@@ -399,7 +424,7 @@ export function createWatchService(
           entityType: "ai_request",
           entityId: row.id,
           actorId: userId,
-          details: `${communities.length} communities, ${posts.length} posts`,
+          details: `${communities.length} communities, ${ideaPosts.length} posts`,
         },
       });
       return {
@@ -409,7 +434,7 @@ export function createWatchService(
           kind: row.kind,
           title: row.title,
         },
-        posts,
+        posts: ideaPosts,
       };
     },
 
