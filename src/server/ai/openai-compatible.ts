@@ -1,5 +1,12 @@
 import { AccessError } from "@/modules/access/permissions";
-import { AI_UNAVAILABLE_MESSAGE, OPENAI_REGION_MESSAGE, isOpenAiRegionBlock, readErrorBody } from "@/server/ai/errors";
+import {
+  AI_BALANCE_MESSAGE,
+  AI_UNAVAILABLE_MESSAGE,
+  OPENAI_REGION_MESSAGE,
+  isInsufficientBalance,
+  isOpenAiRegionBlock,
+  readErrorBody,
+} from "@/server/ai/errors";
 import { createAiFetch } from "@/server/http/outbound-fetch";
 import { detectMediaType, MAX_MEDIA_BYTES } from "@/modules/media/file-validation";
 import type { AiGenerateInput, AiGenerateOutput, AiImageInput, AiImageOutput, AiProvider } from "@/server/ai/types";
@@ -160,6 +167,9 @@ export function createOpenAiCompatibleProvider(options: {
         if (isOpenAiRegionBlock(body)) {
           throw new AccessError(400, OPENAI_REGION_MESSAGE);
         }
+        if (isInsufficientBalance(response.status, body)) {
+          throw new AccessError(400, AI_BALANCE_MESSAGE);
+        }
         throw new AccessError(400, `Провайдер AI вернул ошибку ${response.status}. Ключ в ответ не попадает.`);
       }
 
@@ -209,6 +219,9 @@ export function createOpenAiCompatibleProvider(options: {
         const body = await readErrorBody(response);
         if (isOpenAiRegionBlock(body)) {
           throw new AccessError(400, OPENAI_REGION_MESSAGE);
+        }
+        if (isInsufficientBalance(response.status, body)) {
+          throw new AccessError(400, AI_BALANCE_MESSAGE);
         }
         const detail = await providerErrorDetail(response);
         throw new AccessError(
