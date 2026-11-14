@@ -39,8 +39,9 @@ export function AiProviderBoard({
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Модель</p>
         <h2 className="mt-2 text-2xl font-black text-ink">ChatGPT, DeepSeek или Qwen</h2>
         <p className="mt-2 text-sm text-ink/70">
-          Подключение официальным API-ключом, как Telegram-бот. Пароль от чата не принимается. Ключ шифруется на сервере
-          и в браузер не возвращается.
+          Подключение официальным API-ключом, как Telegram-бот. Пароль от ChatGPT не принимается. Ключ вставьте только
+          сюда, не в переписку: он шифруется на сервере и в браузер не возвращается. ChatGPT пишет текст и рисует
+          картинки (DALL·E).
         </p>
       </div>
 
