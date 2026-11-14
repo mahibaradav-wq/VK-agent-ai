@@ -118,7 +118,7 @@ export function WatchBoard({
       <Card className="grid gap-3">
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Сообщества</p>
         {communities.length === 0 ? (
-          <p className="text-sm text-ink/60">Пока пусто. Добавьте vk.com/club… или короткое имя.</p>
+          <p className="text-sm text-ink/60">Пока пусто. Добавьте vk.com/club… или короткое имя. Можно наблюдать до 25 сообществ.</p>
         ) : (
           <ul className="grid gap-3">
             {communities.map((community) => (

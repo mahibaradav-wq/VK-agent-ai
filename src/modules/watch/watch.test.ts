@@ -5,6 +5,7 @@ import { createAiService } from "@/modules/ai/ai-service";
 import { createAuthService } from "@/modules/auth/auth-service";
 import { createProjectService } from "@/modules/projects/project-service";
 import { createWorkspaceService } from "@/modules/workspaces/workspace-service";
+import { RECOMMENDED_WATCH_COMMUNITIES } from "@/modules/watch/recommended";
 import { WATCH_IDEAS_KIND, createWatchService } from "@/modules/watch/watch-service";
 import { prisma } from "@/server/db/prisma";
 import type { AiGenerateOutput, AiProvider } from "@/server/ai/types";
@@ -193,6 +194,27 @@ describe("VK watch idea agent", () => {
     await watch.addCommunity(owner.userId, owner.workspaceId, "https://vk.com/club77");
     const collected = await watch.collectIdeas(owner.userId, owner.workspaceId, {});
     expect(collected.posts[0]?.text).toMatch(/специй/);
+  });
+
+  it("lists 20 unique recommended communities and can add them with a live wall mock", async () => {
+    const sources = RECOMMENDED_WATCH_COMMUNITIES.map((item) => item.source);
+    expect(sources).toHaveLength(20);
+    expect(new Set(sources).size).toBe(20);
+
+    const owner = await registerOwner("watch-recommended");
+    const vk = scriptedVk({
+      "groups.getById": (params) => {
+        const screen = String(params.group_id);
+        const digits = Number(screen.replace(/\D/g, "")) || Math.abs(Array.from(screen).reduce((sum, ch) => sum + ch.charCodeAt(0), 0));
+        return { ok: true, response: { groups: [{ id: digits, name: screen, type: "group", screen_name: screen }] } };
+      },
+      "wall.get": { ok: true, response: { count: 1, items: [{ id: 1, owner_id: -1, date: 1731600000, text: "Полка" }] } },
+    });
+    const watch = createWatchService(prisma, { vk });
+    await watch.connectToken(owner.userId, owner.workspaceId, { token: VK_TOKEN });
+    const result = await watch.addRecommended(owner.userId, owner.workspaceId);
+    expect(result.added).toHaveLength(20);
+    expect(result.skipped).toHaveLength(0);
   });
 
   it("blocks a Viewer from adding communities", async () => {
