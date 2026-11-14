@@ -131,6 +131,21 @@ describe("social accounts", () => {
     expect(transport.calls.map((item) => item.method)).toEqual(["getMe", "getChat"]);
   });
 
+  it("does not blame the bot token when Telegram is unreachable", async () => {
+    const owner = await registerOwner("soc-net");
+    const social = createSocialService(prisma, {
+      telegram: scriptedTelegram({
+        getMe: { ok: false, error_code: 0, description: "Сеть до api.telegram.org недоступна, результат неопределён." },
+      }),
+    });
+    await expectAccess(
+      social.connectTelegram(owner.userId, owner.workspaceId, { token: BOT_TOKEN, chatId: "1" }),
+      400,
+      /нет сети до Telegram/,
+    );
+    expect(await prisma.socialAccount.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
+  });
+
   it("does not persist a connection when Telegram rejects the token", async () => {
     const owner = await registerOwner("soc-bad-token");
     const social = createSocialService(prisma, {

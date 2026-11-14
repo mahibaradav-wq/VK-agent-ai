@@ -30,6 +30,7 @@ services:
       AUTH_URL: ${AUTH_URL:-${NEXT_PUBLIC_SITE_URL}}
       DATABASE_URL: postgresql://${POSTGRES_USER:-polka}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-polka_social}
       LOCAL_STORAGE_DIR: /app/data/media
+      NODE_OPTIONS: --dns-result-order=ipv4first
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,6 +63,7 @@ services:
       AUTH_URL: ${AUTH_URL:-${NEXT_PUBLIC_SITE_URL}}
       DATABASE_URL: postgresql://${POSTGRES_USER:-polka}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-polka_social}
       LOCAL_STORAGE_DIR: /app/data/media
+      NODE_OPTIONS: --dns-result-order=ipv4first
     depends_on:
       postgres:
         condition: service_healthy

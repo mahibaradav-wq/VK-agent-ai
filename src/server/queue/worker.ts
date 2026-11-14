@@ -1,6 +1,9 @@
 import { Worker } from "bullmq";
 import IORedis from "ioredis";
+import dns from "node:dns";
 import os from "node:os";
+
+dns.setDefaultResultOrder("ipv4first");
 
 import { createPublishService } from "@/modules/publishing/publish-service";
 import { PUBLISH_QUEUE_NAME } from "@/server/queue/bullmq-queue";

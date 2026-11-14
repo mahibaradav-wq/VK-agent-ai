@@ -173,12 +173,22 @@ export function createSocialService(
 
       const me = await telegram.request(token, "getMe");
       if (!me.ok) {
-        throw new AccessError(400, `Telegram отклонил токен: ${me.description}`);
+        throw new AccessError(
+          400,
+          me.error_code === 0
+            ? `С этого сервера нет сети до Telegram: ${me.description}`
+            : `Telegram отклонил токен: ${me.description}`,
+        );
       }
       const bot = me.result as TelegramUser;
       const chat = await telegram.request(token, "getChat", { chat_id: chatId });
       if (!chat.ok) {
-        throw new AccessError(400, `Telegram не подтвердил чат: ${chat.description}`);
+        throw new AccessError(
+          400,
+          chat.error_code === 0
+            ? `С этого сервера нет сети до Telegram: ${chat.description}`
+            : `Telegram не подтвердил чат: ${chat.description}`,
+        );
       }
       const chatInfo = chat.result as TelegramChat;
       const encryptedToken = encryptToken(token);
