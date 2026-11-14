@@ -5,7 +5,7 @@ import { createAccessService } from "@/modules/access/access-service";
 import { assertApprovedVersion } from "@/modules/collaboration/approval";
 import { createCollaborationService } from "@/modules/collaboration/collaboration-service";
 import { deliverNotifications } from "@/modules/notifications/dispatch";
-import { isLivePublishPlatform, vkUnavailableMessage } from "@/modules/posts/platforms";
+import { isLivePublishPlatform } from "@/modules/posts/platforms";
 import { aggregatePostStatus } from "@/modules/publishing/aggregate";
 import { defaultBackoffMs, nextBackoffMs } from "@/modules/publishing/backoff";
 import { createDefaultAdapters, type AdapterRegistry, type PublishOutcome } from "@/server/social";
@@ -277,7 +277,7 @@ export function createPublishService(
       }
       await access.requirePermission(userId, workspaceId, "post.approve");
 
-      let post = await releaseStalePublish(await loadBoundPost(workspaceId, postId));
+      const post = await releaseStalePublish(await loadBoundPost(workspaceId, postId));
       const version = currentVersion(post);
       if (!version?.title.trim() || !version.body.trim()) {
         throw new AccessError(400, "Сохраните заголовок и текст, прежде чем публиковать.");
@@ -285,42 +285,8 @@ export function createPublishService(
       const liveTargets = post.targets.filter(
         (target) => isLivePublishPlatform(target.platform) && target.status !== "cancelled",
       );
-      const unavailableIds = post.targets
-        .filter((target) => !isLivePublishPlatform(target.platform) && target.status !== "cancelled")
-        .map((target) => target.id);
       if (liveTargets.length === 0) {
-        const account = await db.socialAccount.findFirst({
-          where: { workspaceId, platform: "telegram", status: "connected" },
-          orderBy: { updatedAt: "desc" },
-        });
-        if (!account) {
-          throw new AccessError(
-            400,
-            "ВКонтакте пока нельзя публиковать: нужен официальный VK ID. Подключите Telegram и отметьте его в черновике.",
-          );
-        }
-        if (unavailableIds.length > 0) {
-          await db.postTarget.updateMany({
-            where: { id: { in: unavailableIds } },
-            data: { status: "cancelled", lastError: vkUnavailableMessage },
-          });
-        }
-        await db.postTarget.create({
-          data: {
-            workspaceId,
-            postId: post.id,
-            platform: "telegram",
-            socialAccountId: account.id,
-            status: "draft",
-          },
-        });
-        post = await loadBoundPost(workspaceId, postId);
-      } else if (unavailableIds.length > 0) {
-        await db.postTarget.updateMany({
-          where: { id: { in: unavailableIds } },
-          data: { status: "cancelled", lastError: vkUnavailableMessage },
-        });
-        post = await loadBoundPost(workspaceId, postId);
+        throw new AccessError(400, "Отметьте Telegram или ВКонтакте в черновике.");
       }
 
       const collab = createCollaborationService(db);

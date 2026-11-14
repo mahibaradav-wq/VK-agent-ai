@@ -12,7 +12,9 @@ import { createWorkspaceService } from "@/modules/workspaces/workspace-service";
 import { prisma } from "@/server/db/prisma";
 import { createInlineQueue } from "@/server/queue";
 import { createTelegramAdapter } from "@/server/social/telegram-adapter";
+import { createVkAdapter } from "@/server/social/vk-adapter";
 import { isTelegramBotToken, type TelegramApiResult, type TelegramTransport } from "@/server/social/telegram-api";
+import type { VkApiResult, VkTransport } from "@/server/social/vk-api";
 
 const auth = createAuthService(prisma, "http://localhost:3000");
 const posts = createPostService(prisma);
@@ -26,6 +28,7 @@ async function approveCurrent(owner: { userId: string; workspaceId: string }, po
 }
 
 const BOT_TOKEN = "123456789:AAExampleTokenForTestsAbcdefghijkl";
+const VK_COMMUNITY_TOKEN = `vk1.a.${"C".repeat(80)}`;
 
 function email(label: string) {
   return `${label}.${Date.now()}.${Math.random().toString(16).slice(2)}@example.test`;
@@ -53,6 +56,23 @@ async function registerOwner(label: string) {
   const workspaceId = user.memberships[0]?.workspaceId ?? "";
   const project = await projects.create(user.id, workspaceId, { name: `Проект ${label}` });
   return { address, userId: user.id, workspaceId, projectId: project.id };
+}
+
+function scriptedVk(
+  handlers: Record<string, VkApiResult<unknown> | ((params: Record<string, string | number>) => VkApiResult<unknown>)>,
+): VkTransport & { methods: string[] } {
+  const methods: string[] = [];
+  return {
+    methods,
+    async call(_token, method, params = {}) {
+      methods.push(method);
+      const handler = handlers[method];
+      if (!handler) {
+        return { ok: false, error_code: 3, error_msg: `unexpected ${method}` };
+      }
+      return typeof handler === "function" ? handler(params) : handler;
+    },
+  };
 }
 
 function scriptedTelegram(
@@ -301,7 +321,7 @@ describe("social accounts", () => {
     expect(attempt.errorCode).toBe("rate_limit");
   });
 
-  it("does not fake a VK publish and keeps requires_setup until official VK ID exists", async () => {
+  it("does not fake a VK publish while the community token is missing", async () => {
     const owner = await registerOwner("soc-vk");
     const social = createSocialService(prisma);
     const vk = await social.createRequiresSetup(owner.userId, owner.workspaceId, { platform: "vk" });
@@ -320,5 +340,75 @@ describe("social accounts", () => {
     const attempt = await prisma.publishAttempt.findFirstOrThrow({ where: { jobId: job.id } });
     expect(attempt.errorCode).toBe("integration_not_configured");
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).not.toBe("published");
+  });
+
+  it("connects a community wall token and publishes through wall.post", async () => {
+    const owner = await registerOwner("soc-vk-live");
+    const transport = scriptedVk({
+      "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
+      "wall.post": (params) => {
+        if (!String(params.message ?? "").trim()) {
+          return { ok: false, error_code: 100, error_msg: "message is empty" };
+        }
+        expect(params.owner_id).toBe(-242155421);
+        expect(params.from_group).toBe(1);
+        return { ok: true, response: { post_id: 77 } };
+      },
+    });
+    const social = createSocialService(prisma, { vk: transport });
+    await expectAccess(
+      social.connectVk(owner.userId, owner.workspaceId, {
+        token: VK_COMMUNITY_TOKEN,
+        source: "vk.com/club242155421",
+        password: "vk-password",
+      }),
+      400,
+      /Пароль социальной сети не принимается/,
+    );
+    const connected = await social.connectVk(owner.userId, owner.workspaceId, {
+      token: VK_COMMUNITY_TOKEN,
+      source: "https://vk.com/club242155421",
+    });
+    expect(connected.status).toBe("connected");
+    expect(connected.platform).toBe("vk");
+    expect(connected.externalId).toBe("242155421");
+    expect(connected.displayName).toBe("ДОМ по полочкам");
+    expect(JSON.stringify(connected)).not.toContain(VK_COMMUNITY_TOKEN);
+
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Полки");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Полки",
+      body: "Разложили специи.",
+      platforms: ["vk"],
+      mediaIds: [],
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createVkAdapter({ db: prisma, transport }) },
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-vk-live");
+    const stored = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, include: { targets: true } });
+    expect(stored.status).toBe("published");
+    expect(stored.targets[0]?.externalId).toBe("77");
+    expect(transport.methods.filter((method) => method === "wall.post")).toHaveLength(2);
+  });
+
+  it("rejects a VK key that cannot write the community wall", async () => {
+    const owner = await registerOwner("soc-vk-no-wall");
+    const transport = scriptedVk({
+      "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
+      "wall.post": { ok: false, error_code: 214, error_msg: "Access to adding post denied" },
+    });
+    const social = createSocialService(prisma, { vk: transport });
+    await expectAccess(
+      social.connectVk(owner.userId, owner.workspaceId, {
+        token: VK_COMMUNITY_TOKEN,
+        source: "https://vk.com/club242155421",
+      }),
+      400,
+      /не умеет писать на стену/,
+    );
   });
 });

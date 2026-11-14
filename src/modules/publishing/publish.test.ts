@@ -328,40 +328,29 @@ describe("publishing queue", () => {
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("draft");
   });
 
-  it("does not publishNow a VK-only draft when Telegram is not connected", async () => {
+  it("does not mark a VK-only draft published without a community token", async () => {
     const owner = await registerOwner("pub-now-vk");
     const post = await draftWithTargets(owner, ["vk"], "Стена");
     const publishing = createPublishService(prisma, { queue: createInlineQueue() });
 
-    await expectAccess(
-      publishing.publishNow(owner.userId, owner.workspaceId, post.id),
-      400,
-      /ВКонтакте пока нельзя/,
-    );
+    const job = await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
     const stored = await prisma.post.findUniqueOrThrow({
       where: { id: post.id },
       include: { targets: true },
     });
-    expect(stored.status).toBe("draft");
-    expect(stored.targets.map((target) => `${target.platform}:${target.status}`)).toEqual(["vk:draft"]);
+    expect(job.status).toBe("failed");
+    expect(stored.status).toBe("failed");
+    expect(stored.targets.map((target) => `${target.platform}:${target.status}`)).toEqual(["vk:failed"]);
+    expect(stored.targets[0]?.lastError).toMatch(/integration_not_configured|ключ/);
   });
 
-  it("routes a VK-only draft to a connected Telegram account on publishNow", async () => {
-    const owner = await registerOwner("pub-now-vk-tg");
-    const post = await draftWithTargets(owner, ["vk"], "Стена в ТГ");
-    await prisma.socialAccount.create({
-      data: {
-        workspaceId: owner.workspaceId,
-        platform: "telegram",
-        displayName: "bot",
-        externalId: "100",
-        status: "connected",
-      },
-    });
-    const telegram = scripted("telegram", [{ kind: "success", externalId: "99" }]);
+  it("publishes a VK-only draft to the VK adapter on publishNow", async () => {
+    const owner = await registerOwner("pub-now-vk-live");
+    const post = await draftWithTargets(owner, ["vk"], "Стена ВК");
+    const vk = scripted("vk", [{ kind: "success", externalId: "88" }]);
     const publishing = createPublishService(prisma, {
       queue: createInlineQueue(),
-      adapters: createAdapterRegistry([telegram]),
+      adapters: createAdapterRegistry([vk]),
     });
 
     await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
@@ -369,16 +358,15 @@ describe("publishing queue", () => {
       where: { id: post.id },
       include: { targets: true },
     });
-    expect(telegram.calls).toBe(1);
+    expect(vk.calls).toBe(1);
     expect(stored.status).toBe("published");
-    expect(stored.targets.find((target) => target.platform === "vk")?.status).toBe("cancelled");
-    expect(stored.targets.find((target) => target.platform === "telegram")?.status).toBe("published");
+    expect(stored.targets.find((target) => target.platform === "vk")?.status).toBe("published");
   });
 
-  it("skips VK on publishNow and sends the live Telegram target instead", async () => {
-    const owner = await registerOwner("pub-now-skip-vk");
+  it("publishes both VK and Telegram on publishNow when both are live", async () => {
+    const owner = await registerOwner("pub-now-both");
     const post = await draftWithTargets(owner, ["vk", "telegram"], "Смешанный");
-    const vk = scripted("vk", [{ kind: "success", externalId: "should-not" }]);
+    const vk = scripted("vk", [{ kind: "success", externalId: "vk-ok" }]);
     const telegram = scripted("telegram", [{ kind: "success", externalId: "42" }]);
     const publishing = createPublishService(prisma, {
       queue: createInlineQueue(),
@@ -391,10 +379,10 @@ describe("publishing queue", () => {
       include: { targets: true },
     });
 
-    expect(vk.calls).toBe(0);
+    expect(vk.calls).toBe(1);
     expect(telegram.calls).toBe(1);
     expect(stored.status).toBe("published");
-    expect(stored.targets.find((target) => target.platform === "vk")?.status).toBe("cancelled");
+    expect(stored.targets.find((target) => target.platform === "vk")?.status).toBe("published");
     expect(stored.targets.find((target) => target.platform === "telegram")?.status).toBe("published");
     expect(job?.status).toBe("completed");
   });

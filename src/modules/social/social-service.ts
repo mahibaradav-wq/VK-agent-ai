@@ -6,6 +6,7 @@ import { getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { lockWorkspaceMetric } from "@/modules/billing/usage";
 import { encryptToken } from "@/server/crypto/token-cipher";
 import { FIRST_SOCIAL_PLATFORM } from "@/modules/social/catalog";
+import { parseVkCommunitySource } from "@/modules/watch/parse";
 import {
   createTelegramTransport,
   isTelegramBotToken,
@@ -13,6 +14,13 @@ import {
   type TelegramTransport,
   type TelegramUser,
 } from "@/server/social/telegram-api";
+import {
+  createVkTransport,
+  describeVkApiError,
+  extractVkGroup,
+  isVkAccessToken,
+  type VkTransport,
+} from "@/server/social/vk-api";
 
 const accountInclude = {
   capabilities: { orderBy: { name: "asc" as const } },
@@ -63,10 +71,12 @@ export function createSocialService(
   db: PrismaClient,
   options?: {
     telegram?: TelegramTransport;
+    vk?: VkTransport;
   },
 ) {
   const access = createAccessService(db);
   const telegram = options?.telegram ?? createTelegramTransport();
+  const vk = options?.vk ?? createVkTransport();
 
   async function loadBoundAccount(workspaceId: string, accountId: string) {
     const account = await db.socialAccount.findUnique({
@@ -265,6 +275,140 @@ export function createSocialService(
             entityId: saved.id,
             actorId: userId,
             details: `telegram:${externalId}`,
+          },
+        });
+        return tx.socialAccount.findUniqueOrThrow({ where: { id: saved.id }, include: accountInclude });
+      });
+
+      return toPublic(account);
+    },
+
+    async connectVk(
+      userId: string,
+      workspaceId: string,
+      input: { token: string; source: string; displayName?: string; projectId?: string; accountId?: string; password?: string },
+    ) {
+      await access.requirePermission(userId, workspaceId, "social.connect");
+      rejectPassword(input);
+
+      const token = input.token.trim();
+      if (!token) {
+        throw new AccessError(400, "Нужен ключ доступа сообщества ВКонтакте с правом «Стена».");
+      }
+      if (!isVkAccessToken(token)) {
+        throw new AccessError(
+          400,
+          "Это не ключ VK API. Пароль аккаунта не принимается. Нужен ключ сообщества из «Работа с API», не сервисный ключ приложения.",
+        );
+      }
+      const parsed = parseVkCommunitySource(input.source);
+      if (input.projectId) {
+        const project = await db.project.findUnique({ where: { id: input.projectId } });
+        assertWorkspaceBound(workspaceId, project, "Проект");
+      }
+
+      const club = /^(club|public|event)(\d+)$/i.exec(parsed.screenName);
+      const groupLookup = club?.[2] ?? parsed.screenName;
+      const groupResult = await vk.call(token, "groups.getById", {
+        group_id: groupLookup,
+        fields: "name,screen_name",
+      });
+      const group = groupResult.ok ? extractVkGroup(groupResult.response) : null;
+      if (!group?.id) {
+        throw new AccessError(
+          400,
+          groupResult.ok
+            ? "Не удалось определить сообщество по ссылке. Укажите vk.com/club… того клуба, чей ключ вы вставляете."
+            : describeVkApiError(groupResult),
+        );
+      }
+
+      const ownerId = -Math.abs(group.id);
+      const probe = await vk.call(token, "wall.post", {
+        owner_id: ownerId,
+        from_group: 1,
+        message: "",
+        guid: `probe:${workspaceId}:${group.id}`,
+      });
+      if (probe.ok) {
+        const posted = probe.response as { post_id?: number } | number;
+        const postId = typeof posted === "number" ? posted : posted?.post_id;
+        if (postId) {
+          await vk.call(token, "wall.delete", { owner_id: ownerId, post_id: postId });
+        }
+      } else if (probe.error_code !== 100) {
+        throw new AccessError(
+          400,
+          probe.error_code === 15 || probe.error_code === 27 || probe.error_code === 214
+            ? "Этот ключ не умеет писать на стену. В настройках сообщества создайте ключ с правом «Стена». Сервисный ключ приложения только читает."
+            : describeVkApiError(probe),
+        );
+      }
+
+      const encryptedToken = encryptToken(token);
+      const displayName = input.displayName?.trim() || group.name?.trim() || parsed.screenName;
+      const externalId = String(group.id);
+
+      const account = await db.$transaction(async (tx) => {
+        let saved;
+        if (input.accountId) {
+          const existing = await tx.socialAccount.findUnique({ where: { id: input.accountId } });
+          assertWorkspaceBound(workspaceId, existing, "Социальный аккаунт");
+          if (existing.platform !== "vk") {
+            throw new AccessError(400, "Этот аккаунт не ВКонтакте.");
+          }
+          saved = await tx.socialAccount.update({
+            where: { id: existing.id },
+            data: {
+              projectId: input.projectId || existing.projectId,
+              displayName,
+              externalId,
+              status: "connected",
+              encryptedToken,
+              lastError: null,
+            },
+            include: accountInclude,
+          });
+        } else {
+          await lockWorkspaceMetric(tx, workspaceId, "social_accounts");
+          const limits = await getWorkspacePlanLimits(tx, workspaceId);
+          const used = await tx.socialAccount.count({
+            where: { workspaceId, status: { not: "disconnected" } },
+          });
+          if (used >= limits.socialAccounts) {
+            throw new AccessError(400, `Лимит социальных аккаунтов тарифа исчерпан (${limits.socialAccounts}).`);
+          }
+          saved = await tx.socialAccount.create({
+            data: {
+              workspaceId,
+              projectId: input.projectId || null,
+              platform: "vk",
+              displayName,
+              externalId,
+              status: "connected",
+              encryptedToken,
+              lastError: null,
+            },
+            include: accountInclude,
+          });
+        }
+
+        await tx.socialAccountCapability.upsert({
+          where: { socialAccountId_name: { socialAccountId: saved.id, name: "publish_text" } },
+          update: { enabled: true },
+          create: { socialAccountId: saved.id, name: "publish_text", enabled: true },
+        });
+        await tx.postTarget.updateMany({
+          where: { workspaceId, platform: "vk", socialAccountId: null },
+          data: { socialAccountId: saved.id },
+        });
+        await tx.auditLog.create({
+          data: {
+            action: "CONNECT_SOCIAL_ACCOUNT",
+            entityType: "social_account",
+            entityId: saved.id,
+            actorId: userId,
+            details: `vk:${externalId}`,
           },
         });
         return tx.socialAccount.findUniqueOrThrow({ where: { id: saved.id }, include: accountInclude });
