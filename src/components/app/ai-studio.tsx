@@ -66,8 +66,8 @@ function BriefFields() {
           <select name="platform" defaultValue="telegram" className="min-h-11 rounded-2xl border border-ink/10 bg-white px-3">
             <option value="">Без адаптации</option>
             {previewPlatforms.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
+              <option key={item.id} value={item.id} disabled={!item.live}>
+                {item.live ? item.label : `${item.label} (пока нельзя)`}
               </option>
             ))}
           </select>

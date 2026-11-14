@@ -164,7 +164,7 @@ export default async function CalendarPage({
                 <option value="">Все</option>
                 {previewPlatforms.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.label}
+                    {item.live ? item.label : `${item.label} (пока нельзя)`}
                   </option>
                 ))}
               </select>

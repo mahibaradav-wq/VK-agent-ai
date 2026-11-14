@@ -5,10 +5,13 @@ import { createAccessService } from "@/modules/access/access-service";
 import { assertApprovedVersion } from "@/modules/collaboration/approval";
 import { createCollaborationService } from "@/modules/collaboration/collaboration-service";
 import { deliverNotifications } from "@/modules/notifications/dispatch";
+import { isLivePublishPlatform, vkUnavailableMessage } from "@/modules/posts/platforms";
 import { aggregatePostStatus } from "@/modules/publishing/aggregate";
 import { defaultBackoffMs, nextBackoffMs } from "@/modules/publishing/backoff";
 import { createDefaultAdapters, type AdapterRegistry, type PublishOutcome } from "@/server/social";
 import { getPublishQueue, type QueueDriver } from "@/server/queue";
+
+const STALE_CLAIM_MS = 2 * 60 * 1000;
 
 const jobInclude = {
   post: {
@@ -104,7 +107,35 @@ export function createPublishService(
     }
   }
 
+  async function releaseStalePublish(post: LoadedPost) {
+    const staleBefore = new Date(now().getTime() - STALE_CLAIM_MS);
+    const recovered = await db.publishJob.updateMany({
+      where: {
+        postId: post.id,
+        status: { in: ["claimed", "processing"] },
+        claimedAt: { lte: staleBefore },
+      },
+      data: {
+        status: "failed",
+        lastError: "Задача зависла при публикации и снята с обработки.",
+      },
+    });
+    if (recovered.count === 0) {
+      return post;
+    }
+    await db.post.update({
+      where: { id: post.id },
+      data: { status: "failed" },
+    });
+    await db.postTarget.updateMany({
+      where: { postId: post.id, status: "publishing" },
+      data: { status: "failed", lastError: "Задача зависла при публикации и снята с обработки." },
+    });
+    return loadBoundPost(post.workspaceId, post.id);
+  }
+
   async function createOrReuseJob(post: LoadedPost, actorId: string | null) {
+    post = await releaseStalePublish(post);
     const version = currentVersion(post);
     if (!version) {
       throw new AccessError(400, "У публикации нет версии для отправки.");
@@ -246,18 +277,33 @@ export function createPublishService(
       }
       await access.requirePermission(userId, workspaceId, "post.approve");
 
-      let post = await loadBoundPost(workspaceId, postId);
+      let post = await releaseStalePublish(await loadBoundPost(workspaceId, postId));
       const version = currentVersion(post);
       if (!version?.title.trim() || !version.body.trim()) {
         throw new AccessError(400, "Сохраните заголовок и текст, прежде чем публиковать.");
       }
-      if (post.targets.length === 0) {
+      const liveTargets = post.targets.filter(
+        (target) => isLivePublishPlatform(target.platform) && target.status !== "cancelled",
+      );
+      const unavailableIds = post.targets
+        .filter((target) => !isLivePublishPlatform(target.platform) && target.status !== "cancelled")
+        .map((target) => target.id);
+      if (liveTargets.length === 0) {
         const account = await db.socialAccount.findFirst({
           where: { workspaceId, platform: "telegram", status: "connected" },
           orderBy: { updatedAt: "desc" },
         });
         if (!account) {
-          throw new AccessError(400, "Сначала подключите Telegram или отметьте цель в черновике.");
+          throw new AccessError(
+            400,
+            "ВКонтакте пока нельзя публиковать: нужен официальный VK ID. Подключите Telegram и отметьте его в черновике.",
+          );
+        }
+        if (unavailableIds.length > 0) {
+          await db.postTarget.updateMany({
+            where: { id: { in: unavailableIds } },
+            data: { status: "cancelled", lastError: vkUnavailableMessage },
+          });
         }
         await db.postTarget.create({
           data: {
@@ -267,6 +313,12 @@ export function createPublishService(
             socialAccountId: account.id,
             status: "draft",
           },
+        });
+        post = await loadBoundPost(workspaceId, postId);
+      } else if (unavailableIds.length > 0) {
+        await db.postTarget.updateMany({
+          where: { id: { in: unavailableIds } },
+          data: { status: "cancelled", lastError: vkUnavailableMessage },
         });
         post = await loadBoundPost(workspaceId, postId);
       }
@@ -341,6 +393,7 @@ export function createPublishService(
         };
       }
 
+      try {
       await db.publishJob.update({
         where: { id: jobId },
         data: { status: "processing" },
@@ -409,13 +462,28 @@ export function createPublishService(
         }
         const finishedAt = now();
 
-        await db.publishAttempt.create({
-          data: {
+        await db.publishAttempt.upsert({
+          where: {
+            jobId_targetId_attemptNumber: {
+              jobId,
+              targetId: target.id,
+              attemptNumber,
+            },
+          },
+          create: {
             jobId,
             targetId: target.id,
             platform: target.platform,
             kind: outcome.kind,
             attemptNumber,
+            errorCode: outcome.kind === "success" ? null : outcome.code,
+            errorMessage: outcome.kind === "success" ? null : outcome.message,
+            externalId: outcome.kind === "success" ? outcome.externalId : null,
+            startedAt,
+            finishedAt,
+          },
+          update: {
+            kind: outcome.kind,
             errorCode: outcome.kind === "success" ? null : outcome.code,
             errorMessage: outcome.kind === "success" ? null : outcome.message,
             externalId: outcome.kind === "success" ? outcome.externalId : null,
@@ -492,7 +560,7 @@ export function createPublishService(
       } else {
         jobStatus = "failed";
         lastError = post.targets
-          .filter((target) => target.lastError)
+          .filter((target) => target.lastError && target.status !== "cancelled")
           .map((target) => `${target.platform}: ${target.lastError}`)
           .join("; ");
         await db.post.update({ where: { id: post.id }, data: { status: postStatus } });
@@ -527,9 +595,33 @@ export function createPublishService(
         skipped: false as const,
         job: await db.publishJob.findUnique({ where: { id: jobId }, include: jobInclude }),
       };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Внутренняя ошибка публикации.";
+        await db.publishJob.update({
+          where: { id: jobId },
+          data: { status: "failed", lastError: message },
+        });
+        await db.post.update({
+          where: { id: claimed.postId },
+          data: { status: "failed" },
+        });
+        return {
+          skipped: false as const,
+          job: await db.publishJob.findUnique({ where: { id: jobId }, include: jobInclude }),
+        };
+      }
     },
 
     async processDueJobs(workerId: string, at = now(), workspaceId?: string) {
+      const staleBefore = new Date(at.getTime() - STALE_CLAIM_MS);
+      await db.publishJob.updateMany({
+        where: {
+          workspaceId: workspaceId || undefined,
+          status: { in: ["claimed", "processing"] },
+          claimedAt: { lte: staleBefore },
+        },
+        data: { status: "pending", claimedBy: null },
+      });
       const due = await db.publishJob.findMany({
         where: {
           workspaceId: workspaceId || undefined,
