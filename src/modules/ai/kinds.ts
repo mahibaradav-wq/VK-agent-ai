@@ -57,6 +57,9 @@ export function displayKind(kind: string) {
   if (kind === "agent") {
     return "Агент: пост + визуал";
   }
+  if (kind === "watch_ideas") {
+    return "Агент: идеи по сообществам VK";
+  }
   if ((aiKinds as readonly string[]).includes(kind)) {
     return kindLabels[kind as AiKind];
   }

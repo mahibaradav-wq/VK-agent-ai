@@ -43,6 +43,7 @@ model User {
   projectAccesses     ProjectAccess[]
   platformAdmin       PlatformAdmin?
   aiConnections       WorkspaceAiConnection[]
+  vkWatchCredentials  VkWatchCredential[]
 }
 
 model Account {
@@ -114,6 +115,8 @@ model Workspace {
   checkoutSessions    CheckoutSession[]
   paymentEvents       PaymentEvent[]
   aiConnection        WorkspaceAiConnection?
+  vkWatchCommunities  VkWatchCommunity[]
+  vkWatchCredential   VkWatchCredential?
 }
 
 model WorkspaceMember {
@@ -660,4 +663,47 @@ model PlatformAdmin {
   role      PlatformAdminRole @default(Superadmin)
   createdAt DateTime          @default(now())
   user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VkWatchCredential {
+  id             String   @id @default(cuid())
+  workspaceId    String   @unique
+  encryptedToken String   @db.Text
+  status         String   @default("connected")
+  lastError      String?  @db.Text
+  connectedById  String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  connectedBy    User      @relation(fields: [connectedById], references: [id], onDelete: Cascade)
+
+  @@index([connectedById])
+}
+
+model VkWatchCommunity {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  source        String
+  screenName    String
+  externalId    String    @default("")
+  displayName   String
+  lastFetchedAt DateTime?
+  lastError     String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  snapshots     VkWatchSnapshot[]
+
+  @@unique([workspaceId, screenName])
+  @@index([workspaceId, createdAt])
+}
+
+model VkWatchSnapshot {
+  id          String   @id @default(cuid())
+  communityId String
+  fetchedAt   DateTime @default(now())
+  postsJson   String   @db.Text
+  community   VkWatchCommunity @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@index([communityId, fetchedAt])
 }

@@ -12,6 +12,7 @@ const appNav = [
   { href: "/app/calendar", label: "Календарь" },
   { href: "/app/posts", label: "Публикации" },
   { href: "/app/ai", label: "AI" },
+  { href: "/app/watch", label: "Идеи VK" },
   { href: "/app/analytics", label: "Аналитика" },
   { href: "/app/queue", label: "Очередь" },
   { href: "/app/media", label: "Медиатека" },
