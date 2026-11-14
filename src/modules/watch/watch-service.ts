@@ -9,6 +9,7 @@ import { decryptToken, encryptToken } from "@/server/crypto/token-cipher";
 import {
   createVkTransport,
   describeVkApiError,
+  extractVkGroup,
   isVkAccessToken,
   type VkResolvedScreenName,
   type VkTransport,
@@ -121,22 +122,26 @@ export function createWatchService(
   }
 
   async function resolveCommunity(token: string, screenName: string) {
-      const resolved = await vk.call(token, "utils.resolveScreenName", { screen_name: screenName });
-    if (!resolved.ok) {
-      const fallback = /^(club|public|event)(\d+)$/i.exec(screenName);
-      if (fallback) {
+    const resolved = await vk.call(token, "groups.getById", { group_id: screenName });
+    if (resolved.ok) {
+      const group = extractVkGroup(resolved.response);
+      if (group?.id && (group.type === "group" || group.type === "page" || group.type === "event" || !group.type)) {
         return {
-          type: fallback[1] === "event" ? "group" : fallback[1] === "public" ? "page" : "group",
-          object_id: Number(fallback[2]),
+          type: group.type === "event" ? "event" : group.type === "page" ? "page" : "group",
+          object_id: group.id,
+          name: group.name,
+          screen_name: group.screen_name,
         } satisfies VkResolvedScreenName;
       }
-      throw new AccessError(400, describeVkApiError(resolved));
     }
-    const payload = (resolved.response ?? {}) as VkResolvedScreenName;
-    if (!payload.object_id || (payload.type !== "group" && payload.type !== "page" && payload.type !== "event")) {
-      throw new AccessError(400, "Это не сообщество и не публичная страница ВКонтакте.");
+    const fallback = /^(club|public|event)(\d+)$/i.exec(screenName);
+    if (fallback) {
+      return {
+        type: fallback[1] === "event" ? "event" : fallback[1] === "public" ? "page" : "group",
+        object_id: Number(fallback[2]),
+      } satisfies VkResolvedScreenName;
     }
-    return payload;
+    throw new AccessError(400, resolved.ok ? "Это не сообщество и не публичная страница ВКонтакте." : describeVkApiError(resolved));
   }
 
   async function fetchWall(token: string, ownerId: number) {
@@ -194,14 +199,14 @@ export function createWatchService(
       if (!isVkAccessToken(token)) {
         throw new AccessError(
           400,
-          "Это не ключ VK API. Пароль аккаунта не принимается. Нужен сервисный ключ приложения или ключ сообщества из «Работа с API».",
+          "Это не ключ VK API. Пароль аккаунта не принимается. Нужен сервисный ключ приложения из карточки VK ID, не защищённый ключ и не код виджета входа.",
         );
       }
-      const probe = await vk.call(token, "utils.resolveScreenName", { screen_name: "vk" });
+      const probe = await vk.call(token, "wall.get", { owner_id: -1, count: 1, filter: "owner" });
       if (!probe.ok && probe.error_code === 0) {
         throw new AccessError(400, probe.error_msg);
       }
-      if (!probe.ok && probe.error_code === 5) {
+      if (!probe.ok && (probe.error_code === 5 || probe.error_code === 15)) {
         throw new AccessError(400, describeVkApiError(probe));
       }
       const encryptedToken = encryptToken(token);
@@ -272,7 +277,7 @@ export function createWatchService(
             source: parsed.source,
             screenName: parsed.screenName,
             externalId,
-            displayName: parsed.screenName,
+            displayName: resolved.name?.trim() || resolved.screen_name || parsed.screenName,
             lastError,
             lastFetchedAt: lastError ? null : now(),
           },

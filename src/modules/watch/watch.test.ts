@@ -92,7 +92,7 @@ describe("VK watch idea agent", () => {
   it("rejects a VK password and does not invent ideas without a live wall", async () => {
     const owner = await registerOwner("watch-empty");
     const vk = scriptedVk({
-      "utils.resolveScreenName": { ok: true, response: { type: "group", object_id: 10 } },
+      "groups.getById": { ok: true, response: { groups: [{ id: 10, name: "Тест", type: "group" }] } },
       "wall.get": { ok: true, response: { count: 0, items: [] } },
     });
     const watch = createWatchService(prisma, {
@@ -116,7 +116,7 @@ describe("VK watch idea agent", () => {
   it("reads community posts and stores original ideas, then applies one to a Telegram draft", async () => {
     const owner = await registerOwner("watch-ok");
     const vk = scriptedVk({
-      "utils.resolveScreenName": { ok: true, response: { type: "group", object_id: 55 } },
+      "groups.getById": { ok: true, response: { groups: [{ id: 55, name: "Кухня", type: "group", screen_name: "club55" }] } },
       "wall.get": {
         ok: true,
         response: {
@@ -148,7 +148,10 @@ describe("VK watch idea agent", () => {
     });
 
     await watch.connectToken(owner.userId, owner.workspaceId, { token: VK_TOKEN });
-    await watch.addCommunity(owner.userId, owner.workspaceId, "vk.com/club55");
+    expect(vk.methods[0]).toBe("wall.get");
+    const community = await watch.addCommunity(owner.userId, owner.workspaceId, "vk.com/club55");
+    expect(community.displayName).toBe("Кухня");
+    expect(vk.methods).toContain("groups.getById");
     const collected = await watch.collectIdeas(owner.userId, owner.workspaceId, {
       brief: "Дом по полочкам",
       projectId: owner.projectId,
@@ -161,6 +164,35 @@ describe("VK watch idea agent", () => {
     const post = await watch.applyIdea(owner.userId, owner.workspaceId, collected.request.id, 0, owner.projectId);
     expect(post.targets.map((target) => target.platform)).toEqual(["telegram"]);
     expect(post.versions[0]?.title).toMatch(/Специи/);
+  });
+
+  it("accepts a hex service key and falls back to club id when groups.getById is unavailable", async () => {
+    const owner = await registerOwner("watch-service");
+    const vk = scriptedVk({
+      "groups.getById": { ok: false, error_code: 1051, error_msg: "Method is not available for this profile type" },
+      "wall.get": {
+        ok: true,
+        response: { count: 1, items: [{ id: 1, owner_id: -77, date: 1731600000, text: "Полка для специй" }] },
+      },
+    });
+    const watch = createWatchService(prisma, {
+      vk,
+      ai: createAiService(prisma, {
+        provider: scriptedAi({
+          title: "Идеи",
+          body: "По стене.",
+          items: ["Полка || Соседи пишут про специи || Куда поставить банки"],
+          raw: "",
+          provider: "scripted",
+          model: "test",
+        }),
+      }),
+    });
+    const hexKey = "b".repeat(71);
+    await watch.connectToken(owner.userId, owner.workspaceId, { token: hexKey });
+    await watch.addCommunity(owner.userId, owner.workspaceId, "https://vk.com/club77");
+    const collected = await watch.collectIdeas(owner.userId, owner.workspaceId, {});
+    expect(collected.posts[0]?.text).toMatch(/специй/);
   });
 
   it("blocks a Viewer from adding communities", async () => {

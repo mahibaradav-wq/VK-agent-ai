@@ -78,7 +78,7 @@ export function WatchBoard({
       <Card className="grid gap-3">
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Ключ VK для чтения</p>
         <p className="text-sm text-ink/70">
-          Сервисный ключ приложения VK или ключ сообщества из «Управление → Дополнительно → Работа с API». Пароль
+          Сервисный ключ доступа из карточки приложения VK ID (не защищённый ключ и не код виджета входа). Пароль
           аккаунта не принимается. Этот ключ только читает стены; публиковать во ВК он не умеет.
         </p>
         <p className="text-sm text-ink/70">
