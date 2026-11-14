@@ -63,6 +63,12 @@ export function SocialAccountsBoard({
               Capabilities:{" "}
               {account.capabilities.map((item) => `${item.name}${item.enabled ? "" : " (выкл)"}`).join(", ") || "нет"}
             </p>
+            {account.platform === "telegram" && account.hasToken && !account.externalId ? (
+              <p className="text-sm text-ink/70">
+                Бот сохранён. Сам по себе он не канал: посты выйдут, когда появится ваш канал или группа и бот станет там
+                администратором.
+              </p>
+            ) : null}
             {account.lastError ? <p className="text-sm text-ink/60">{account.lastError}</p> : null}
             {canConnect ? (
               <form action={disconnectAction}>
@@ -101,8 +107,8 @@ export function SocialAccountsBoard({
             <Card>
               <h2 className="text-xl font-black text-ink">Подключить Telegram</h2>
               <p className="mt-2 text-sm text-ink/70">
-                Официальный путь: создайте бота в @BotFather и укажите chat_id канала или чата, куда бот может писать.
-                Поля «пароль Telegram» нет.
+                Достаточно токена от @BotFather. Канал не обязателен: бот — это не лента, в него нельзя «выложить пост».
+                Если позже появится ваш канал или группа, укажите @username или chat_id. Поля «пароль Telegram» нет.
               </p>
               <form action={connectAction} className="mt-4 grid gap-4">
                 <input type="hidden" name="workspaceId" value={workspaceId} />
@@ -118,10 +124,10 @@ export function SocialAccountsBoard({
                   />
                 </label>
                 <label className="grid gap-2 text-sm font-medium text-ink">
-                  Chat ID или @channel
+                  Канал или чат (не обязательно)
                   <input
                     name="chatId"
-                    required
+                    placeholder="@ваш_канал или chat_id"
                     className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
                   />
                 </label>

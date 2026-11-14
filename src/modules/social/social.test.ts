@@ -107,6 +107,39 @@ describe("social accounts", () => {
     expect(JSON.stringify(account)).not.toMatch(/encryptedToken|AAExampleToken/);
   });
 
+  it("connects a bot token without a channel and does not call getChat", async () => {
+    const owner = await registerOwner("soc-bot-only");
+    const transport = scriptedTelegram({
+      getMe: { ok: true, result: { id: 897, is_bot: true, username: "dom_po_polochkam_bot", first_name: "ДОМ по полочкам" } },
+    });
+    const social = createSocialService(prisma, { telegram: transport });
+    const connected = await social.connectTelegram(owner.userId, owner.workspaceId, { token: BOT_TOKEN });
+    expect(connected.status).toBe("connected");
+    expect(connected.displayName).toBe("@dom_po_polochkam_bot");
+    expect(connected.externalId).toBe("");
+    expect(connected.hasToken).toBe(true);
+    expect(connected.lastError).toMatch(/нет своей ленты/);
+    expect(transport.calls.map((item) => item.method)).toEqual(["getMe"]);
+
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createTelegramAdapter({ db: prisma, transport }) },
+    });
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Без канала");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Без канала",
+      body: "Текст",
+      platforms: ["telegram"],
+      mediaIds: [],
+    });
+    await approveCurrent(owner, post.id);
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-bot-only");
+    const attempt = await prisma.publishAttempt.findFirstOrThrow({ where: { jobId: job.id } });
+    expect(attempt.errorCode).toBe("telegram_no_chat");
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).not.toBe("published");
+  });
+
   it("connects Telegram only after official getMe/getChat and encrypts the token", async () => {
     const owner = await registerOwner("soc-connect");
     const transport = scriptedTelegram({
