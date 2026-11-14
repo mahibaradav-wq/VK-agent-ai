@@ -35,6 +35,7 @@
 | `EMAIL_API_KEY`, `EMAIL_API_URL`, `EMAIL_FROM` | Внешняя почта уведомлений | Без mailbox и без ключа письмо не отправляется |
 | `STORAGE_DRIVER=s3` и `S3_*` | Объектное хранилище | Локальный диск или отказ загрузки |
 | `TELEGRAM_PROXY_URL` | Исходящий HTTP(S) прокси до Bot API, если с VPS нет прямого доступа к `api.telegram.org` | Прямое HTTPS к Telegram |
+| `AI_PROXY_URL` | Исходящий прокси до OpenAI, если `api.openai.com` отвечает `unsupported_country` | Берётся `TELEGRAM_PROXY_URL`, иначе прямой доступ |
 | `TELEGRAM_API_BASE_URL` | Корень Bot API без завершающего `/` | `https://api.telegram.org` |
 
 Токен Telegram задаётся в кабинете, не в env. Глобальный bot token в окружении не используется.

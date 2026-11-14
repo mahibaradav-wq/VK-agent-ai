@@ -43,6 +43,7 @@ async function registerOwner(label: string) {
 
 describe("AI provider connection", () => {
   beforeAll(async () => {
+    process.env.TOKEN_ENCRYPTION_KEY = "stage-ai-provider-tests";
     await prisma.$connect();
   });
 
@@ -108,6 +109,25 @@ describe("AI provider connection", () => {
       }),
       400,
       /отклонил ключ/,
+    );
+
+    const geoBlocked = createAiConnectionService(prisma, {
+      envProvider: createUnconfiguredAiProvider(),
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            error: { code: "unsupported_country_region_territory", message: "Country not supported" },
+          }),
+          { status: 403 },
+        ),
+    });
+    await expectAccess(
+      geoBlocked.connect(owner.userId, owner.workspaceId, {
+        provider: "openai",
+        apiKey: "sk-valid-looking-key",
+      }),
+      400,
+      /недоступен с этого сервера по региону/,
     );
     await expectAccess(
       connections.connect(viewer.userId, owner.workspaceId, {

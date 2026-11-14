@@ -1,4 +1,5 @@
 import { AccessError } from "@/modules/access/permissions";
+import { createOutboundFetch } from "@/server/http/outbound-fetch";
 import { detectMediaType, MAX_MEDIA_BYTES } from "@/modules/media/file-validation";
 import type { AiGenerateInput, AiGenerateOutput, AiImageInput, AiImageOutput, AiProvider } from "@/server/ai/types";
 
@@ -86,7 +87,7 @@ export function createOpenAiCompatibleProvider(options: {
   name?: string;
   fetchImpl?: typeof fetch;
 }): AiProvider {
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? createOutboundFetch();
   const baseUrl = options.baseUrl.replace(/\/$/, "");
   const imageModel = options.imageModel?.trim() || "dall-e-3";
   const name = options.name?.trim() || "openai-compatible";
