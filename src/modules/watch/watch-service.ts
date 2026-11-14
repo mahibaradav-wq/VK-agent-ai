@@ -414,11 +414,11 @@ export function createWatchService(
       const brief = input.brief?.trim() || `Бренд: ${workspace.name}. Организация хранения, дом и кухня.`;
       const prompt = [
         `Бриф бренда:\n${brief}`,
-        "Недавние посты сообществ ВКонтакте, которые мы наблюдаем (не копировать, а предложить свои темы):",
+        "Недавние посты чужих сообществ ВКонтакте (не копировать, а предложить свои темы для нашей стены ВК):",
         summarizePosts(ideaPosts),
-        "Предложи 6 оригинальных идей постов для нашего бренда.",
+        "Предложи 6 оригинальных идей постов на стену ВКонтакте для сообщества «Дом по полочкам».",
         "Каждый item: «Заголовок || Почему сейчас || Хук первой строки».",
-        "Не выдумывай охват и не обещай публикацию во ВК.",
+        "Пиши как пост ВК, не как пост Telegram. Не выдумывай охват и не обещай, что пост уже опубликован.",
       ].join("\n\n");
 
       const generated = await ai.generate(userId, workspaceId, {
@@ -426,7 +426,7 @@ export function createWatchService(
         prompt,
         tone: "friendly",
         length: "medium",
-        platform: "telegram",
+        platform: "vk",
         projectId: input.projectId,
       });
       if (generated.items.length === 0 && !generated.body.trim()) {
@@ -436,7 +436,7 @@ export function createWatchService(
         where: { id: generated.id },
         data: {
           kind: WATCH_IDEAS_KIND,
-          title: generated.title.trim() || "Идеи по сообществам VK",
+          title: "Идеи постов ВКонтакте",
           itemsJson: JSON.stringify(generated.items),
         },
       });
@@ -489,7 +489,7 @@ export function createWatchService(
       await posts.saveDraft(userId, workspaceId, created.id, {
         title,
         body,
-        platforms: ["telegram"],
+        platforms: ["vk"],
         mediaIds: [],
       });
       await db.auditLog.create({
