@@ -28,8 +28,8 @@ export function PublishPanel({
     <Card className="grid gap-3">
       <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Публикация</p>
       <p className="text-sm text-ink/70">
-        Статус поста: {postStatus}. «Опубликовать сейчас» отправляет в Telegram. ВКонтакте пропускается: нет
-        официального VK ID, успех туда не имитируется.
+        Статус поста: {postStatus}. «Опубликовать сейчас» отправляет на отмеченные живые цели: Telegram и/или стену
+        ВК. Без ключа сообщества ВК успех не имитируется.
       </p>
       <p className="text-sm text-ink/70">
         Цели: {targets.map((target) => `${target.platform}:${target.status}`).join(", ") || "не выбраны"}

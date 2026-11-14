@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { StatusBanner } from "@/components/ui/status-banner";
 import {
   connectTelegram,
+  connectVk,
   createSetupAccount,
   disconnectSocial,
   type SocialFormState,
@@ -40,6 +41,7 @@ export function SocialAccountsBoard({
 }) {
   const [setupState, setupAction, setupPending] = useActionState(createSetupAccount, idle);
   const [connectState, connectAction, connectPending] = useActionState(connectTelegram, idle);
+  const [vkState, vkAction, vkPending] = useActionState(connectVk, idle);
   const [disconnectState, disconnectAction, disconnectPending] = useActionState(disconnectSocial, idle);
 
   return (
@@ -95,7 +97,7 @@ export function SocialAccountsBoard({
             {socialPlatformCatalog.map((item) => (
               <li key={item.id}>
                 <span className="font-semibold text-ink">{item.label}</span>
-                {item.first ? " — первая интеграция. " : " — не в этом этапе. "}
+                {item.first ? " — первая интеграция. " : " — стена сообщества. "}
                 {item.officialAuth}. Пароль пользователя не принимается.
               </li>
             ))}
@@ -145,6 +147,45 @@ export function SocialAccountsBoard({
             </Card>
 
             <Card>
+              <h2 className="text-xl font-black text-ink">Подключить ВКонтакте</h2>
+              <p className="mt-2 text-sm text-ink/70">
+                Нужен ключ доступа сообщества: Управление → Настройки → Работа с API → Создать ключ, право «Стена». Не
+                сервисный ключ приложения VK ID и не пароль. Пишем только на стену этого клуба через wall.post.
+              </p>
+              <form action={vkAction} className="mt-4 grid gap-4">
+                <input type="hidden" name="workspaceId" value={workspaceId} />
+                {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
+                <label className="grid gap-2 text-sm font-medium text-ink">
+                  Ключ сообщества
+                  <input
+                    name="communityToken"
+                    type="password"
+                    autoComplete="off"
+                    required
+                    className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-ink">
+                  Сообщество
+                  <input
+                    name="source"
+                    required
+                    placeholder="https://vk.com/club242155421"
+                    className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-ink">
+                  Название
+                  <input name="displayName" className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal" />
+                </label>
+                {vkState.message ? (
+                  <StatusBanner tone={vkState.status === "success" ? "success" : "warning"}>{vkState.message}</StatusBanner>
+                ) : null}
+                <Button disabled={vkPending}>{vkPending ? "Проверяем у VK..." : "Подключить стену ВК"}</Button>
+              </form>
+            </Card>
+
+            <Card>
               <h2 className="text-xl font-black text-ink">Аккаунт без токена</h2>
               <p className="mt-2 text-sm text-ink/70">
                 Создаёт SocialAccount со статусом requires_setup. Очередь получит integration_not_configured, не фиктивный успех.
@@ -156,7 +197,7 @@ export function SocialAccountsBoard({
                   Платформа
                   <select name="platform" defaultValue="telegram" className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4">
                     <option value="telegram">Telegram</option>
-                    <option value="vk">ВКонтакте (пока requires_setup)</option>
+                    <option value="vk">ВКонтакте (без ключа)</option>
                   </select>
                 </label>
                 {setupState.message ? (

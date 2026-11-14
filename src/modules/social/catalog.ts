@@ -13,7 +13,8 @@ export const socialPlatformCatalog = [
     id: "vk",
     label: "ВКонтакте",
     first: false,
-    officialAuth: "VK ID OAuth 2.1 / ключ сообщества. Старый Authorization Code Flow отключён 25.06.2024",
+    officialAuth:
+      "Ключ доступа сообщества с правом «Стена» (Управление → Настройки → Работа с API). Сервисный ключ приложения только читает стены. Пароль не принимается.",
     passwordAllowed: false,
     docsUrl: "https://dev.vk.com/en/api/access-token/getting-started",
   },

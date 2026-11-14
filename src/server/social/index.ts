@@ -21,5 +21,5 @@ export function createAdapterRegistry(adapters: SocialAdapter[] = []): AdapterRe
 }
 
 export function createDefaultAdapters(db: PrismaClient): AdapterRegistry {
-  return createAdapterRegistry([createTelegramAdapter({ db }), createVkAdapter()]);
+  return createAdapterRegistry([createTelegramAdapter({ db }), createVkAdapter({ db })]);
 }

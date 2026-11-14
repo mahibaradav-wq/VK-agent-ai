@@ -29,6 +29,7 @@ function revalidateSocial() {
   revalidatePath("/app/social-accounts");
   revalidatePath("/app/posts");
   revalidatePath("/app/queue");
+  revalidatePath("/app/watch");
 }
 
 export async function createSetupAccount(_prev: SocialFormState, formData: FormData): Promise<SocialFormState> {
@@ -50,6 +51,31 @@ export async function createSetupAccount(_prev: SocialFormState, formData: FormD
     };
   } catch (error) {
     const message = error instanceof AccessError ? error.message : "Не удалось создать аккаунт.";
+    return { status: "invalid", message };
+  }
+}
+
+export async function connectVk(_prev: SocialFormState, formData: FormData): Promise<SocialFormState> {
+  try {
+    const account = await createSocialService(prisma).connectVk(
+      await requireUserId(),
+      readField(formData, "workspaceId"),
+      {
+        token: readField(formData, "communityToken"),
+        source: readField(formData, "source"),
+        displayName: readField(formData, "displayName"),
+        projectId: readField(formData, "projectId") || undefined,
+        accountId: readField(formData, "accountId") || undefined,
+        password: readField(formData, "password"),
+      },
+    );
+    revalidateSocial();
+    return {
+      status: "success",
+      message: `ВКонтакте подключено как ${account.displayName}. Ключ сохранён в зашифрованном виде. Публикация идёт wall.post на стену этого сообщества.`,
+    };
+  } catch (error) {
+    const message = error instanceof AccessError ? error.message : "Не удалось подключить ВКонтакте.";
     return { status: "invalid", message };
   }
 }
