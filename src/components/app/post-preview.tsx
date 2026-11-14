@@ -12,7 +12,9 @@ export function PostPreview({
   mediaUrls: string[];
 }) {
   const selected = previewPlatforms.filter((item) => platforms.includes(item.id));
-  const cards = selected.length ? selected : [{ id: "vk" as PreviewPlatformId, label: "Черновик", hint: "Платформа ещё не выбрана." }];
+  const cards = selected.length
+    ? selected
+    : [{ id: "telegram" as PreviewPlatformId, label: "Черновик", hint: "Платформа ещё не выбрана. Живая публикация — Telegram." }];
 
   return (
     <div className="grid gap-4">

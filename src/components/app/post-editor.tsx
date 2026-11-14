@@ -41,7 +41,7 @@ export function PostEditor({
   const [state, formAction, pending] = useActionState(savePostDraft, initialState);
   const [draftTitle, setDraftTitle] = useState(title);
   const [draftBody, setDraftBody] = useState(body);
-  const [draftPlatforms, setDraftPlatforms] = useState(platforms);
+  const [draftPlatforms, setDraftPlatforms] = useState(platforms.length > 0 ? platforms : ["telegram"]);
   const [draftMediaIds, setDraftMediaIds] = useState(selectedMediaIds);
 
   const previewUrls = useMemo(
@@ -89,19 +89,23 @@ export function PostEditor({
           </label>
           <fieldset className="grid gap-2">
             <legend className="text-sm font-medium text-ink">Цели публикации</legend>
-            {previewPlatforms.map((platform) => (
-              <label key={platform.id} className="flex items-center gap-2 text-sm text-ink/80">
-                <input
-                  type="checkbox"
-                  disabled={!canEdit}
-                  checked={draftPlatforms.includes(platform.id)}
-                  onChange={() => setDraftPlatforms(toggle(draftPlatforms, platform.id))}
-                />
-                {platform.label}
-              </label>
-            ))}
+            {previewPlatforms.map((platform) => {
+              const checked = draftPlatforms.includes(platform.id);
+              return (
+                <label key={platform.id} className="flex items-center gap-2 text-sm text-ink/80">
+                  <input
+                    type="checkbox"
+                    disabled={!canEdit || (!platform.live && !checked)}
+                    checked={checked}
+                    onChange={() => setDraftPlatforms(toggle(draftPlatforms, platform.id))}
+                  />
+                  {platform.live ? platform.label : `${platform.label} (пока нельзя)`}
+                </label>
+              );
+            })}
             <p className="text-xs text-ink/60">
-              Цель хранится как PostTarget. Подключение Telegram — в разделе «Аккаунты». Пароль соцсети не нужен.
+              Живая публикация — Telegram. ВКонтакте нельзя: нужен официальный VK ID, старый Authorization Code Flow
+              отключён с 25 июня 2024. Если галочка ВК уже стоит, снимите её и сохраните черновик.
             </p>
           </fieldset>
           <fieldset className="grid gap-2">

@@ -327,4 +327,96 @@ describe("publishing queue", () => {
     );
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("draft");
   });
+
+  it("does not publishNow a VK-only draft when Telegram is not connected", async () => {
+    const owner = await registerOwner("pub-now-vk");
+    const post = await draftWithTargets(owner, ["vk"], "Стена");
+    const publishing = createPublishService(prisma, { queue: createInlineQueue() });
+
+    await expectAccess(
+      publishing.publishNow(owner.userId, owner.workspaceId, post.id),
+      400,
+      /ВКонтакте пока нельзя/,
+    );
+    const stored = await prisma.post.findUniqueOrThrow({
+      where: { id: post.id },
+      include: { targets: true },
+    });
+    expect(stored.status).toBe("draft");
+    expect(stored.targets.map((target) => `${target.platform}:${target.status}`)).toEqual(["vk:draft"]);
+  });
+
+  it("routes a VK-only draft to a connected Telegram account on publishNow", async () => {
+    const owner = await registerOwner("pub-now-vk-tg");
+    const post = await draftWithTargets(owner, ["vk"], "Стена в ТГ");
+    await prisma.socialAccount.create({
+      data: {
+        workspaceId: owner.workspaceId,
+        platform: "telegram",
+        displayName: "bot",
+        externalId: "100",
+        status: "connected",
+      },
+    });
+    const telegram = scripted("telegram", [{ kind: "success", externalId: "99" }]);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: createAdapterRegistry([telegram]),
+    });
+
+    await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
+    const stored = await prisma.post.findUniqueOrThrow({
+      where: { id: post.id },
+      include: { targets: true },
+    });
+    expect(telegram.calls).toBe(1);
+    expect(stored.status).toBe("published");
+    expect(stored.targets.find((target) => target.platform === "vk")?.status).toBe("cancelled");
+    expect(stored.targets.find((target) => target.platform === "telegram")?.status).toBe("published");
+  });
+
+  it("skips VK on publishNow and sends the live Telegram target instead", async () => {
+    const owner = await registerOwner("pub-now-skip-vk");
+    const post = await draftWithTargets(owner, ["vk", "telegram"], "Смешанный");
+    const vk = scripted("vk", [{ kind: "success", externalId: "should-not" }]);
+    const telegram = scripted("telegram", [{ kind: "success", externalId: "42" }]);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: createAdapterRegistry([vk, telegram]),
+    });
+
+    const job = await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
+    const stored = await prisma.post.findUniqueOrThrow({
+      where: { id: post.id },
+      include: { targets: true },
+    });
+
+    expect(vk.calls).toBe(0);
+    expect(telegram.calls).toBe(1);
+    expect(stored.status).toBe("published");
+    expect(stored.targets.find((target) => target.platform === "vk")?.status).toBe("cancelled");
+    expect(stored.targets.find((target) => target.platform === "telegram")?.status).toBe("published");
+    expect(job?.status).toBe("completed");
+  });
+
+  it("reclaims a stale processing job instead of leaving the post locked", async () => {
+    const owner = await registerOwner("pub-stale");
+    const post = await draftWithTargets(owner, ["vk"], "Завис");
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, { queue: createInlineQueue() });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    const stale = new Date("2026-10-14T12:00:00.000Z");
+    await prisma.publishJob.update({
+      where: { id: job.id },
+      data: { status: "processing", claimedAt: stale, claimedBy: "dead-worker", attemptCount: 1 },
+    });
+    await prisma.post.update({ where: { id: post.id }, data: { status: "publishing" } });
+    await prisma.postTarget.updateMany({ where: { postId: post.id }, data: { status: "publishing" } });
+
+    const later = new Date("2026-10-14T12:05:00.000Z");
+    const results = await publishing.processDueJobs("worker-recover", later);
+    expect(results.some((item) => !item.skipped)).toBe(true);
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("failed");
+    expect((await prisma.publishJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("failed");
+  });
 });
