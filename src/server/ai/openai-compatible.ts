@@ -139,6 +139,7 @@ export function createOpenAiCompatibleProvider(options: {
             authorization: `Bearer ${options.apiKey}`,
             "content-type": "application/json",
           },
+          signal: AbortSignal.timeout(25_000),
           body: JSON.stringify({
             model: options.model,
             temperature: 0.7,
@@ -192,6 +193,7 @@ export function createOpenAiCompatibleProvider(options: {
             authorization: `Bearer ${options.apiKey}`,
             "content-type": "application/json",
           },
+          signal: AbortSignal.timeout(25_000),
           body: JSON.stringify(imageGenerationBody(imageModel, prompt, input.size ?? "1024x1024")),
         });
       } catch {

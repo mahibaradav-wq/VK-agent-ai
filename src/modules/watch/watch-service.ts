@@ -83,6 +83,20 @@ function wallOwnerId(externalId: string) {
   return numeric > 0 ? -numeric : numeric;
 }
 
+async function mapPool<T, R>(items: T[], limit: number, mapper: (item: T) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await mapper(items[index]!);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) || 0 }, () => worker()));
+  return results;
+}
+
 function summarizePosts(posts: WatchedPost[]) {
   return posts
     .map((post) => {
@@ -345,21 +359,29 @@ export function createWatchService(
         assertWorkspaceBound(workspaceId, project, "Проект");
       }
 
-      const posts: WatchedPost[] = [];
-      for (const community of communities) {
+      const fetched = await mapPool(communities, 4, async (community) => {
         const ownerId = wallOwnerId(community.externalId);
         if (!ownerId) {
+          return { community, ownerId: null, wall: null as Awaited<ReturnType<typeof fetchWall>> | null };
+        }
+        return { community, ownerId, wall: await fetchWall(token, ownerId) };
+      });
+
+      const posts: WatchedPost[] = [];
+      for (const item of fetched) {
+        const community = item.community;
+        if (!item.ownerId) {
           await db.vkWatchCommunity.update({
             where: { id: community.id },
             data: { lastError: "Не удалось определить id сообщества." },
           });
           continue;
         }
-        const wall = await fetchWall(token, ownerId);
-        if (!wall.ok) {
+        const wall = item.wall;
+        if (!wall?.ok) {
           await db.vkWatchCommunity.update({
             where: { id: community.id },
-            data: { lastError: wall.error, lastFetchedAt: now() },
+            data: { lastError: wall?.error ?? "Стена не прочитана.", lastFetchedAt: now() },
           });
           continue;
         }

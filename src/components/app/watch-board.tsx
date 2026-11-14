@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
+import { useRouter } from "next/navigation";
+import { useActionState, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -8,7 +9,6 @@ import { StatusBanner } from "@/components/ui/status-banner";
 import {
   addWatchCommunity,
   applyWatchIdea,
-  collectWatchIdeas,
   connectVkWatch,
   disconnectVkWatch,
   removeWatchCommunity,
@@ -55,11 +55,13 @@ export function WatchBoard({
   communities: WatchCommunityView[];
   ideas: WatchIdeaView[];
 }) {
+  const router = useRouter();
   const [tokenState, tokenAction, tokenPending] = useActionState(connectVkWatch, idle);
   const [disconnectState, disconnectAction, disconnectPending] = useActionState(disconnectVkWatch, idle);
   const [addState, addAction, addPending] = useActionState(addWatchCommunity, idle);
   const [removeState, removeAction, removePending] = useActionState(removeWatchCommunity, idle);
-  const [collectState, collectAction, collectPending] = useActionState(collectWatchIdeas, idle);
+  const [collectPending, setCollectPending] = useState(false);
+  const [collectState, setCollectState] = useState<WatchFormState>(idle);
   const message =
     collectState.message || addState.message || tokenState.message || disconnectState.message || removeState.message;
   const tone =
@@ -69,7 +71,35 @@ export function WatchBoard({
     disconnectState.status === "invalid" ||
     removeState.status === "invalid"
       ? "warning"
-      : "success";
+      : collectState.status === "success"
+        ? "success"
+        : "info";
+
+  async function submitCollect(formData: FormData) {
+    setCollectPending(true);
+    setCollectState({
+      status: "idle",
+      message: "Читаем стены и просим ChatGPT предложить темы. Обычно 20–60 секунд.",
+    });
+    try {
+      const response = await fetch("/api/watch/ideas", { method: "POST", body: formData });
+      const payload = (await response.json()) as WatchFormState;
+      setCollectState({
+        status: payload.status === "success" ? "success" : "invalid",
+        message: payload.message || "Не удалось собрать идеи.",
+      });
+      if (payload.status === "success") {
+        router.refresh();
+      }
+    } catch {
+      setCollectState({
+        status: "invalid",
+        message: "Сервер не ответил. Обновите страницу и нажмите ещё раз.",
+      });
+    } finally {
+      setCollectPending(false);
+    }
+  }
 
   return (
     <div className="grid gap-6">
@@ -163,8 +193,9 @@ export function WatchBoard({
           Агент читает последние посты через VK API и просит ChatGPT предложить свои темы. Копии чужих текстов не
           публикуются.
         </p>
+        {collectState.message ? <StatusBanner tone={collectState.status === "invalid" ? "warning" : collectPending ? "info" : "success"}>{collectState.message}</StatusBanner> : null}
         {canGenerate ? (
-          <form action={collectAction} className="grid gap-3">
+          <form action={submitCollect} className="grid gap-3">
             <input type="hidden" name="workspaceId" value={workspaceId} />
             {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
             <label className="grid gap-2 text-sm font-medium text-ink">
