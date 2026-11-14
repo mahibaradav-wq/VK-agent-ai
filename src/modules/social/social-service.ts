@@ -150,15 +150,15 @@ export function createSocialService(
     async connectTelegram(
       userId: string,
       workspaceId: string,
-      input: { token: string; chatId: string; displayName?: string; projectId?: string; accountId?: string; password?: string },
+      input: { token: string; chatId?: string; displayName?: string; projectId?: string; accountId?: string; password?: string },
     ) {
       await access.requirePermission(userId, workspaceId, "social.connect");
       rejectPassword(input);
 
       const token = input.token.trim();
-      const chatId = input.chatId.trim();
-      if (!token || !chatId) {
-        throw new AccessError(400, "Нужны токен бота от @BotFather и chat_id канала или чата.");
+      const chatId = input.chatId?.trim() ?? "";
+      if (!token) {
+        throw new AccessError(400, "Нужен токен бота от @BotFather.");
       }
       if (!isTelegramBotToken(token)) {
         throw new AccessError(
@@ -181,23 +181,29 @@ export function createSocialService(
         );
       }
       const bot = me.result as TelegramUser;
-      const chat = await telegram.request(token, "getChat", { chat_id: chatId });
-      if (!chat.ok) {
-        throw new AccessError(
-          400,
-          chat.error_code === 0
-            ? `С этого сервера нет сети до Telegram: ${chat.description}`
-            : `Telegram не подтвердил чат: ${chat.description}`,
-        );
+      let chatInfo: TelegramChat | undefined;
+      if (chatId) {
+        const chat = await telegram.request(token, "getChat", { chat_id: chatId });
+        if (!chat.ok) {
+          throw new AccessError(
+            400,
+            chat.error_code === 0
+              ? `С этого сервера нет сети до Telegram: ${chat.description}`
+              : `Telegram не подтвердил чат: ${chat.description}`,
+          );
+        }
+        chatInfo = chat.result as TelegramChat;
       }
-      const chatInfo = chat.result as TelegramChat;
       const encryptedToken = encryptToken(token);
       const displayName =
         input.displayName?.trim() ||
         (bot.username ? `@${bot.username}` : bot.first_name) ||
-        chatInfo.title ||
+        chatInfo?.title ||
         "Telegram";
-      const externalId = String(chatInfo.id ?? chatId);
+      const externalId = chatInfo ? String(chatInfo.id ?? chatId) : "";
+      const lastError = externalId
+        ? null
+        : "Бот подключён. У бота нет своей ленты — укажите канал или группу, куда он может писать.";
 
       const account = await db.$transaction(async (tx) => {
         let saved;
@@ -215,7 +221,7 @@ export function createSocialService(
               externalId,
               status: "connected",
               encryptedToken,
-              lastError: null,
+              lastError,
             },
             include: accountInclude,
           });
@@ -237,6 +243,7 @@ export function createSocialService(
               externalId,
               status: "connected",
               encryptedToken,
+              lastError,
             },
             include: accountInclude,
           });

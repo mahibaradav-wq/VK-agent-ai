@@ -75,6 +75,15 @@ export function createTelegramAdapter(options: {
         };
       }
 
+      if (!account.externalId.trim()) {
+        return {
+          kind: "permanent_failure",
+          code: "telegram_no_chat",
+          message:
+            "Бот подключён, но писать некуда: у Telegram нет ленты у бота. Создайте канал или группу, добавьте бота администратором и укажите @username или chat_id.",
+        };
+      }
+
       let token: string;
       try {
         token = decryptToken(account.encryptedToken);
