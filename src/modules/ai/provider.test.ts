@@ -127,7 +127,7 @@ describe("AI provider connection", () => {
         apiKey: "sk-valid-looking-key",
       }),
       400,
-      /недоступен с этого сервера по региону/,
+      /регион этого сервера/,
     );
     await expectAccess(
       connections.connect(viewer.userId, owner.workspaceId, {

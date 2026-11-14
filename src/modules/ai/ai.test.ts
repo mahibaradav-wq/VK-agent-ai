@@ -244,6 +244,28 @@ describe("AI assistant", () => {
     expect(result.inputTokens).toBe(11);
   });
 
+  it("explains OpenAI region blocks instead of a generic outage", async () => {
+    const provider = createOpenAiCompatibleProvider({
+      apiKey: "sk-test-secret-key",
+      baseUrl: "https://api.openai.com/v1",
+      name: "openai",
+      model: "gpt-4o-mini",
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ error: { code: "unsupported_country_region_territory" } }), { status: 403 }),
+    });
+    await expectAccess(
+      provider.generate({
+        kind: "ideas",
+        prompt: "полки",
+        tone: "friendly",
+        length: "medium",
+        platform: "telegram",
+      }),
+      400,
+      /регион этого сервера/,
+    );
+  });
+
   it("does not compose an agent post when AI or storage is missing", async () => {
     const owner = await registerOwner("agent-none");
     const unset = createAiService(prisma, { provider: createUnconfiguredAiProvider() });

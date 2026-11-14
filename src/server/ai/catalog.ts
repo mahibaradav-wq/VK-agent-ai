@@ -25,7 +25,8 @@ export const aiProviderCatalog: AiProviderSpec[] = [
     imageReady: true,
     keyUrl: "https://platform.openai.com/api-keys",
     keyHint: "Ключ с platform.openai.com, начинается с sk-. Пароль ChatGPT не подходит.",
-    notes: "Пишет текст (gpt-4o-mini) и рисует визуал (GPT Image). DALL·E снят.",
+    notes:
+      "Пишет текст (gpt-4o-mini) и рисует визуал (GPT Image). С VPS в РФ OpenAI отвечает unsupported_country — для текста подключите DeepSeek.",
   },
   {
     id: "deepseek",
@@ -43,13 +44,13 @@ export const aiProviderCatalog: AiProviderSpec[] = [
     id: "qwen",
     label: "Qwen (Квен)",
     shortLabel: "Qwen",
-    baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     model: "qwen-plus",
     imageModel: "qwen-image-plus",
     imageReady: true,
     keyUrl: "https://modelstudio.console.alibabacloud.com/",
     keyHint: "Ключ DashScope / Model Studio, начинается с sk-.",
-    notes: "Пишет текст и может нарисовать визуал через совместимый Images API.",
+    notes: "Пишет текст и может нарисовать визуал. С российского VPS открывается китайский DashScope, не intl.",
   },
 ];
 
