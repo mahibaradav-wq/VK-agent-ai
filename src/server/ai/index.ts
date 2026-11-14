@@ -34,7 +34,7 @@ export function createAiProviderFromEnv(): AiProvider {
     apiKey,
     baseUrl: process.env.AI_BASE_URL?.trim() || "https://api.openai.com/v1",
     model: process.env.AI_MODEL?.trim() || "gpt-4o-mini",
-    imageModel: process.env.AI_IMAGE_MODEL?.trim() || "dall-e-3",
+    imageModel: process.env.AI_IMAGE_MODEL?.trim() || "gpt-image-1.5",
   });
 }
 

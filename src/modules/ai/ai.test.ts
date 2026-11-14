@@ -362,12 +362,15 @@ describe("AI assistant", () => {
       apiKey: "sk-test-secret-key",
       baseUrl: "https://example.test/v1",
       model: "demo-mini",
-      imageModel: "demo-image",
+      imageModel: "gpt-image-1.5",
       fetchImpl: async (url, init) => {
         calls.push(String(url));
         const headers = new Headers(init?.headers);
         expect(headers.get("authorization")).toBe("Bearer sk-test-secret-key");
         if (String(url).endsWith("/images/generations")) {
+          const posted = JSON.parse(String(init?.body ?? "{}")) as { model?: string; response_format?: string };
+          expect(posted.model).toBe("gpt-image-1.5");
+          expect(posted.response_format).toBeUndefined();
           return new Response(JSON.stringify({ data: [{ b64_json: png.toString("base64") }] }), {
             status: 200,
             headers: { "content-type": "application/json" },
@@ -380,7 +383,7 @@ describe("AI assistant", () => {
     expect(calls[0]).toContain("/images/generations");
     expect(image.mimeType).toBe("image/png");
     expect(Buffer.from(image.bytes).equals(png)).toBe(true);
-    expect(image.model).toBe("demo-image");
+    expect(image.model).toBe("gpt-image-1.5");
     expect(JSON.stringify({ ...image, bytes: undefined })).not.toContain("sk-test-secret-key");
 
     const junk = createOpenAiCompatibleProvider({
@@ -393,6 +396,22 @@ describe("AI assistant", () => {
         }),
     });
     await expectAccess(junk.generateImage({ prompt: "мусор" }), 400, /нельзя сохранить как изображение/);
+
+    const retired = createOpenAiCompatibleProvider({
+      apiKey: "sk-test-secret-key",
+      baseUrl: "https://example.test/v1",
+      model: "demo-mini",
+      imageModel: "dall-e-3",
+      fetchImpl: async (_url, init) => {
+        const posted = JSON.parse(String(init?.body ?? "{}")) as { response_format?: string };
+        expect(posted.response_format).toBe("b64_json");
+        return new Response(
+          JSON.stringify({ error: { message: "Unknown parameter: 'response_format'.", code: "unknown_parameter" } }),
+          { status: 400 },
+        );
+      },
+    });
+    await expectAccess(retired.generateImage({ prompt: "полка" }), 400, /response_format/);
   });
 
   it("accepts an HTTPS image URL when the provider does not return b64", async () => {

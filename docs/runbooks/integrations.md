@@ -18,7 +18,7 @@
 
 - В `/app/ai` Owner/Admin подключают ChatGPT, DeepSeek или Qwen API-ключом (`sk-...`). Пароль от чата отклоняется.
 - Ключ проверяется живым `GET /models`, шифруется на сервере, во frontend не возвращается.
-- DeepSeek пишет только текст. Визуал агента — ChatGPT (DALL·E) или Qwen Images.
+- DeepSeek пишет только текст. Визуал агента — ChatGPT (GPT Image) или Qwen Images. DALL·E снят.
 - Без ключа (и без `AI_API_KEY` в env) генерация не имитируется.
 
 ## Биллинг

@@ -42,6 +42,37 @@ type ImageResponse = {
   data?: Array<{ b64_json?: string; url?: string }>;
 };
 
+type ProviderErrorBody = {
+  error?: { message?: string; code?: string };
+};
+
+async function providerErrorDetail(response: Response) {
+  try {
+    const json = (await response.clone().json()) as ProviderErrorBody;
+    const message = json.error?.message?.trim();
+    if (message && !/sk-[A-Za-z0-9_-]{8,}/.test(message)) {
+      return message.slice(0, 240);
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+function imageGenerationBody(model: string, prompt: string, size: string) {
+  const body: Record<string, unknown> = {
+    model,
+    prompt,
+    n: 1,
+    size,
+  };
+  // GPT Image models reject response_format. DALL·E used to require it for b64.
+  if (model.startsWith("dall-e-")) {
+    body.response_format = "b64_json";
+  }
+  return body;
+}
+
 async function readGeneratedImageBytes(
   json: ImageResponse,
   fetchImpl: typeof fetch,
@@ -89,7 +120,7 @@ export function createOpenAiCompatibleProvider(options: {
 }): AiProvider {
   const fetchImpl = options.fetchImpl ?? createOutboundFetch();
   const baseUrl = options.baseUrl.replace(/\/$/, "");
-  const imageModel = options.imageModel?.trim() || "dall-e-3";
+  const imageModel = options.imageModel?.trim() || "gpt-image-1.5";
   const name = options.name?.trim() || "openai-compatible";
   const imageReady = options.imageReady ?? true;
 
@@ -161,20 +192,20 @@ export function createOpenAiCompatibleProvider(options: {
             authorization: `Bearer ${options.apiKey}`,
             "content-type": "application/json",
           },
-          body: JSON.stringify({
-            model: imageModel,
-            prompt,
-            n: 1,
-            size: input.size ?? "1024x1024",
-            response_format: "b64_json",
-          }),
+          body: JSON.stringify(imageGenerationBody(imageModel, prompt, input.size ?? "1024x1024")),
         });
       } catch {
         throw new AccessError(400, "Провайдер изображений недоступен. Это не замена картинки.");
       }
 
       if (!response.ok) {
-        throw new AccessError(400, `Провайдер изображений вернул ошибку ${response.status}. Ключ в ответ не попадает.`);
+        const detail = await providerErrorDetail(response);
+        throw new AccessError(
+          400,
+          detail
+            ? `Провайдер изображений: ${detail}`
+            : `Провайдер изображений вернул ошибку ${response.status}. Ключ в ответ не попадает.`,
+        );
       }
 
       const json = (await response.json()) as ImageResponse;
