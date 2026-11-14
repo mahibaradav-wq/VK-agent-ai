@@ -163,7 +163,7 @@ describe("VK watch idea agent", () => {
     expect(collected.request.items[0]).toMatch(/Специи/);
 
     const post = await watch.applyIdea(owner.userId, owner.workspaceId, collected.request.id, 0, owner.projectId);
-    expect(post.targets.map((target) => target.platform)).toEqual(["telegram"]);
+    expect(post.targets.map((target) => target.platform)).toEqual(["vk"]);
     expect(post.versions[0]?.title).toMatch(/Специи/);
   });
 

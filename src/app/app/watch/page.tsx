@@ -41,8 +41,8 @@ export default async function WatchPage() {
     <>
       <PageHeader
         eyebrow="Агент"
-        title="Идеи по сообществам VK"
-        description="Смотрит указанные сообщества через VK API и предлагает свои темы. Чужие посты не копируются, во ВК ничего не публикуется."
+        title="Идеи для стены ВК"
+        description="Смотрит указанные сообщества через VK API и предлагает темы для стены «Дом по полочкам». Чужие посты не копируются, во ВК ничего не публикуется."
       />
       <Container className="grid gap-6 pb-20">
         <WatchBoard

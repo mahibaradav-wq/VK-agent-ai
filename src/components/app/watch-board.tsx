@@ -17,6 +17,24 @@ import {
 
 const idle: WatchFormState = { status: "idle", message: "" };
 
+function IdeaParts({ item }: { item: string }) {
+  const parts = item
+    .split("||")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length < 2) {
+    return <p className="whitespace-pre-wrap text-sm text-ink">{item}</p>;
+  }
+  const [title, why, hook] = parts;
+  return (
+    <div className="grid gap-2">
+      <p className="font-semibold text-ink">{title}</p>
+      {why ? <p className="text-sm text-ink/70">{why}</p> : null}
+      {hook ? <p className="text-sm text-ink">{hook}</p> : null}
+    </div>
+  );
+}
+
 export type WatchCommunityView = {
   id: string;
   source: string;
@@ -107,6 +125,126 @@ export function WatchBoard({
     <div className="grid gap-6">
       {message ? <StatusBanner tone={tone}>{message}</StatusBanner> : null}
 
+      {ideas.length === 0 ? (
+        <StatusBanner tone="info">
+          Идей для стены ВК пока нет. Нажмите «Предложить идеи» — агент прочитает наблюдаемые сообщества и предложит темы
+          для «Дом по полочкам». Во ВК ничего не публикуется.
+        </StatusBanner>
+      ) : null}
+
+      {ideas.map((batch) => (
+        <Card key={batch.id} className="grid gap-3">
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Идеи для ВКонтакте</p>
+          <h2 className="text-xl font-black text-ink">{batch.title}</h2>
+          <p className="text-sm text-ink/60">
+            {batch.provider} · {batch.model} · {new Date(batch.createdAt).toLocaleString("ru-RU")}
+          </p>
+          {batch.body ? <p className="whitespace-pre-wrap text-sm text-ink/80">{batch.body}</p> : null}
+          <ul className="grid gap-3">
+            {batch.items.map((item, index) => (
+              <li key={`${batch.id}-${index}`} className="rounded-2xl ring-1 ring-ink/10 p-4">
+                <IdeaParts item={item} />
+                {canApply && projectId ? (
+                  <form action={applyWatchIdea} className="mt-3">
+                    <input type="hidden" name="workspaceId" value={workspaceId} />
+                    <input type="hidden" name="projectId" value={projectId} />
+                    <input type="hidden" name="requestId" value={batch.id} />
+                    <input type="hidden" name="itemIndex" value={String(index)} />
+                    <Button type="submit" variant="secondary">
+                      В черновик ВК
+                    </Button>
+                  </form>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-ink/50">
+            Черновик открывается как макет ВК. Опубликовать стену этим ключом нельзя — нужен официальный VK ID.
+          </p>
+        </Card>
+      ))}
+
+      <Card className="grid gap-3">
+        <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Собрать идеи для ВК</p>
+        <p className="text-sm text-ink/70">
+          Агент читает стены наблюдаемых сообществ и предлагает темы для стены «Дом по полочкам». Чужие тексты не
+          копируются, во ВК ничего не публикуется.
+        </p>
+        {aiProvider === "openai" ? (
+          <StatusBanner tone="warning">
+            ChatGPT с этого сервера OpenAI не обслуживает (регион VPS). Ключ сохранён, но идеи через него не придут.
+            Подключите DeepSeek в разделе AI — он открывается напрямую.
+            <span className="mt-3 block">
+              <ButtonLink href="/app/ai" variant="secondary">
+                Подключить DeepSeek
+              </ButtonLink>
+            </span>
+          </StatusBanner>
+        ) : null}
+        {collectState.message ? <StatusBanner tone={collectState.status === "invalid" ? "warning" : collectPending ? "info" : "success"}>{collectState.message}</StatusBanner> : null}
+        {canGenerate ? (
+          <form action={submitCollect} className="grid gap-3">
+            <input type="hidden" name="workspaceId" value={workspaceId} />
+            {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
+            <label className="grid gap-2 text-sm font-medium text-ink">
+              Бриф бренда
+              <textarea
+                name="brief"
+                placeholder="Дом по полочкам: организация хранения, кухня, прихожая, без воды и без обещаний скидок."
+                className="min-h-28 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
+              />
+            </label>
+            <Button disabled={collectPending}>{collectPending ? "Читаем стены..." : "Предложить идеи"}</Button>
+          </form>
+        ) : (
+          <StatusBanner tone="info">Собирать идеи могут Editor, Admin и Owner.</StatusBanner>
+        )}
+      </Card>
+
+      <Card className="grid gap-3">
+        <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Сообщества</p>
+        {communities.length === 0 ? (
+          <p className="text-sm text-ink/60">Пока пусто. Добавьте vk.com/club… или короткое имя. Можно наблюдать до 25 сообществ.</p>
+        ) : (
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {communities.map((community) => (
+              <li key={community.id} className="flex items-start justify-between gap-3 rounded-2xl bg-sand-50 px-4 py-3">
+                <div>
+                  <p className="font-semibold text-ink">{community.displayName}</p>
+                  <p className="text-xs text-ink/60">{community.screenName}</p>
+                  {community.lastError ? <p className="mt-1 text-xs text-ink/60">{community.lastError}</p> : null}
+                </div>
+                {canGenerate ? (
+                  <form action={removeAction}>
+                    <input type="hidden" name="workspaceId" value={workspaceId} />
+                    <input type="hidden" name="communityId" value={community.id} />
+                    <Button type="submit" variant="ghost" disabled={removePending}>
+                      Убрать
+                    </Button>
+                  </form>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+        {canGenerate ? (
+          <form action={addAction} className="grid gap-3">
+            <input type="hidden" name="workspaceId" value={workspaceId} />
+            <label className="grid gap-2 text-sm font-medium text-ink">
+              Ссылка или имя
+              <input
+                name="source"
+                placeholder="https://vk.com/club123 или short_name"
+                className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
+              />
+            </label>
+            <Button disabled={addPending} variant="secondary">
+              {addPending ? "Добавляем..." : "Добавить сообщество"}
+            </Button>
+          </form>
+        ) : null}
+      </Card>
+
       <Card className="grid gap-3">
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Ключ VK для чтения</p>
         <p className="text-sm text-ink/70">
@@ -146,114 +284,6 @@ export function WatchBoard({
           <StatusBanner tone="info">Ключ чтения могут сохранить Owner и Admin.</StatusBanner>
         )}
       </Card>
-
-      <Card className="grid gap-3">
-        <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Сообщества</p>
-        {communities.length === 0 ? (
-          <p className="text-sm text-ink/60">Пока пусто. Добавьте vk.com/club… или короткое имя. Можно наблюдать до 25 сообществ.</p>
-        ) : (
-          <ul className="grid gap-3">
-            {communities.map((community) => (
-              <li key={community.id} className="rounded-2xl bg-sand-50 p-4">
-                <p className="font-semibold text-ink">{community.displayName}</p>
-                <p className="mt-1 text-sm text-ink/70">{community.source}</p>
-                {community.lastError ? <p className="mt-1 text-sm text-ink/60">{community.lastError}</p> : null}
-                {canGenerate ? (
-                  <form action={removeAction} className="mt-3">
-                    <input type="hidden" name="workspaceId" value={workspaceId} />
-                    <input type="hidden" name="communityId" value={community.id} />
-                    <Button type="submit" variant="ghost" disabled={removePending}>
-                      Убрать
-                    </Button>
-                  </form>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-        {canGenerate ? (
-          <form action={addAction} className="grid gap-3">
-            <input type="hidden" name="workspaceId" value={workspaceId} />
-            <label className="grid gap-2 text-sm font-medium text-ink">
-              Ссылка или имя
-              <input
-                name="source"
-                placeholder="https://vk.com/club123 или short_name"
-                className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
-              />
-            </label>
-            <Button disabled={addPending} variant="secondary">
-              {addPending ? "Добавляем..." : "Добавить сообщество"}
-            </Button>
-          </form>
-        ) : null}
-      </Card>
-
-      <Card className="grid gap-3">
-        <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Собрать идеи</p>
-        <p className="text-sm text-ink/70">
-          Агент читает последние посты через VK API и просит подключённую модель предложить свои темы. Копии чужих
-          текстов не публикуются.
-        </p>
-        {aiProvider === "openai" ? (
-          <StatusBanner tone="warning">
-            ChatGPT с этого сервера OpenAI не обслуживает (регион VPS). Ключ сохранён, но идеи через него не придут.
-            Подключите DeepSeek в разделе AI — он открывается напрямую.
-            <span className="mt-3 block">
-              <ButtonLink href="/app/ai" variant="secondary">
-                Подключить DeepSeek
-              </ButtonLink>
-            </span>
-          </StatusBanner>
-        ) : null}
-        {collectState.message ? <StatusBanner tone={collectState.status === "invalid" ? "warning" : collectPending ? "info" : "success"}>{collectState.message}</StatusBanner> : null}
-        {canGenerate ? (
-          <form action={submitCollect} className="grid gap-3">
-            <input type="hidden" name="workspaceId" value={workspaceId} />
-            {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
-            <label className="grid gap-2 text-sm font-medium text-ink">
-              Бриф бренда
-              <textarea
-                name="brief"
-                placeholder="Дом по полочкам: организация хранения, кухня, прихожая, без воды и без обещаний скидок."
-                className="min-h-28 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
-              />
-            </label>
-            <Button disabled={collectPending}>{collectPending ? "Читаем стены..." : "Предложить идеи"}</Button>
-          </form>
-        ) : (
-          <StatusBanner tone="info">Собирать идеи могут Editor, Admin и Owner.</StatusBanner>
-        )}
-      </Card>
-
-      {ideas.map((batch) => (
-        <Card key={batch.id} className="grid gap-3">
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Идеи</p>
-          <h2 className="text-xl font-black text-ink">{batch.title}</h2>
-          <p className="text-sm text-ink/60">
-            {batch.provider} · {batch.model} · {new Date(batch.createdAt).toLocaleString("ru-RU")}
-          </p>
-          {batch.body ? <p className="whitespace-pre-wrap text-sm text-ink/80">{batch.body}</p> : null}
-          <ul className="grid gap-3">
-            {batch.items.map((item, index) => (
-              <li key={`${batch.id}-${index}`} className="rounded-2xl ring-1 ring-ink/10 p-4">
-                <p className="whitespace-pre-wrap text-sm text-ink">{item}</p>
-                {canApply && projectId ? (
-                  <form action={applyWatchIdea} className="mt-3">
-                    <input type="hidden" name="workspaceId" value={workspaceId} />
-                    <input type="hidden" name="projectId" value={projectId} />
-                    <input type="hidden" name="requestId" value={batch.id} />
-                    <input type="hidden" name="itemIndex" value={String(index)} />
-                    <Button type="submit" variant="secondary">
-                      В черновик Telegram
-                    </Button>
-                  </form>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      ))}
     </div>
   );
 }
