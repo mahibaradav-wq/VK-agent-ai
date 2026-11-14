@@ -1,4 +1,5 @@
-import { createOutboundFetch } from "@/server/http/outbound-fetch";
+// VK API is reachable directly from the host. Do not send it through the
+// Telegram/OpenAI CONNECT proxy: that tunnel fails with api.vk.ru.
 
 export const VK_API_VERSION = "5.199";
 
@@ -94,7 +95,7 @@ export function isVkAccessToken(value: string) {
   return /^(vk1\.|vk2\.)/i.test(token) || /^[A-Za-z0-9._\-/=+]{40,}$/.test(token);
 }
 
-export function createVkTransport(fetchImpl: typeof fetch = createOutboundFetch()): VkTransport {
+export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport {
   return {
     async call(token, method, params = {}) {
       try {
