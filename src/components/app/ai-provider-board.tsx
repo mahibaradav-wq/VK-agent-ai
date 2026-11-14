@@ -76,7 +76,7 @@ export function AiProviderBoard({
           <input type="hidden" name="workspaceId" value={workspaceId} />
           <label className="grid gap-2 text-sm font-medium text-ink">
             Провайдер
-            <select name="provider" defaultValue="openai" className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4">
+            <select name="provider" defaultValue="deepseek" className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4">
               {aiProviderCatalog.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.label}

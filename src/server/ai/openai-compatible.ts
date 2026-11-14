@@ -1,5 +1,13 @@
 import { AccessError } from "@/modules/access/permissions";
-import { createOutboundFetch } from "@/server/http/outbound-fetch";
+import {
+  AI_BALANCE_MESSAGE,
+  AI_UNAVAILABLE_MESSAGE,
+  OPENAI_REGION_MESSAGE,
+  isInsufficientBalance,
+  isOpenAiRegionBlock,
+  readErrorBody,
+} from "@/server/ai/errors";
+import { createAiFetch } from "@/server/http/outbound-fetch";
 import { detectMediaType, MAX_MEDIA_BYTES } from "@/modules/media/file-validation";
 import type { AiGenerateInput, AiGenerateOutput, AiImageInput, AiImageOutput, AiProvider } from "@/server/ai/types";
 
@@ -118,7 +126,7 @@ export function createOpenAiCompatibleProvider(options: {
   name?: string;
   fetchImpl?: typeof fetch;
 }): AiProvider {
-  const fetchImpl = options.fetchImpl ?? createOutboundFetch();
+  const fetchImpl = options.fetchImpl ?? createAiFetch();
   const baseUrl = options.baseUrl.replace(/\/$/, "");
   const imageModel = options.imageModel?.trim() || "gpt-image-1.5";
   const name = options.name?.trim() || "openai-compatible";
@@ -151,10 +159,17 @@ export function createOpenAiCompatibleProvider(options: {
           }),
         });
       } catch {
-        throw new AccessError(400, "Провайдер AI недоступен. Это не замена ответа модели.");
+        throw new AccessError(400, name === "openai" ? OPENAI_REGION_MESSAGE : AI_UNAVAILABLE_MESSAGE);
       }
 
       if (!response.ok) {
+        const body = await readErrorBody(response);
+        if (isOpenAiRegionBlock(body)) {
+          throw new AccessError(400, OPENAI_REGION_MESSAGE);
+        }
+        if (isInsufficientBalance(response.status, body)) {
+          throw new AccessError(400, AI_BALANCE_MESSAGE);
+        }
         throw new AccessError(400, `Провайдер AI вернул ошибку ${response.status}. Ключ в ответ не попадает.`);
       }
 
@@ -197,10 +212,17 @@ export function createOpenAiCompatibleProvider(options: {
           body: JSON.stringify(imageGenerationBody(imageModel, prompt, input.size ?? "1024x1024")),
         });
       } catch {
-        throw new AccessError(400, "Провайдер изображений недоступен. Это не замена картинки.");
+        throw new AccessError(400, name === "openai" ? OPENAI_REGION_MESSAGE : "Провайдер изображений недоступен. Это не замена картинки.");
       }
 
       if (!response.ok) {
+        const body = await readErrorBody(response);
+        if (isOpenAiRegionBlock(body)) {
+          throw new AccessError(400, OPENAI_REGION_MESSAGE);
+        }
+        if (isInsufficientBalance(response.status, body)) {
+          throw new AccessError(400, AI_BALANCE_MESSAGE);
+        }
         const detail = await providerErrorDetail(response);
         throw new AccessError(
           400,

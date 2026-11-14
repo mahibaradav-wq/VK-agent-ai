@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useActionState, useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StatusBanner } from "@/components/ui/status-banner";
 import {
@@ -45,6 +45,7 @@ export function WatchBoard({
   credential,
   communities,
   ideas,
+  aiProvider,
 }: {
   workspaceId: string;
   projectId?: string;
@@ -54,6 +55,7 @@ export function WatchBoard({
   credential: { connected: boolean; status: string; lastError: string | null };
   communities: WatchCommunityView[];
   ideas: WatchIdeaView[];
+  aiProvider: string;
 }) {
   const router = useRouter();
   const [tokenState, tokenAction, tokenPending] = useActionState(connectVkWatch, idle);
@@ -79,7 +81,7 @@ export function WatchBoard({
     setCollectPending(true);
     setCollectState({
       status: "idle",
-      message: "Читаем стены и просим ChatGPT предложить темы. Обычно 20–60 секунд.",
+      message: "Читаем стены и просим модель предложить темы. Обычно 20–60 секунд.",
     });
     try {
       const response = await fetch("/api/watch/ideas", { method: "POST", body: formData });
@@ -190,9 +192,20 @@ export function WatchBoard({
       <Card className="grid gap-3">
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Собрать идеи</p>
         <p className="text-sm text-ink/70">
-          Агент читает последние посты через VK API и просит ChatGPT предложить свои темы. Копии чужих текстов не
-          публикуются.
+          Агент читает последние посты через VK API и просит подключённую модель предложить свои темы. Копии чужих
+          текстов не публикуются.
         </p>
+        {aiProvider === "openai" ? (
+          <StatusBanner tone="warning">
+            ChatGPT с этого сервера OpenAI не обслуживает (регион VPS). Ключ сохранён, но идеи через него не придут.
+            Подключите DeepSeek в разделе AI — он открывается напрямую.
+            <span className="mt-3 block">
+              <ButtonLink href="/app/ai" variant="secondary">
+                Подключить DeepSeek
+              </ButtonLink>
+            </span>
+          </StatusBanner>
+        ) : null}
         {collectState.message ? <StatusBanner tone={collectState.status === "invalid" ? "warning" : collectPending ? "info" : "success"}>{collectState.message}</StatusBanner> : null}
         {canGenerate ? (
           <form action={submitCollect} className="grid gap-3">

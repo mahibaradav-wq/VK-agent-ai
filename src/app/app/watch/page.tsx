@@ -27,10 +27,14 @@ export default async function WatchPage() {
   }
 
   const watch = createWatchService(prisma);
-  const [credential, communities, ideas] = await Promise.all([
+  const [credential, communities, ideas, aiConnection] = await Promise.all([
     watch.credential(session.user.id, activeMembership.workspaceId),
     watch.listCommunities(session.user.id, activeMembership.workspaceId),
     watch.listIdeas(session.user.id, activeMembership.workspaceId),
+    prisma.workspaceAiConnection.findUnique({
+      where: { workspaceId: activeMembership.workspaceId },
+      select: { provider: true },
+    }),
   ]);
 
   return (
@@ -48,6 +52,7 @@ export default async function WatchPage() {
           canGenerate={hasPermission(activeMembership.role, "ai.generate")}
           canApply={hasPermission(activeMembership.role, "post.create")}
           credential={credential}
+          aiProvider={aiConnection?.provider ?? "unconfigured"}
           communities={communities.map((item) => ({
             ...item,
             lastFetchedAt: item.lastFetchedAt?.toISOString() ?? null,
