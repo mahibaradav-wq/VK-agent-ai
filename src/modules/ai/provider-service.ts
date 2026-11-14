@@ -24,6 +24,13 @@ function looksLikeApiKey(value: string) {
   return /^sk-[A-Za-z0-9_-]{8,}$/.test(value.trim());
 }
 
+function currentImageModel(spec: { imageModel: string }, stored: string) {
+  if (stored === "dall-e-2" || stored === "dall-e-3" || !stored.trim()) {
+    return spec.imageModel;
+  }
+  return stored;
+}
+
 export function createAiConnectionService(
   db: PrismaClient,
   options?: {
@@ -55,7 +62,7 @@ export function createAiConnectionService(
         provider: row.provider,
         label: spec.label,
         model: row.model,
-        imageModel: spec.imageReady ? row.imageModel || spec.imageModel : "",
+        imageModel: spec.imageReady ? currentImageModel(spec, row.imageModel) : "",
         imageReady: spec.imageReady,
         status: row.status,
         hasKey: Boolean(row.encryptedApiKey),
@@ -110,7 +117,7 @@ export function createAiConnectionService(
           apiKey: decryptToken(row.encryptedApiKey),
           baseUrl: spec.baseUrl,
           model: row.model || spec.model,
-          imageModel: row.imageModel || spec.imageModel,
+          imageModel: currentImageModel(spec, row.imageModel),
           imageReady: spec.imageReady,
           name: spec.id,
           fetchImpl,
