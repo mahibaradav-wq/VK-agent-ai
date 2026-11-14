@@ -1,4 +1,4 @@
-import { ProxyAgent, fetch as undiciFetch } from "undici";
+import { createOutboundFetch } from "@/server/http/outbound-fetch";
 
 export type TelegramApiFailure = {
   ok: false;
@@ -50,13 +50,7 @@ export function telegramApiRoot() {
 }
 
 export function createTelegramFetch(): typeof fetch {
-  const proxy = process.env.TELEGRAM_PROXY_URL?.trim() || process.env.HTTPS_PROXY?.trim();
-  if (!proxy) {
-    return fetch;
-  }
-  const dispatcher = new ProxyAgent(proxy);
-  return ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
-    undiciFetch(String(input), { ...(init as object), dispatcher } as never)) as unknown as typeof fetch;
+  return createOutboundFetch();
 }
 
 export function createTelegramTransport(fetchImpl: typeof fetch = createTelegramFetch()): TelegramTransport {
