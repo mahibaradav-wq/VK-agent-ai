@@ -1,4 +1,5 @@
-import { createOutboundFetch } from "@/server/http/outbound-fetch";
+// VK API is reachable directly from the host. Do not send it through the
+// Telegram/OpenAI CONNECT proxy: that tunnel fails with api.vk.ru.
 
 export const VK_API_VERSION = "5.199";
 
@@ -18,6 +19,15 @@ export type VkApiResult<T> = VkApiSuccess<T> | VkApiFailure;
 export type VkResolvedScreenName = {
   type?: string;
   object_id?: number;
+  name?: string;
+  screen_name?: string;
+};
+
+export type VkGroup = {
+  id?: number;
+  name?: string;
+  screen_name?: string;
+  type?: string;
 };
 
 export type VkWallPost = {
@@ -49,6 +59,28 @@ export function vkApiRoot() {
   return (process.env.VK_API_BASE_URL ?? "https://api.vk.ru").replace(/\/$/, "");
 }
 
+export function extractVkGroup(response: unknown): VkGroup | null {
+  if (!response) {
+    return null;
+  }
+  if (Array.isArray(response)) {
+    const first = response[0];
+    return first && typeof first === "object" ? (first as VkGroup) : null;
+  }
+  if (typeof response !== "object") {
+    return null;
+  }
+  const payload = response as { groups?: unknown[]; items?: unknown[]; id?: number };
+  const list = payload.groups ?? payload.items;
+  if (Array.isArray(list) && list[0] && typeof list[0] === "object") {
+    return list[0] as VkGroup;
+  }
+  if (typeof payload.id === "number") {
+    return payload;
+  }
+  return null;
+}
+
 export function isVkAccessToken(value: string) {
   const token = value.trim();
   if (!token || /\s/.test(token) || token.includes("@")) {
@@ -63,7 +95,7 @@ export function isVkAccessToken(value: string) {
   return /^(vk1\.|vk2\.)/i.test(token) || /^[A-Za-z0-9._\-/=+]{40,}$/.test(token);
 }
 
-export function createVkTransport(fetchImpl: typeof fetch = createOutboundFetch()): VkTransport {
+export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport {
   return {
     async call(token, method, params = {}) {
       try {
@@ -112,6 +144,9 @@ export function describeVkApiError(error: VkApiFailure) {
   }
   if (error.error_code === 27) {
     return "Этот ключ сообщества не умеет читать чужие стены. Нужен сервисный ключ приложения VK или ключ того сообщества, которое вы смотрите.";
+  }
+  if (error.error_code === 1051) {
+    return "Этот тип ключа VK не умеет вызывать выбранный метод. Для чтения стен нужен сервисный ключ приложения.";
   }
   return `VK API: ${error.error_msg}`;
 }
