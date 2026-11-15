@@ -164,6 +164,7 @@ export function createAiService(
       const ideas = await providerFor(workspaceId, "ideas");
       return {
         ready: copy.ready || ideas.ready,
+        copyReady: copy.ready,
         imageReady: image.imageReady,
         storageReady: storageDriver.ready,
         provider: copy.name,
@@ -273,6 +274,12 @@ export function createAiService(
     async applyToPost(userId: string, workspaceId: string, requestId: string, projectId: string) {
       await access.requirePermission(userId, workspaceId, "post.create");
       const request = await loadBoundRequest(workspaceId, requestId);
+      if (request.kind === "watch_ideas") {
+        throw new AccessError(
+          400,
+          "Идею в пост отправляйте со страницы наблюдения VK. Агент напишет новый текст и нарисует новый визуал, а не возьмёт картинку от другого поста.",
+        );
+      }
       const publicRequest = toPublic(request);
       const platforms = request.platform ? [request.platform] : [];
       const created = await posts.create(userId, workspaceId, projectId, publicRequest.title);

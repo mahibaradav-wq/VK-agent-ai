@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
 import { AccessError } from "@/modules/access/permissions";
@@ -11,6 +10,7 @@ import { prisma } from "@/server/db/prisma";
 export type WatchFormState = {
   status: "idle" | "invalid" | "success";
   message: string;
+  postId?: string;
 };
 
 async function requireUserId() {
@@ -113,13 +113,25 @@ export async function collectWatchIdeas(_prev: WatchFormState, formData: FormDat
   }
 }
 
-export async function applyWatchIdea(formData: FormData) {
-  const post = await createWatchService(prisma).applyIdea(
-    await requireUserId(),
-    readField(formData, "workspaceId"),
-    readField(formData, "requestId"),
-    Number(readField(formData, "itemIndex")),
-    readField(formData, "projectId"),
-  );
-  redirect(`/app/posts/${post.id}`);
+export async function applyWatchIdea(_prev: WatchFormState, formData: FormData): Promise<WatchFormState> {
+  try {
+    const post = await createWatchService(prisma).applyIdea(
+      await requireUserId(),
+      readField(formData, "workspaceId"),
+      readField(formData, "requestId"),
+      Number(readField(formData, "itemIndex")),
+      readField(formData, "projectId"),
+    );
+    revalidateWatch();
+    revalidatePath("/app/posts");
+    revalidatePath(`/app/posts/${post.id}`);
+    return {
+      status: "success",
+      message: "Агент написал пост и нарисовал новый визуал. Картинка от другого поста не подставляется.",
+      postId: post.id,
+    };
+  } catch (error) {
+    const message = error instanceof AccessError ? error.message : "Не удалось отправить идею в агент AI.";
+    return { status: "invalid", message };
+  }
 }

@@ -3,7 +3,7 @@
 import { useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { applyAiToPost, composeAgentPost, generateAi, type AiFormState } from "@/modules/ai/actions";
@@ -263,7 +263,17 @@ export function AiStudio({
               <p className="text-xs text-ink/50">
                 {item.provider}/{item.model} · {item.createdAt}
               </p>
-              {canApply && projectId ? (
+              {item.kind === "watch_ideas" ? (
+                <p className="text-sm text-ink/70">
+                  Идею в пост отправляйте со страницы наблюдения. Агент напишет новый текст и нарисует новую картинку, а
+                  не возьмёт визуал от другого поста.
+                  <span className="mt-3 block">
+                    <ButtonLink href="/app/watch" variant="secondary">
+                      К идеям VK
+                    </ButtonLink>
+                  </span>
+                </p>
+              ) : canApply && projectId ? (
                 <form action={applyAiToPost}>
                   <input type="hidden" name="workspaceId" value={workspaceId} />
                   <input type="hidden" name="projectId" value={projectId} />

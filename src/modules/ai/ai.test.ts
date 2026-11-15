@@ -165,6 +165,25 @@ describe("AI assistant", () => {
     expect(post.targets.map((target) => target.platform)).toEqual(["telegram"]);
   });
 
+  it("does not paste a VK watch idea into a draft from AI history", async () => {
+    const owner = await registerOwner("ai-watch-apply");
+    const ai = createAiService(prisma, { provider: scriptedProvider([sample]) });
+    const generated = await ai.generate(owner.userId, owner.workspaceId, {
+      kind: "ideas",
+      prompt: "полки",
+    });
+    await prisma.aIRequest.update({
+      where: { id: generated.id },
+      data: { kind: "watch_ideas" },
+    });
+    await expectAccess(
+      ai.applyToPost(owner.userId, owner.workspaceId, generated.id, owner.projectId),
+      400,
+      /страницы наблюдения VK/,
+    );
+    expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
+  });
+
   it("enforces the monthly limit atomically and releases usage if the provider fails", async () => {
     const owner = await registerOwner("ai-limit");
     const ai = createAiService(prisma, { provider: scriptedProvider([sample]), monthlyLimit: 1 });

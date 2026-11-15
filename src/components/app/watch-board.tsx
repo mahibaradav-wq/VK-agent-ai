@@ -8,7 +8,6 @@ import { Card } from "@/components/ui/card";
 import { StatusBanner } from "@/components/ui/status-banner";
 import {
   addWatchCommunity,
-  applyWatchIdea,
   connectVkWatch,
   disconnectVkWatch,
   removeWatchCommunity,
@@ -64,6 +63,8 @@ export function WatchBoard({
   communities,
   ideas,
   aiProvider,
+  copyReady,
+  imageReady,
 }: {
   workspaceId: string;
   projectId?: string;
@@ -74,6 +75,8 @@ export function WatchBoard({
   communities: WatchCommunityView[];
   ideas: WatchIdeaView[];
   aiProvider: string;
+  copyReady: boolean;
+  imageReady: boolean;
 }) {
   const router = useRouter();
   const [tokenState, tokenAction, tokenPending] = useActionState(connectVkWatch, idle);
@@ -82,16 +85,26 @@ export function WatchBoard({
   const [removeState, removeAction, removePending] = useActionState(removeWatchCommunity, idle);
   const [collectPending, setCollectPending] = useState(false);
   const [collectState, setCollectState] = useState<WatchFormState>(idle);
+  const [applyPending, setApplyPending] = useState(false);
+  const [applyKey, setApplyKey] = useState<string | null>(null);
+  const [applyState, setApplyState] = useState<WatchFormState>(idle);
+  const agentReady = copyReady && imageReady;
   const message =
-    collectState.message || addState.message || tokenState.message || disconnectState.message || removeState.message;
+    applyState.message ||
+    collectState.message ||
+    addState.message ||
+    tokenState.message ||
+    disconnectState.message ||
+    removeState.message;
   const tone =
+    applyState.status === "invalid" ||
     collectState.status === "invalid" ||
     addState.status === "invalid" ||
     tokenState.status === "invalid" ||
     disconnectState.status === "invalid" ||
     removeState.status === "invalid"
       ? "warning"
-      : collectState.status === "success"
+      : applyState.status === "success" || collectState.status === "success"
         ? "success"
         : "info";
 
@@ -121,6 +134,36 @@ export function WatchBoard({
     }
   }
 
+  async function submitApply(formData: FormData, key: string) {
+    setApplyPending(true);
+    setApplyKey(key);
+    setApplyState({
+      status: "idle",
+      message: "Агент пишет текст поста и рисует новый визуал. Обычно 20–60 секунд. Картинка от другого поста не берётся.",
+    });
+    try {
+      const response = await fetch("/api/watch/apply-idea", { method: "POST", body: formData });
+      const payload = (await response.json()) as WatchFormState;
+      setApplyState({
+        status: payload.status === "success" ? "success" : "invalid",
+        message: payload.message || "Не удалось отправить идею в агент AI.",
+        postId: payload.postId,
+      });
+      if (payload.status === "success" && payload.postId) {
+        router.push(`/app/posts/${payload.postId}`);
+        return;
+      }
+    } catch {
+      setApplyState({
+        status: "invalid",
+        message: "Сервер не ответил. Обновите страницу и нажмите ещё раз.",
+      });
+    } finally {
+      setApplyPending(false);
+      setApplyKey(null);
+    }
+  }
+
   return (
     <div className="grid gap-6">
       {message ? <StatusBanner tone={tone}>{message}</StatusBanner> : null}
@@ -140,18 +183,34 @@ export function WatchBoard({
             {batch.provider} · {batch.model} · {new Date(batch.createdAt).toLocaleString("ru-RU")}
           </p>
           {batch.body ? <p className="whitespace-pre-wrap text-sm text-ink/80">{batch.body}</p> : null}
+          {canApply && projectId && !agentReady ? (
+            <StatusBanner tone="warning">
+              Чтобы из идеи получился пост, подключите ChatGPT в разделе AI. Он напишет текст и нарисует новую картинку.
+              Без ключа сырой черновик с чужим визуалом не создаётся.
+              <span className="mt-3 block">
+                <ButtonLink href="/app/ai" variant="secondary">
+                  Открыть агент AI
+                </ButtonLink>
+              </span>
+            </StatusBanner>
+          ) : null}
           <ul className="grid gap-3">
             {batch.items.map((item, index) => (
               <li key={`${batch.id}-${index}`} className="rounded-2xl ring-1 ring-ink/10 p-4">
                 <IdeaParts item={item} />
-                {canApply && projectId ? (
-                  <form action={applyWatchIdea} className="mt-3">
+                {canApply && projectId && agentReady ? (
+                  <form
+                    className="mt-3"
+                    action={(formData) => submitApply(formData, `${batch.id}-${index}`)}
+                  >
                     <input type="hidden" name="workspaceId" value={workspaceId} />
                     <input type="hidden" name="projectId" value={projectId} />
                     <input type="hidden" name="requestId" value={batch.id} />
                     <input type="hidden" name="itemIndex" value={String(index)} />
-                    <Button type="submit" variant="secondary">
-                      В черновик ВК
+                    <Button type="submit" variant="secondary" disabled={applyPending}>
+                      {applyPending && applyKey === `${batch.id}-${index}`
+                        ? "Агент пишет и рисует..."
+                        : "В агент: пост и визуал"}
                     </Button>
                   </form>
                 ) : null}
@@ -159,8 +218,8 @@ export function WatchBoard({
             ))}
           </ul>
           <p className="text-xs text-ink/50">
-            Черновик можно опубликовать на стену ВК, если на странице аккаунтов сохранён ключ сообщества с правом
-            «Стена». Сервисный ключ чтения для этого не подходит.
+            Кнопка отправляет идею в агент: ChatGPT пишет текст стены ВК и рисует новый визуал, затем открывает этот
+            черновик. Картинка от другого поста не подставляется. Опубликовать можно ключом сообщества с правом «Стена».
           </p>
         </Card>
       ))}
