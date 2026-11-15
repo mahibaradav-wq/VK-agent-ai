@@ -503,6 +503,11 @@ export function createWatchService(
         platform: "vk",
         projectId,
       });
+      const remaining = items.filter((_, index) => index !== itemIndex);
+      await db.aIRequest.update({
+        where: { id: request.id },
+        data: { itemsJson: JSON.stringify(remaining) },
+      });
       await db.auditLog.create({
         data: {
           action: "APPLY_VK_WATCH_IDEA",
@@ -522,26 +527,28 @@ export function createWatchService(
         orderBy: { createdAt: "desc" },
         take: 10,
       });
-      return rows.map((row) => {
-        let items: string[] = [];
-        try {
-          const parsed = JSON.parse(row.itemsJson) as unknown;
-          if (Array.isArray(parsed)) {
-            items = parsed.filter((item): item is string => typeof item === "string");
+      return rows
+        .map((row) => {
+          let items: string[] = [];
+          try {
+            const parsed = JSON.parse(row.itemsJson) as unknown;
+            if (Array.isArray(parsed)) {
+              items = parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+            }
+          } catch {
+            items = [];
           }
-        } catch {
-          items = [];
-        }
-        return {
-          id: row.id,
-          title: row.title,
-          body: row.body,
-          items,
-          createdAt: row.createdAt,
-          provider: row.provider,
-          model: row.model,
-        };
-      });
+          return {
+            id: row.id,
+            title: row.title,
+            body: row.body,
+            items,
+            createdAt: row.createdAt,
+            provider: row.provider,
+            model: row.model,
+          };
+        })
+        .filter((row) => row.items.length > 0);
     },
   };
 }

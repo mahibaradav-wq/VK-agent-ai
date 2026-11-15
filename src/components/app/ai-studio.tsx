@@ -276,14 +276,20 @@ export function AiStudio({
               </p>
               {item.kind === "watch_ideas" ? (
                 <p className="text-sm text-ink/70">
-                  Идею в пост отправляйте со страницы наблюдения. Агент напишет новый текст и нарисует новую картинку, а
-                  не возьмёт визуал от другого поста.
+                  Идею в пост отправляйте со страницы наблюдения кнопкой «В агент: пост и визуал».
                   <span className="mt-3 block">
                     <ButtonLink href="/app/watch" variant="secondary">
                       К идеям VK
                     </ButtonLink>
                   </span>
                 </p>
+              ) : item.kind === "agent" && item.items.some((entry) => entry.startsWith("post:")) ? (
+                <ButtonLink
+                  href={`/app/posts/${item.items.find((entry) => entry.startsWith("post:"))?.slice(5)}`}
+                  variant="secondary"
+                >
+                  Открыть черновик с визуалом
+                </ButtonLink>
               ) : canApply && projectId ? (
                 <form action={applyAiToPost}>
                   <input type="hidden" name="workspaceId" value={workspaceId} />

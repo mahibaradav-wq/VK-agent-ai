@@ -17,8 +17,14 @@ import type { StorageDriver } from "@/server/storage/types";
 const AGENT_KIND = "agent";
 const AGENT_USAGE_UNITS = 2;
 
+const WATCH_IDEAS_KIND = "watch_ideas";
+
 function visualItem(mediaId: string) {
   return `visual:${mediaId}`;
+}
+
+function postItem(postId: string) {
+  return `post:${postId}`;
 }
 
 function parseVisualMediaIds(items: string[]) {
@@ -26,6 +32,11 @@ function parseVisualMediaIds(items: string[]) {
     .filter((item) => item.startsWith("visual:"))
     .map((item) => item.slice("visual:".length))
     .filter(Boolean);
+}
+
+function parseLinkedPostId(items: string[]) {
+  const found = items.find((item) => item.startsWith("post:"));
+  return found ? found.slice("post:".length) : "";
 }
 
 function extensionForMime(mime: string) {
@@ -235,7 +246,7 @@ export function createAiService(
     async list(userId: string, workspaceId: string) {
       await access.requirePermission(userId, workspaceId, "ai.view");
       const rows = await db.aIRequest.findMany({
-        where: { workspaceId },
+        where: { workspaceId, kind: { not: WATCH_IDEAS_KIND } },
         orderBy: { createdAt: "desc" },
         take: 30,
       });
@@ -326,13 +337,21 @@ export function createAiService(
     async applyToPost(userId: string, workspaceId: string, requestId: string, projectId: string) {
       await access.requirePermission(userId, workspaceId, "post.create");
       const request = await loadBoundRequest(workspaceId, requestId);
-      if (request.kind === "watch_ideas") {
+      if (request.kind === WATCH_IDEAS_KIND) {
         throw new AccessError(
           400,
-          "Идею в пост отправляйте со страницы наблюдения VK. Агент напишет новый текст и нарисует новый визуал, а не возьмёт картинку от другого поста.",
+          "Идею в пост отправляйте со страницы наблюдения VK кнопкой «В агент: пост и визуал». Из истории текст не копируется.",
         );
       }
       const publicRequest = toPublic(request);
+      const linkedPostId = parseLinkedPostId(publicRequest.items);
+      if (request.kind === AGENT_KIND && linkedPostId) {
+        try {
+          return await posts.get(userId, workspaceId, linkedPostId);
+        } catch {
+          // Черновик удалили — ниже создадим новый из той же генерации.
+        }
+      }
       const platforms = request.platform ? [request.platform] : [];
       const created = await posts.create(userId, workspaceId, projectId, publicRequest.title);
       const body =
@@ -439,6 +458,13 @@ export function createAiService(
           bytes: image.bytes,
         });
 
+        const created = await posts.create(userId, workspaceId, input.projectId, title);
+        await posts.saveDraft(userId, workspaceId, created.id, {
+          title: title.slice(0, 180),
+          body,
+          platforms: platform ? [platform] : [],
+          mediaIds: [asset.id],
+        });
         const row = await db.aIRequest.create({
           data: {
             workspaceId,
@@ -451,20 +477,12 @@ export function createAiService(
             platform,
             title,
             body,
-            itemsJson: JSON.stringify([visualItem(asset.id)]),
+            itemsJson: JSON.stringify([visualItem(asset.id), postItem(created.id)]),
             provider: generated.provider,
             model: `${generated.model}+${image.model}`,
             inputTokens: generated.inputTokens,
             outputTokens: generated.outputTokens,
           },
-        });
-
-        const created = await posts.create(userId, workspaceId, input.projectId, title);
-        await posts.saveDraft(userId, workspaceId, created.id, {
-          title: title.slice(0, 180),
-          body,
-          platforms: platform ? [platform] : [],
-          mediaIds: [asset.id],
         });
         await db.auditLog.create({
           data: {

@@ -219,6 +219,8 @@ describe("VK watch idea agent", () => {
 
     const post = await watch.applyIdea(owner.userId, owner.workspaceId, collected.request.id, 0, owner.projectId);
     expect(post.targets.map((target) => target.platform)).toEqual(["vk"]);
+    expect(await watch.listIdeas(owner.userId, owner.workspaceId)).toEqual([]);
+    expect((await createAiService(prisma, { provider, storage: createLocalStorage(storageDir) }).list(owner.userId, owner.workspaceId)).every((item) => item.kind !== WATCH_IDEAS_KIND)).toBe(true);
     expect(post.versions[0]?.title).toMatch(/Специи/);
     expect(post.versions[0]?.body).toMatch(/стены ВК/);
     expect(post.media).toHaveLength(1);

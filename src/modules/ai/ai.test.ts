@@ -159,6 +159,7 @@ describe("AI assistant", () => {
 
     const listed = await ai.list(owner.userId, owner.workspaceId);
     expect(listed).toHaveLength(1);
+    expect(listed[0]?.kind).toBe("post");
     const post = await ai.applyToPost(owner.userId, owner.workspaceId, generated.id, owner.projectId);
     expect(post.status).toBe("draft");
     expect(post.versions.some((version) => version.title === "Борщ по пятницам")).toBe(true);
@@ -179,9 +180,10 @@ describe("AI assistant", () => {
     await expectAccess(
       ai.applyToPost(owner.userId, owner.workspaceId, generated.id, owner.projectId),
       400,
-      /страницы наблюдения VK/,
+      /страницы наблюдения VK кнопкой/,
     );
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
+    expect(await ai.list(owner.userId, owner.workspaceId)).toEqual([]);
   });
 
   it("enforces the monthly limit atomically and releases usage if the provider fails", async () => {
@@ -359,6 +361,13 @@ describe("AI assistant", () => {
     expect(composed.post.status).toBe("draft");
     expect(composed.post.media.map((item) => item.mediaId)).toEqual([composed.mediaId]);
     expect(composed.post.targets.map((target) => target.platform)).toEqual(["telegram"]);
+    expect(composed.request.items).toContain(`visual:${composed.mediaId}`);
+    expect(composed.request.items).toContain(`post:${composed.post.id}`);
+    const listed = await ai.list(owner.userId, owner.workspaceId);
+    expect(listed.some((item) => item.kind === "agent" && item.id === composed.request.id)).toBe(true);
+    const opened = await ai.applyToPost(owner.userId, owner.workspaceId, composed.request.id, owner.projectId);
+    expect(opened.id).toBe(composed.post.id);
+    expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(1);
     expect(provider.imagePrompts[0]).toContain("Борщ по пятницам");
     expect(JSON.stringify(composed.request)).not.toMatch(/sk-|apiKey|AI_API_KEY|b64/);
     expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(2);
