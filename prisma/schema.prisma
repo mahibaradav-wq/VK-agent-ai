@@ -114,7 +114,7 @@ model Workspace {
   subscription        Subscription?
   checkoutSessions    CheckoutSession[]
   paymentEvents       PaymentEvent[]
-  aiConnection        WorkspaceAiConnection?
+  aiConnections       WorkspaceAiConnection[]
   vkWatchCommunities  VkWatchCommunity[]
   vkWatchCredential   VkWatchCredential?
 }
@@ -422,7 +422,7 @@ model AIRequest {
 
 model WorkspaceAiConnection {
   id              String   @id @default(cuid())
-  workspaceId     String   @unique
+  workspaceId     String
   provider        String
   encryptedApiKey String   @db.Text
   model           String
@@ -435,6 +435,8 @@ model WorkspaceAiConnection {
   workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   connectedBy     User      @relation(fields: [connectedById], references: [id], onDelete: Cascade)
 
+  @@unique([workspaceId, provider])
+  @@index([workspaceId])
   @@index([connectedById])
 }
 

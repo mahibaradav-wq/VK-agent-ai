@@ -72,8 +72,8 @@ export default async function AppHomePage() {
       done: Boolean(ai?.ready),
       title: "AI-ассистент",
       detail: ai?.ready
-        ? `Провайдер ${ai.provider}, модель ${ai.model}.`
-        : "Ключ ChatGPT, DeepSeek или Qwen хранится на сервере. Без ключа генерация не имитируется.",
+        ? `Идеи: ${ai.ideasProvider}. Тексты: ${ai.copyProvider}${ai.imageReady ? `, визуал: ${ai.imageProvider}` : ""}.`
+        : "DeepSeek — идеи, ChatGPT — тексты и визуал. Без ключа генерация не имитируется.",
     },
   ];
   const nextStep = steps.find((step) => !step.done);

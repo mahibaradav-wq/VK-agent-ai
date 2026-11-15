@@ -12,7 +12,7 @@ import { prisma } from "@/server/db/prisma";
 
 export const metadata = createPageMetadata({
   title: "AI-ассистент",
-  description: "Агент пишет пост и визуал, либо отдельно генерирует идеи и тексты. Ключ провайдера только на сервере.",
+  description: "DeepSeek ищет идеи по стенам ВК. ChatGPT пишет текст поста и рисует визуал. Ключи только на сервере.",
   path: "/app/ai",
 });
 
@@ -37,13 +37,16 @@ export default async function AiPage() {
       <PageHeader
         eyebrow="AI"
         title="Ассистент контента"
-        description="Подключите ChatGPT, DeepSeek или Qwen API-ключом. Агент создаёт пост с визуалом, если провайдер умеет рисовать. Без ключа генерация не имитируется."
+        description="DeepSeek — идеи. ChatGPT — тексты и визуал. Ключи можно держать оба. Без ключа генерация не имитируется."
       />
       <Container className="grid gap-6 pb-20">
         <AiProviderBoard
           workspaceId={activeMembership.workspaceId}
           canConnect={hasPermission(activeMembership.role, "ai.connect")}
-          connection={status.connection}
+          connections={status.connections}
+          ideas={status.roles.ideas}
+          copy={status.roles.copy}
+          image={status.roles.image}
         />
         <AiStudio
           workspaceId={activeMembership.workspaceId}

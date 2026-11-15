@@ -124,18 +124,18 @@ export function AiStudio({
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Агент</p>
           <h2 className="mt-2 text-2xl font-black text-ink">Пост + визуал</h2>
           <p className="mt-2 text-sm text-ink/70">
-            Агент напишет текст и сгенерирует картинку, затем положит черновик в текущий проект. Без ключа AI и без
-            готового хранилища картинка не подменяется макетом.
+            ChatGPT напишет текст и нарисует картинку, затем положит черновик в текущий проект. Без ключа картинка не
+            подменяется макетом. Идеи по стенам ВК собирает DeepSeek отдельно.
           </p>
         </div>
         {!ready ? (
           <StatusBanner tone="warning">
-            Подключите ChatGPT или Qwen выше. Агент не напишет пост и не нарисует картинку без ключа. Макет ниже — не
-            ответ модели.
+            Подключите ChatGPT выше. Агент не напишет пост и не нарисует картинку без его ключа. Макет ниже — не ответ
+            модели.
           </StatusBanner>
         ) : !imageReady ? (
           <StatusBanner tone="warning">
-            Этот провайдер пишет текст, но не рисует картинки. Для визуала подключите ChatGPT или Qwen.
+            Тексты может писать DeepSeek, но картинки он не рисует. Для поста с визуалом подключите ChatGPT.
           </StatusBanner>
         ) : !storageReady ? (
           <StatusBanner tone="warning">
@@ -175,7 +175,7 @@ export function AiStudio({
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Макет интерфейса, не ответ модели</p>
             <p className="mt-2 font-semibold text-ink">Весеннее меню на кухне</p>
             <p className="mt-1">
-              Пример карточки. Без ключа ChatGPT, DeepSeek или Qwen сервер не подставит выдуманный текст и не приложит фейковую картинку.
+              Пример карточки. Без ключа ChatGPT сервер не подставит выдуманный текст и не приложит фейковую картинку.
             </p>
           </div>
         ) : null}
@@ -185,7 +185,7 @@ export function AiStudio({
         <Card className="grid gap-4">
           {!ready ? (
             <StatusBanner tone="warning">
-              Подключите ChatGPT, DeepSeek или Qwen выше. Макет ниже — не ответ модели. Ключ во frontend не передаётся.
+              Подключите ChatGPT выше для текста и визуала. Идеи — DeepSeek. Макет ниже не ответ модели.
             </StatusBanner>
           ) : (
             <StatusBanner tone="info">

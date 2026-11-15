@@ -26,7 +26,7 @@ export const aiProviderCatalog: AiProviderSpec[] = [
     keyUrl: "https://platform.openai.com/api-keys",
     keyHint: "Ключ с platform.openai.com, начинается с sk-. Пароль ChatGPT не подходит.",
     notes:
-      "Пишет текст (gpt-4o-mini) и рисует визуал (GPT Image). С VPS в РФ OpenAI отвечает unsupported_country — для текста подключите DeepSeek.",
+      "Пишет посты (gpt-4o-mini) и рисует визуал (GPT Image). С VPS в РФ OpenAI может ответить unsupported_country.",
   },
   {
     id: "deepseek",
@@ -38,7 +38,7 @@ export const aiProviderCatalog: AiProviderSpec[] = [
     imageReady: false,
     keyUrl: "https://platform.deepseek.com/api_keys",
     keyHint: "Ключ с platform.deepseek.com, начинается с sk-.",
-    notes: "Пишет текст. Картинки DeepSeek не генерирует — для визуала нужен ChatGPT или Qwen.",
+    notes: "Ищет идеи по стенам ВК. Картинки не рисует — посты и визуал пишет ChatGPT.",
   },
   {
     id: "qwen",

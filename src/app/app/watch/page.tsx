@@ -11,7 +11,7 @@ import { prisma } from "@/server/db/prisma";
 
 export const metadata = createPageMetadata({
   title: "Идеи по сообществам VK",
-  description: "Агент читает стены ВКонтакте через официальный API и предлагает темы постов. Публикация во ВК не включается.",
+  description: "DeepSeek предлагает темы по стенам ВК. Готовый черновик публикуется ключом сообщества.",
   path: "/app/watch",
 });
 
@@ -27,22 +27,27 @@ export default async function WatchPage() {
   }
 
   const watch = createWatchService(prisma);
-  const [credential, communities, ideas, aiConnection] = await Promise.all([
+  const [credential, communities, ideas, aiConnections] = await Promise.all([
     watch.credential(session.user.id, activeMembership.workspaceId),
     watch.listCommunities(session.user.id, activeMembership.workspaceId),
     watch.listIdeas(session.user.id, activeMembership.workspaceId),
-    prisma.workspaceAiConnection.findUnique({
-      where: { workspaceId: activeMembership.workspaceId },
+    prisma.workspaceAiConnection.findMany({
+      where: { workspaceId: activeMembership.workspaceId, status: "connected" },
       select: { provider: true },
     }),
   ]);
+  const ideasProvider =
+    aiConnections.find((item) => item.provider === "deepseek")?.provider ??
+    aiConnections.find((item) => item.provider === "qwen")?.provider ??
+    aiConnections[0]?.provider ??
+    "unconfigured";
 
   return (
     <>
       <PageHeader
         eyebrow="Агент"
         title="Идеи для стены ВК"
-        description="Смотрит указанные сообщества через VK API и предлагает темы для стены «Дом по полочкам». Чужие посты не копируются, во ВК ничего не публикуется."
+        description="DeepSeek смотрит указанные сообщества через VK API и предлагает темы. Готовый черновик можно опубликовать на стену ключом сообщества."
       />
       <Container className="grid gap-6 pb-20">
         <WatchBoard
@@ -52,7 +57,7 @@ export default async function WatchPage() {
           canGenerate={hasPermission(activeMembership.role, "ai.generate")}
           canApply={hasPermission(activeMembership.role, "post.create")}
           credential={credential}
-          aiProvider={aiConnection?.provider ?? "unconfigured"}
+          aiProvider={ideasProvider}
           communities={communities.map((item) => ({
             ...item,
             lastFetchedAt: item.lastFetchedAt?.toISOString() ?? null,
