@@ -12,6 +12,7 @@ import { createPostService } from "@/modules/posts/post-service";
 import { createProjectService } from "@/modules/projects/project-service";
 import { createPublishService } from "@/modules/publishing/publish-service";
 import { createMediaService } from "@/modules/media/media-service";
+import { createProductService } from "@/modules/products/product-service";
 import { createSocialService } from "@/modules/social/social-service";
 import { createWorkspaceService } from "@/modules/workspaces/workspace-service";
 import { prisma } from "@/server/db/prisma";
@@ -493,6 +494,91 @@ describe("social accounts", () => {
     expect(stored.status).toBe("published");
     expect(stored.targets[0]?.externalId).toBe("77");
     expect(transport.methods.filter((method) => method === "wall.post")).toHaveLength(2);
+  });
+
+  it("attaches a VK market item for a shop post and falls back to a text link", async () => {
+    const owner = await registerOwner("soc-vk-market");
+    const transport = scriptedVk({
+      "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
+      "market.add": { ok: true, response: { market_item_id: 91 } },
+      "wall.post": (params) => {
+        if (!String(params.message ?? "").trim()) {
+          return { ok: false, error_code: 100, error_msg: "message is empty" };
+        }
+        expect(String(params.attachments)).toContain("market-242155421_91");
+        expect(String(params.message)).not.toContain("https://www.ozon.ru/product/korob-1/");
+        return { ok: true, response: { post_id: 88 } };
+      },
+    });
+    const social = createSocialService(prisma, { vk: transport });
+    await social.connectVk(owner.userId, owner.workspaceId, {
+      token: VK_COMMUNITY_TOKEN,
+      source: "https://vk.com/club242155421",
+    });
+    const products = createProductService(prisma);
+    const product = await products.addFromUrl(
+      owner.userId,
+      owner.workspaceId,
+      owner.projectId,
+      "https://www.ozon.ru/product/korob-1/",
+    );
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Короб");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Короб",
+      body: "Для кухни.",
+      platforms: ["vk"],
+      mediaIds: [],
+    });
+    await products.attachToPost(owner.userId, owner.workspaceId, product.id, post.id);
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createVkAdapter({ db: prisma, transport }) },
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-vk-market");
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
+
+    const fallback = scriptedVk({
+      "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
+      "market.add": { ok: false, error_code: 1403, error_msg: "Market is not enabled" },
+      "wall.post": (params) => {
+        if (!String(params.message ?? "").trim()) {
+          return { ok: false, error_code: 100, error_msg: "message is empty" };
+        }
+        expect(params.attachments).toBeUndefined();
+        expect(String(params.message)).toContain("https://www.ozon.ru/product/korob-1/");
+        return { ok: true, response: { post_id: 89 } };
+      },
+    });
+    const socialB = createSocialService(prisma, { vk: fallback });
+    const ownerB = await registerOwner("soc-vk-market-fb");
+    await socialB.connectVk(ownerB.userId, ownerB.workspaceId, {
+      token: VK_COMMUNITY_TOKEN,
+      source: "https://vk.com/club242155421",
+    });
+    const productB = await createProductService(prisma).addFromUrl(
+      ownerB.userId,
+      ownerB.workspaceId,
+      ownerB.projectId,
+      "https://www.ozon.ru/product/korob-1/",
+    );
+    const postB = await posts.create(ownerB.userId, ownerB.workspaceId, ownerB.projectId, "Короб");
+    await posts.saveDraft(ownerB.userId, ownerB.workspaceId, postB.id, {
+      title: "Короб",
+      body: "Для кухни.",
+      platforms: ["vk"],
+      mediaIds: [],
+    });
+    await createProductService(prisma).attachToPost(ownerB.userId, ownerB.workspaceId, productB.id, postB.id);
+    await approveCurrent(ownerB, postB.id);
+    const publishingB = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createVkAdapter({ db: prisma, transport: fallback }) },
+    });
+    const jobB = await publishingB.enqueue(ownerB.userId, ownerB.workspaceId, postB.id);
+    await publishingB.processJob(jobB.id, "worker-vk-market-fb");
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: postB.id } })).status).toBe("published");
   });
 
   it("uploads wall photos and attaches them to wall.post", async () => {

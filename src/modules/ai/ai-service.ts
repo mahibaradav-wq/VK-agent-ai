@@ -425,6 +425,7 @@ export function createAiService(
         visualKind?: string;
         visualAspect?: string;
         visualPrompt?: string;
+        shopProductId?: string;
       },
     ) {
       await access.requirePermission(userId, workspaceId, "ai.generate");
@@ -540,6 +541,16 @@ export function createAiService(
             outputTokens: generated.outputTokens,
           },
         });
+        if (input.shopProductId) {
+          const product = await db.shopProduct.findUnique({ where: { id: input.shopProductId } });
+          if (product && product.workspaceId === workspaceId && product.projectId === input.projectId) {
+            await db.shopProduct.update({
+              where: { id: product.id },
+              data: { postId: created.id, consumedAt: product.consumedAt ?? new Date() },
+            });
+          }
+        }
+
         await db.auditLog.create({
           data: {
             action: "COMPOSE_AGENT_POST",

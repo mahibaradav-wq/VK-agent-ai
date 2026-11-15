@@ -30,6 +30,8 @@ function revalidateSocial() {
   revalidatePath("/app/posts");
   revalidatePath("/app/queue");
   revalidatePath("/app/watch");
+  revalidatePath("/app/ideas");
+  revalidatePath("/app/connections");
 }
 
 export async function createSetupAccount(_prev: SocialFormState, formData: FormData): Promise<SocialFormState> {

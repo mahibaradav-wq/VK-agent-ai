@@ -1,3 +1,10 @@
+export type PublishMarketCard = {
+  title: string;
+  priceText: string | null;
+  url: string;
+  shop: "ozon" | "wildberries" | "market" | "magnit";
+};
+
 export type PublishInput = {
   platform: string;
   workspaceId: string;
@@ -7,6 +14,7 @@ export type PublishInput = {
   title: string;
   body: string;
   mediaKeys: string[];
+  market?: PublishMarketCard;
 };
 
 export type PublishOutcome =

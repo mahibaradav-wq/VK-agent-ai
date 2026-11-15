@@ -139,9 +139,12 @@ export async function composeAgentPost(_prev: AiFormState, formData: FormData): 
         visualKind: readField(formData, "visualKind"),
         visualAspect: readField(formData, "visualAspect"),
         visualPrompt: readField(formData, "visualPrompt"),
+        shopProductId: readField(formData, "shopProductId") || undefined,
       },
     );
     revalidatePath("/app/ai");
+    revalidatePath("/app/studio");
+    revalidatePath("/app/products");
     revalidatePath("/app/posts");
     revalidatePath(`/app/posts/${result.post.id}`);
     return {

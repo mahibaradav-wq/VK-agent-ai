@@ -1,7 +1,10 @@
 "use server";
 
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+
+import { isCabinetEnterPath } from "@/modules/cabinet/nav";
 
 import { auth } from "@/auth";
 import { AccessError } from "@/modules/access/permissions";
@@ -53,6 +56,10 @@ export async function selectProject(formData: FormData) {
   const cookieStore = await cookies();
   cookieStore.set(PROJECT_COOKIE, projectId, { httpOnly: true, sameSite: "lax", path: "/" });
   revalidatePath("/app");
+  const next = readField(formData, "next");
+  if (isCabinetEnterPath(next)) {
+    redirect(next);
+  }
 }
 
 export async function addWorkspaceMember(_prev: WorkspaceFormState, formData: FormData): Promise<WorkspaceFormState> {

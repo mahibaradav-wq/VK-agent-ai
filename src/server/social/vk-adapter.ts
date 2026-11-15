@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
 import { detectMediaType } from "@/modules/media/file-validation";
+import { parseShopPrice, withProductLink } from "@/modules/products/shop-labels";
 import { decryptToken } from "@/server/crypto/token-cipher";
 import {
   createVkTransport,
@@ -14,9 +15,22 @@ import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
 
 const MAX_VK_WALL_PHOTOS = 10;
 
-function composeText(input: PublishInput) {
+function composeText(input: PublishInput, includeLink: boolean) {
   const parts = [input.title.trim(), input.body.trim()].filter(Boolean);
-  return parts.join("\n\n").slice(0, 15000) || "Публикация Polka Social";
+  const text = parts.join("\n\n").slice(0, 15000) || "Публикация Polka Social";
+  return includeLink ? withProductLink(text, input.market?.url).slice(0, 15000) : text;
+}
+
+function extractMarketItemId(response: unknown) {
+  if (!response || typeof response !== "object") {
+    return "";
+  }
+  const body = response as { market_item_id?: unknown; item_id?: unknown };
+  const value = body.market_item_id ?? body.item_id;
+  if (typeof value === "number" || typeof value === "string") {
+    return String(value);
+  }
+  return "";
 }
 
 function ownerIdFromExternal(externalId: string) {
@@ -248,25 +262,47 @@ export function createVkAdapter(options: {
         };
       }
 
+      const groupId = groupIdFromOwner(ownerId);
       const attached = await attachWallPhotos({
         transport,
         storage,
         token,
-        groupId: groupIdFromOwner(ownerId),
+        groupId,
         mediaKeys: input.mediaKeys,
       });
       if (attached.failure) {
         return attached.failure;
       }
 
+      const attachments = [...attached.attachments];
+      let marketAttached = false;
+      if (input.market) {
+        const price = parseShopPrice(input.market.priceText) ?? 1;
+        const added = await transport.call(token, "market.add", {
+          owner_id: ownerId,
+          name: input.market.title.slice(0, 100) || "Товар",
+          description: composeText(input, true).slice(0, 4000),
+          category_id: 1,
+          price,
+          url: input.market.url,
+        });
+        if (added.ok) {
+          const itemId = extractMarketItemId(added.response);
+          if (itemId) {
+            attachments.push(`market${ownerId}_${itemId}`);
+            marketAttached = true;
+          }
+        }
+      }
+
       const params: Record<string, string | number> = {
         owner_id: ownerId,
         from_group: 1,
-        message: composeText(input),
+        message: composeText(input, !marketAttached),
         guid: input.targetId,
       };
-      if (attached.attachments.length > 0) {
-        params.attachments = attached.attachments.join(",");
+      if (attachments.length > 0) {
+        params.attachments = attachments.join(",");
       }
 
       const posted = await transport.call(token, "wall.post", params);

@@ -92,6 +92,7 @@ export function AiStudio({
   limit,
   defaultPrompt = "",
   defaultPlatform = "telegram",
+  shopProductId = "",
 }: {
   workspaceId: string;
   projectId?: string;
@@ -106,6 +107,7 @@ export function AiStudio({
   limit: number;
   defaultPrompt?: string;
   defaultPlatform?: string;
+  shopProductId?: string;
 }) {
   const router = useRouter();
   const [agentState, agentAction, agentPending] = useActionState(composeAgentPost, idle);
@@ -170,6 +172,7 @@ export function AiStudio({
         <form action={agentAction} className="grid gap-4">
           <input type="hidden" name="workspaceId" value={workspaceId} />
           {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
+          {shopProductId ? <input type="hidden" name="shopProductId" value={shopProductId} /> : null}
           <BriefFields
             defaultPrompt={defaultPrompt}
             defaultPlatform={defaultPlatform}

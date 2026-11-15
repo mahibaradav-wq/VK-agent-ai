@@ -32,6 +32,7 @@ export async function createProject(_prev: ProjectFormState, formData: FormData)
       description: readField(formData, "description"),
       color: readField(formData, "color"),
     });
+    revalidatePath("/app");
     revalidatePath("/app/projects");
     return { status: "success", message: "Проект создан." };
   } catch (error) {

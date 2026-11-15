@@ -28,7 +28,9 @@ function readField(formData: FormData, name: string) {
 
 function revalidateWatch() {
   revalidatePath("/app/watch");
+  revalidatePath("/app/ideas");
   revalidatePath("/app/ai");
+  revalidatePath("/app/studio");
 }
 
 export async function connectVkWatch(_prev: WatchFormState, formData: FormData): Promise<WatchFormState> {

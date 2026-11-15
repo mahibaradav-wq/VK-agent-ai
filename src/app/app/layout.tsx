@@ -1,27 +1,9 @@
 import Link from "next/link";
 
 import { auth } from "@/auth";
-import { WorkspaceSwitcher } from "@/components/app/workspace-switcher";
 import { Container } from "@/components/ui/container";
 import { getAppContext } from "@/modules/access/app-context";
-import { createCollaborationService } from "@/modules/collaboration/collaboration-service";
-import { prisma } from "@/server/db/prisma";
-
-const appNav = [
-  { href: "/app", label: "Обзор" },
-  { href: "/app/calendar", label: "Календарь" },
-  { href: "/app/posts", label: "Публикации" },
-  { href: "/app/ai", label: "AI" },
-  { href: "/app/watch", label: "Идеи VK" },
-  { href: "/app/analytics", label: "Аналитика" },
-  { href: "/app/queue", label: "Очередь" },
-  { href: "/app/media", label: "Медиатека" },
-  { href: "/app/social-accounts", label: "Аккаунты" },
-  { href: "/app/projects", label: "Проекты" },
-  { href: "/app/team", label: "Команда" },
-  { href: "/app/subscription", label: "Подписка" },
-  { href: "/app/notifications", label: "Уведомления" },
-];
+import { cabinetNav } from "@/modules/cabinet/nav";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -30,28 +12,27 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     return children;
   }
 
-  const context = await getAppContext(session.user.id);
-  const unread = context.activeMembership
-    ? await createCollaborationService(prisma).unreadCount(session.user.id, context.activeMembership.workspaceId)
-    : 0;
+  const { activeProject } = await getAppContext(session.user.id);
 
   return (
     <>
       <Container className="pt-8">
         <nav className="mb-4 flex flex-wrap gap-4 text-sm font-semibold text-ink/70" aria-label="Кабинет">
-          {appNav.map((item) => (
+          {cabinetNav.map((item) => (
             <Link key={item.href} href={item.href} className="hover:text-ink">
               {item.label}
-              {item.href === "/app/notifications" && unread > 0 ? ` (${unread})` : ""}
             </Link>
           ))}
         </nav>
-        <WorkspaceSwitcher
-          memberships={context.memberships}
-          activeMembership={context.activeMembership}
-          projects={context.projects}
-          activeProject={context.activeProject}
-        />
+        {activeProject ? (
+          <p className="mb-4 text-sm text-ink/60">
+            Сейчас: <span className="font-semibold text-ink">{activeProject.name}</span>
+            {" · "}
+            <Link href="/app" className="font-semibold text-brand-dark">
+              Все проекты
+            </Link>
+          </p>
+        ) : null}
       </Container>
       {children}
     </>

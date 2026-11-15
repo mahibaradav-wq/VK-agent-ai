@@ -5,9 +5,8 @@ import { createAccessService } from "@/modules/access/access-service";
 import { getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { lockWorkspaceMetric } from "@/modules/billing/usage";
 
-export const STARTER_PROJECT_NAME = "Первый проект";
-export const STARTER_PROJECT_DESCRIPTION =
-  "Стартовый проект рабочего пространства. Можно переименовать или создать свой.";
+export const STARTER_PROJECT_NAME = "Дом по полочкам";
+export const STARTER_PROJECT_DESCRIPTION = "Клуб ВК и Telegram-канал этого проекта.";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 

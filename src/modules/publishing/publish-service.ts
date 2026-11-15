@@ -21,6 +21,7 @@ const jobInclude = {
       versions: { orderBy: { number: "desc" as const } },
       media: { include: { media: true }, orderBy: { sortOrder: "asc" as const } },
       schedule: true,
+      shopProduct: true,
     },
   },
   attempts: { orderBy: { startedAt: "desc" as const } },
@@ -418,6 +419,14 @@ export function createPublishService(
             title: version.title,
             body: version.body,
             mediaKeys: claimed.post.media.map((item) => item.media.storageKey),
+            market: claimed.post.shopProduct
+              ? {
+                  title: claimed.post.shopProduct.title,
+                  priceText: claimed.post.shopProduct.priceText,
+                  url: claimed.post.shopProduct.sourceUrl,
+                  shop: claimed.post.shopProduct.shop,
+                }
+              : undefined,
           });
         } catch {
           outcome = {

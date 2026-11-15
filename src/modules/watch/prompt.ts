@@ -19,5 +19,5 @@ export function watchIdeaAgentHref(item: string) {
     prompt: ideaToAgentPrompt(item),
     platform: "vk",
   });
-  return `/app/ai?${params.toString()}#agent-brief`;
+  return `/app/studio?${params.toString()}#agent-brief`;
 }

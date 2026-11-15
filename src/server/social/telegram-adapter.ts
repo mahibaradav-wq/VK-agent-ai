@@ -9,6 +9,7 @@ import {
   type TelegramMessage,
   type TelegramTransport,
 } from "@/server/social/telegram-api";
+import { withProductLink } from "@/modules/products/shop-labels";
 import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/social/types";
 import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
 
@@ -16,7 +17,7 @@ const TELEGRAM_CAPTION_LIMIT = 1024;
 
 function composeText(input: PublishInput) {
   const parts = [input.title.trim(), input.body.trim()].filter(Boolean);
-  return parts.join("\n\n") || "Публикация Polka Social";
+  return withProductLink(parts.join("\n\n"), input.market?.url);
 }
 
 function filenameForMime(mimeType: string) {
