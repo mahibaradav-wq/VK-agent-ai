@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useActionState, useState } from "react";
+import { useActionState, useState, type FormEvent } from "react";
 
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -139,11 +139,30 @@ export function WatchBoard({
     setApplyKey(key);
     setApplyState({
       status: "idle",
-      message: "Агент пишет текст поста и рисует новый визуал. Обычно 20–60 секунд. Картинка от другого поста не берётся.",
+      message: "Идея ушла в агент. Пишет текст и рисует новый визуал, обычно 20–60 секунд.",
     });
     try {
-      const response = await fetch("/api/watch/apply-idea", { method: "POST", body: formData });
-      const payload = (await response.json()) as WatchFormState;
+      const response = await fetch("/api/watch/apply-idea", {
+        method: "POST",
+        body: formData,
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      const raw = await response.text();
+      let payload: WatchFormState = {
+        status: "invalid",
+        message: raw.trim() || `Сервер ответил ${response.status}.`,
+      };
+      try {
+        payload = JSON.parse(raw) as WatchFormState;
+      } catch {
+        payload = {
+          status: "invalid",
+          message: response.ok
+            ? "Сервер вернул не JSON. Обновите страницу и нажмите ещё раз."
+            : payload.message,
+        };
+      }
       setApplyState({
         status: payload.status === "success" ? "success" : "invalid",
         message: payload.message || "Не удалось отправить идею в агент AI.",
@@ -156,12 +175,16 @@ export function WatchBoard({
     } catch {
       setApplyState({
         status: "invalid",
-        message: "Сервер не ответил. Обновите страницу и нажмите ещё раз.",
+        message: "Запрос до агента не дошёл. Обновите страницу и нажмите ещё раз.",
       });
     } finally {
       setApplyPending(false);
-      setApplyKey(null);
     }
+  }
+
+  function onApplySubmit(event: FormEvent<HTMLFormElement>, key: string) {
+    event.preventDefault();
+    void submitApply(new FormData(event.currentTarget), key);
   }
 
   return (
@@ -205,7 +228,12 @@ export function WatchBoard({
                 <li key={key} className="rounded-2xl ring-1 ring-ink/10 p-4">
                   <IdeaParts item={item} />
                   {canApply ? (
-                    <form className="mt-3" action={(formData) => submitApply(formData, key)}>
+                    <form
+                      className="mt-3 grid gap-3"
+                      method="post"
+                      action="/api/watch/apply-idea"
+                      onSubmit={(event) => onApplySubmit(event, key)}
+                    >
                       <input type="hidden" name="workspaceId" value={workspaceId} />
                       {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
                       <input type="hidden" name="requestId" value={batch.id} />
@@ -213,6 +241,11 @@ export function WatchBoard({
                       <Button type="submit" disabled={applyPending || !projectId}>
                         {pendingThis ? "Агент пишет и рисует..." : "В агент: пост и визуал"}
                       </Button>
+                      {applyKey === key && applyState.message ? (
+                        <StatusBanner tone={applyState.status === "invalid" ? "warning" : applyPending ? "info" : "success"}>
+                          {applyState.message}
+                        </StatusBanner>
+                      ) : null}
                     </form>
                   ) : (
                     <p className="mt-3 text-sm text-ink/60">Отправлять идеи в агент могут Editor, Admin и Owner.</p>

@@ -20,6 +20,11 @@ export async function POST(request: Request) {
   }
   try {
     const formData = await request.formData();
+    console.info("watch.apply-idea", {
+      userId: session.user.id,
+      requestId: readField(formData, "requestId"),
+      itemIndex: readField(formData, "itemIndex"),
+    });
     const post = await createWatchService(prisma).applyIdea(
       session.user.id,
       readField(formData, "workspaceId"),
@@ -39,6 +44,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof AccessError ? error.message : "Не удалось отправить идею в агент AI.";
     const status = error instanceof AccessError ? error.status : 400;
+    console.error("watch.apply-idea failed", status, message);
     return Response.json({ status: "invalid", message }, { status });
   }
 }
