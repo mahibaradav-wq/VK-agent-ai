@@ -183,10 +183,10 @@ export function WatchBoard({
             {batch.provider} · {batch.model} · {new Date(batch.createdAt).toLocaleString("ru-RU")}
           </p>
           {batch.body ? <p className="whitespace-pre-wrap text-sm text-ink/80">{batch.body}</p> : null}
-          {canApply && projectId && !agentReady ? (
+          {!agentReady ? (
             <StatusBanner tone="warning">
-              Чтобы из идеи получился пост, подключите ChatGPT в разделе AI. Он напишет текст и нарисует новую картинку.
-              Без ключа сырой черновик с чужим визуалом не создаётся.
+              Для новой картинки нужен ChatGPT. Кнопка на идее всё равно есть: агент попытается написать пост и нарисовать
+              визуал. Без ключа черновик с чужой картинкой не создаётся.
               <span className="mt-3 block">
                 <ButtonLink href="/app/ai" variant="secondary">
                   Открыть агент AI
@@ -194,28 +194,32 @@ export function WatchBoard({
               </span>
             </StatusBanner>
           ) : null}
+          {!projectId ? (
+            <StatusBanner tone="warning">Выберите проект в шапке кабинета — иначе идею нельзя отправить в агент.</StatusBanner>
+          ) : null}
           <ul className="grid gap-3">
-            {batch.items.map((item, index) => (
-              <li key={`${batch.id}-${index}`} className="rounded-2xl ring-1 ring-ink/10 p-4">
-                <IdeaParts item={item} />
-                {canApply && projectId && agentReady ? (
-                  <form
-                    className="mt-3"
-                    action={(formData) => submitApply(formData, `${batch.id}-${index}`)}
-                  >
-                    <input type="hidden" name="workspaceId" value={workspaceId} />
-                    <input type="hidden" name="projectId" value={projectId} />
-                    <input type="hidden" name="requestId" value={batch.id} />
-                    <input type="hidden" name="itemIndex" value={String(index)} />
-                    <Button type="submit" variant="secondary" disabled={applyPending}>
-                      {applyPending && applyKey === `${batch.id}-${index}`
-                        ? "Агент пишет и рисует..."
-                        : "В агент: пост и визуал"}
-                    </Button>
-                  </form>
-                ) : null}
-              </li>
-            ))}
+            {batch.items.map((item, index) => {
+              const key = `${batch.id}-${index}`;
+              const pendingThis = applyPending && applyKey === key;
+              return (
+                <li key={key} className="rounded-2xl ring-1 ring-ink/10 p-4">
+                  <IdeaParts item={item} />
+                  {canApply ? (
+                    <form className="mt-3" action={(formData) => submitApply(formData, key)}>
+                      <input type="hidden" name="workspaceId" value={workspaceId} />
+                      {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
+                      <input type="hidden" name="requestId" value={batch.id} />
+                      <input type="hidden" name="itemIndex" value={String(index)} />
+                      <Button type="submit" disabled={applyPending || !projectId}>
+                        {pendingThis ? "Агент пишет и рисует..." : "В агент: пост и визуал"}
+                      </Button>
+                    </form>
+                  ) : (
+                    <p className="mt-3 text-sm text-ink/60">Отправлять идеи в агент могут Editor, Admin и Owner.</p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
           <p className="text-xs text-ink/50">
             Кнопка отправляет идею в агент: ChatGPT пишет текст стены ВК и рисует новый визуал, затем открывает этот
