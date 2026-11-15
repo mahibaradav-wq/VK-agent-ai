@@ -1,3 +1,7 @@
+import { mkdtemp } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { AccessError } from "@/modules/access/permissions";
@@ -8,6 +12,7 @@ import { createProjectService } from "@/modules/projects/project-service";
 import { createWorkspaceService } from "@/modules/workspaces/workspace-service";
 import { prisma } from "@/server/db/prisma";
 import { createUnconfiguredAiProvider } from "@/server/ai/unconfigured";
+import { createLocalStorage } from "@/server/storage/local-storage";
 
 const auth = createAuthService(prisma, "http://localhost:3000");
 const projects = createProjectService(prisma);
@@ -232,5 +237,129 @@ describe("AI provider connection", () => {
     expect(post.provider).toBe("openai");
     expect(post.title).toBe("Пост ChatGPT");
     expect(JSON.stringify({ ideas, post, status })).not.toMatch(/sk-deepseek-secret-key|sk-openai-secret-key/);
+  });
+
+  it("falls back to DeepSeek for copy when OpenAI blocks this region", async () => {
+    const owner = await registerOwner("ai-geo-fallback");
+    const storageDir = await mkdtemp(path.join(os.tmpdir(), "polka-geo-"));
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";
+    const connections = createAiConnectionService(prisma, {
+      envProvider: createUnconfiguredAiProvider(),
+      fetchImpl: async (url, init) => {
+        const href = String(url);
+        const method = String(init?.method ?? "GET").toUpperCase();
+        if (method === "GET") {
+          return new Response(JSON.stringify({ data: [] }), { status: 200 });
+        }
+        if (href.includes("api.openai.com")) {
+          return new Response(
+            JSON.stringify({ error: { code: "unsupported_country_region_territory" } }),
+            { status: 403 },
+          );
+        }
+        if (href.includes("/images/generations")) {
+          return new Response(JSON.stringify({ data: [{ b64_json: png }] }), { status: 200 });
+        }
+        return new Response(
+          JSON.stringify({
+            model: "deepseek-chat",
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    title: "Пост DeepSeek",
+                    body: "Текст стены без ChatGPT.",
+                    items: [],
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      },
+    });
+    await connections.connect(owner.userId, owner.workspaceId, {
+      provider: "deepseek",
+      apiKey: "sk-deepseek-secret-key",
+    });
+    await connections.connect(owner.userId, owner.workspaceId, {
+      provider: "openai",
+      apiKey: "sk-openai-secret-key",
+    });
+    await connections.connect(owner.userId, owner.workspaceId, {
+      provider: "qwen",
+      apiKey: "sk-qwen-secret-key",
+    });
+
+    const ai = createAiService(prisma, {
+      connections,
+      storage: createLocalStorage(storageDir),
+    });
+    const composed = await ai.composeAgentPost(owner.userId, owner.workspaceId, {
+      prompt: "полка для специй",
+      platform: "vk",
+      projectId: owner.projectId,
+    });
+    expect(["deepseek", "qwen"]).toContain(composed.request.provider);
+    expect(composed.request.title).toBe("Пост DeepSeek");
+    expect(composed.post.media).toHaveLength(1);
+    expect(composed.post.targets.map((target) => target.platform)).toEqual(["vk"]);
+  });
+
+  it("does not invent a visual when OpenAI is geo-blocked and Qwen is missing", async () => {
+    const owner = await registerOwner("ai-geo-no-image");
+    const storageDir = await mkdtemp(path.join(os.tmpdir(), "polka-geo-noimg-"));
+    const connections = createAiConnectionService(prisma, {
+      envProvider: createUnconfiguredAiProvider(),
+      fetchImpl: async (url, init) => {
+        const href = String(url);
+        const method = String(init?.method ?? "GET").toUpperCase();
+        if (method === "GET") {
+          return new Response(JSON.stringify({ data: [] }), { status: 200 });
+        }
+        if (href.includes("api.openai.com")) {
+          return new Response(
+            JSON.stringify({ error: { code: "unsupported_country_region_territory" } }),
+            { status: 403 },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            model: "deepseek-chat",
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({ title: "Пост", body: "Текст", items: [] }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      },
+    });
+    await connections.connect(owner.userId, owner.workspaceId, {
+      provider: "deepseek",
+      apiKey: "sk-deepseek-secret-key",
+    });
+    await connections.connect(owner.userId, owner.workspaceId, {
+      provider: "openai",
+      apiKey: "sk-openai-secret-key",
+    });
+    const ai = createAiService(prisma, {
+      connections,
+      storage: createLocalStorage(storageDir),
+    });
+    await expectAccess(
+      ai.composeAgentPost(owner.userId, owner.workspaceId, {
+        prompt: "полка для специй",
+        projectId: owner.projectId,
+      }),
+      400,
+      /Qwen|картинки не рисует/,
+    );
+    expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
   });
 });

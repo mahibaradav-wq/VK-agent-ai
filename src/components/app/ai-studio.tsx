@@ -3,7 +3,7 @@
 import { useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { applyAiToPost, composeAgentPost, generateAi, type AiFormState } from "@/modules/ai/actions";
@@ -27,7 +27,13 @@ export type AiHistoryItem = {
   createdAt: string;
 };
 
-function BriefFields() {
+function BriefFields({
+  defaultPrompt = "",
+  defaultPlatform = "telegram",
+}: {
+  defaultPrompt?: string;
+  defaultPlatform?: string;
+}) {
   return (
     <>
       <label className="grid gap-2 text-sm font-medium text-ink">
@@ -36,6 +42,7 @@ function BriefFields() {
           name="prompt"
           required
           minLength={3}
+          defaultValue={defaultPrompt}
           placeholder="О чём написать: борщ, весеннее меню, скидка на доставку..."
           className="min-h-32 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
         />
@@ -63,7 +70,7 @@ function BriefFields() {
         </label>
         <label className="grid gap-2 text-sm font-medium text-ink">
           Платформа
-          <select name="platform" defaultValue="telegram" className="min-h-11 rounded-2xl border border-ink/10 bg-white px-3">
+          <select name="platform" defaultValue={defaultPlatform} className="min-h-11 rounded-2xl border border-ink/10 bg-white px-3">
             <option value="">Без адаптации</option>
             {previewPlatforms.map((item) => (
               <option key={item.id} value={item.id} disabled={!item.live}>
@@ -91,6 +98,8 @@ export function AiStudio({
   used,
   limit,
   history,
+  defaultPrompt = "",
+  defaultPlatform = "telegram",
 }: {
   workspaceId: string;
   projectId?: string;
@@ -105,6 +114,8 @@ export function AiStudio({
   used: number;
   limit: number;
   history: AiHistoryItem[];
+  defaultPrompt?: string;
+  defaultPlatform?: string;
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(generateAi, idle);
@@ -154,7 +165,7 @@ export function AiStudio({
         <form action={agentAction} className="grid gap-4">
           <input type="hidden" name="workspaceId" value={workspaceId} />
           {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
-          <BriefFields />
+          <BriefFields defaultPrompt={defaultPrompt} defaultPlatform={defaultPlatform} />
           {agentState.message ? (
             <StatusBanner tone={agentState.status === "success" ? "success" : "warning"}>{agentState.message}</StatusBanner>
           ) : null}
@@ -263,7 +274,17 @@ export function AiStudio({
               <p className="text-xs text-ink/50">
                 {item.provider}/{item.model} · {item.createdAt}
               </p>
-              {canApply && projectId ? (
+              {item.kind === "watch_ideas" ? (
+                <p className="text-sm text-ink/70">
+                  Идею в пост отправляйте со страницы наблюдения. Агент напишет новый текст и нарисует новую картинку, а
+                  не возьмёт визуал от другого поста.
+                  <span className="mt-3 block">
+                    <ButtonLink href="/app/watch" variant="secondary">
+                      К идеям VK
+                    </ButtonLink>
+                  </span>
+                </p>
+              ) : canApply && projectId ? (
                 <form action={applyAiToPost}>
                   <input type="hidden" name="workspaceId" value={workspaceId} />
                   <input type="hidden" name="projectId" value={projectId} />

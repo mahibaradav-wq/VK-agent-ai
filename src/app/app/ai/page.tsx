@@ -16,11 +16,16 @@ export const metadata = createPageMetadata({
   path: "/app/ai",
 });
 
-export default async function AiPage() {
+export default async function AiPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ prompt?: string; platform?: string }>;
+}) {
   const session = await auth();
   if (!session?.user?.id) {
     return null;
   }
+  const params = await searchParams;
 
   const { activeMembership, activeProject } = await getAppContext(session.user.id);
   if (!activeMembership) {
@@ -65,6 +70,8 @@ export default async function AiPage() {
             ...item,
             createdAt: item.createdAt.toISOString(),
           }))}
+          defaultPrompt={typeof params.prompt === "string" ? params.prompt : ""}
+          defaultPlatform={params.platform === "vk" || params.platform === "telegram" ? params.platform : "telegram"}
         />
       </Container>
     </>

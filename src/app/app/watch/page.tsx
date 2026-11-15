@@ -6,12 +6,13 @@ import { StatusBanner } from "@/components/ui/status-banner";
 import { createPageMetadata } from "@/lib/metadata";
 import { getAppContext } from "@/modules/access/app-context";
 import { hasPermission } from "@/modules/access/permissions";
+import { createAiService } from "@/modules/ai/ai-service";
 import { createWatchService } from "@/modules/watch/watch-service";
 import { prisma } from "@/server/db/prisma";
 
 export const metadata = createPageMetadata({
   title: "Идеи по сообществам VK",
-  description: "DeepSeek предлагает темы по стенам ВК. Готовый черновик публикуется ключом сообщества.",
+  description: "DeepSeek предлагает темы по стенам ВК. Кнопка отправляет идею в агент: ChatGPT пишет пост и рисует новый визуал.",
   path: "/app/watch",
 });
 
@@ -27,27 +28,20 @@ export default async function WatchPage() {
   }
 
   const watch = createWatchService(prisma);
-  const [credential, communities, ideas, aiConnections] = await Promise.all([
+  const [credential, communities, ideas, aiStatus] = await Promise.all([
     watch.credential(session.user.id, activeMembership.workspaceId),
     watch.listCommunities(session.user.id, activeMembership.workspaceId),
     watch.listIdeas(session.user.id, activeMembership.workspaceId),
-    prisma.workspaceAiConnection.findMany({
-      where: { workspaceId: activeMembership.workspaceId, status: "connected" },
-      select: { provider: true },
-    }),
+    createAiService(prisma).workspaceStatus(session.user.id, activeMembership.workspaceId),
   ]);
-  const ideasProvider =
-    aiConnections.find((item) => item.provider === "deepseek")?.provider ??
-    aiConnections.find((item) => item.provider === "qwen")?.provider ??
-    aiConnections[0]?.provider ??
-    "unconfigured";
+  const ideasProvider = aiStatus.ideasProvider;
 
   return (
     <>
       <PageHeader
         eyebrow="Агент"
         title="Идеи для стены ВК"
-        description="DeepSeek смотрит указанные сообщества через VK API и предлагает темы. Готовый черновик можно опубликовать на стену ключом сообщества."
+        description="DeepSeek смотрит указанные сообщества через VK API и предлагает темы. Кнопка отправляет идею в агент: ChatGPT пишет текст стены и рисует новый визуал, затем открывает черновик."
       />
       <Container className="grid gap-6 pb-20">
         <WatchBoard
@@ -58,6 +52,8 @@ export default async function WatchPage() {
           canApply={hasPermission(activeMembership.role, "post.create")}
           credential={credential}
           aiProvider={ideasProvider}
+          copyReady={aiStatus.copyReady}
+          imageReady={aiStatus.imageReady && aiStatus.storageReady}
           communities={communities.map((item) => ({
             ...item,
             lastFetchedAt: item.lastFetchedAt?.toISOString() ?? null,

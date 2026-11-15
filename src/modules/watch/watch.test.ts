@@ -1,14 +1,20 @@
+import { mkdtemp } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { AccessError } from "@/modules/access/permissions";
 import { createAiService } from "@/modules/ai/ai-service";
 import { createAuthService } from "@/modules/auth/auth-service";
+import { createMediaService } from "@/modules/media/media-service";
 import { createProjectService } from "@/modules/projects/project-service";
 import { createWorkspaceService } from "@/modules/workspaces/workspace-service";
 import { RECOMMENDED_WATCH_COMMUNITIES } from "@/modules/watch/recommended";
-import { WATCH_IDEAS_KIND, createWatchService } from "@/modules/watch/watch-service";
+import { WATCH_IDEAS_KIND, createWatchService, ideaToAgentPrompt } from "@/modules/watch/watch-service";
 import { prisma } from "@/server/db/prisma";
-import type { AiGenerateOutput, AiProvider } from "@/server/ai/types";
+import { createLocalStorage } from "@/server/storage/local-storage";
+import type { AiGenerateOutput, AiImageOutput, AiProvider } from "@/server/ai/types";
 import type { VkApiResult, VkTransport } from "@/server/social/vk-api";
 
 const auth = createAuthService(prisma, "http://localhost:3000");
@@ -61,28 +67,66 @@ function scriptedVk(
   };
 }
 
-function scriptedAi(output: AiGenerateOutput): AiProvider {
+const png = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+const sampleImage: AiImageOutput = {
+  bytes: png,
+  mimeType: "image/png",
+  provider: "scripted",
+  model: "test-image",
+};
+
+function scriptedAi(
+  output: AiGenerateOutput,
+  image?: AiImageOutput,
+): AiProvider & { prompts: string[]; imagePrompts: string[] } {
+  const prompts: string[] = [];
+  const imagePrompts: string[] = [];
   return {
     name: "scripted",
     model: "test-model",
-    imageModel: "none",
+    imageModel: image ? "test-image" : "none",
     ready: true,
-    imageReady: false,
-    async generate() {
+    imageReady: Boolean(image),
+    prompts,
+    imagePrompts,
+    async generate(input) {
+      prompts.push(`${input.kind}:${input.platform}:${input.prompt}`);
+      if (input.kind === "post") {
+        return {
+          title: "Специи на виду у всех",
+          body: "Готовый пост для стены ВК про банки на кухне.",
+          items: [],
+          raw: "",
+          provider: "scripted",
+          model: "test-copy",
+          inputTokens: 8,
+          outputTokens: 16,
+        };
+      }
       return output;
     },
-    async generateImage() {
-      throw new Error("no image");
+    async generateImage(input) {
+      imagePrompts.push(input.prompt);
+      if (!image) {
+        throw new AccessError(400, "Для визуала подключите ChatGPT или Qwen. DeepSeek картинки не рисует.");
+      }
+      return image;
     },
   };
 }
 
 describe("VK watch idea agent", () => {
   const previousKey = process.env.TOKEN_ENCRYPTION_KEY;
+  let storageDir = "";
 
   beforeAll(async () => {
     process.env.TOKEN_ENCRYPTION_KEY = "vk-watch-tests";
     await prisma.$connect();
+    storageDir = await mkdtemp(path.join(os.tmpdir(), "polka-watch-"));
   });
 
   afterAll(async () => {
@@ -114,8 +158,13 @@ describe("VK watch idea agent", () => {
     await expectAccess(watch.collectIdeas(owner.userId, owner.workspaceId, {}), 400, /Не удалось прочитать посты/);
   });
 
-  it("reads community posts and stores original ideas, then applies one to a Telegram draft", async () => {
+  it("reads community posts and sends an idea to the AI agent for a new VK draft and visual", async () => {
     const owner = await registerOwner("watch-ok");
+    const leftover = await createMediaService(prisma, createLocalStorage(storageDir)).upload(
+      owner.userId,
+      owner.workspaceId,
+      { filename: "old-post.png", declaredType: "image/png", bytes: png },
+    );
     const vk = scriptedVk({
       "groups.getById": { ok: true, response: { groups: [{ id: 55, name: "Кухня", type: "group", screen_name: "club55" }] } },
       "wall.get": {
@@ -134,17 +183,23 @@ describe("VK watch idea agent", () => {
         },
       },
     });
+    const idea = "Специи на вид || Соседи пишут про хаос на полке || Куда деть 12 баночек за вечер";
+    const provider = scriptedAi(
+      {
+        title: "Идеи по кухне",
+        body: "По мотивам чужих стен, не копии.",
+        items: [idea],
+        raw: "",
+        provider: "scripted",
+        model: "test",
+      },
+      sampleImage,
+    );
     const watch = createWatchService(prisma, {
       vk,
       ai: createAiService(prisma, {
-        provider: scriptedAi({
-          title: "Идеи по кухне",
-          body: "По мотивам чужих стен, не копии.",
-          items: ["Специи на вид || Соседи пишут про хаос на полке || Куда деть 12 баночек за вечер"],
-          raw: "",
-          provider: "scripted",
-          model: "test",
-        }),
+        provider,
+        storage: createLocalStorage(storageDir),
       }),
     });
 
@@ -165,6 +220,45 @@ describe("VK watch idea agent", () => {
     const post = await watch.applyIdea(owner.userId, owner.workspaceId, collected.request.id, 0, owner.projectId);
     expect(post.targets.map((target) => target.platform)).toEqual(["vk"]);
     expect(post.versions[0]?.title).toMatch(/Специи/);
+    expect(post.versions[0]?.body).toMatch(/стены ВК/);
+    expect(post.media).toHaveLength(1);
+    expect(post.media[0]?.mediaId).not.toBe(leftover.id);
+    expect(provider.prompts.some((entry) => entry.startsWith("post:vk:") && entry.includes(ideaToAgentPrompt(idea)))).toBe(
+      true,
+    );
+    expect(provider.imagePrompts[0]).toContain("Специи на виду у всех");
+    expect(await prisma.mediaAsset.count({ where: { workspaceId: owner.workspaceId } })).toBe(2);
+  });
+
+  it("does not copy a watch idea into a draft when ChatGPT cannot draw a visual", async () => {
+    const owner = await registerOwner("watch-no-visual");
+    const vk = scriptedVk({
+      "groups.getById": { ok: true, response: { groups: [{ id: 12, name: "Тест", type: "group" }] } },
+      "wall.get": { ok: true, response: { count: 1, items: [{ id: 1, owner_id: -12, date: 1731600000, text: "Полка" }] } },
+    });
+    const watch = createWatchService(prisma, {
+      vk,
+      ai: createAiService(prisma, {
+        provider: scriptedAi({
+          title: "Идеи",
+          body: "По стене.",
+          items: ["Полка || Нужна тема || Хук"],
+          raw: "",
+          provider: "scripted",
+          model: "test",
+        }),
+      }),
+    });
+    await watch.connectToken(owner.userId, owner.workspaceId, { token: VK_TOKEN });
+    await watch.addCommunity(owner.userId, owner.workspaceId, "https://vk.com/club12");
+    const collected = await watch.collectIdeas(owner.userId, owner.workspaceId, { projectId: owner.projectId });
+    await expectAccess(
+      watch.applyIdea(owner.userId, owner.workspaceId, collected.request.id, 0, owner.projectId),
+      400,
+      /ChatGPT/,
+    );
+    expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
+    expect(await prisma.mediaAsset.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
   });
 
   it("accepts a hex service key and falls back to club id when groups.getById is unavailable", async () => {

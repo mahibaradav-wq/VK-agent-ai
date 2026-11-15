@@ -5,7 +5,6 @@ import { createAccessService } from "@/modules/access/access-service";
 import { createAiService, type PublicAiRequest } from "@/modules/ai/ai-service";
 import { parseVkCommunitySource } from "@/modules/watch/parse";
 import { RECOMMENDED_WATCH_COMMUNITIES } from "@/modules/watch/recommended";
-import { createPostService } from "@/modules/posts/post-service";
 import { decryptToken, encryptToken } from "@/server/crypto/token-cipher";
 import {
   createVkTransport,
@@ -112,6 +111,22 @@ function summarizePosts(posts: WatchedPost[]) {
     .join("\n\n---\n\n");
 }
 
+export function ideaToAgentPrompt(item: string) {
+  const [titlePart, why, hook] = item.split("||").map((part) => part.trim());
+  const title = titlePart || "Идея из VK";
+  return [
+    "Напиши готовый пост на стену ВКонтакте для сообщества «Дом по полочкам».",
+    "Это бриф идеи, а не готовый текст: раскрой тему своими словами.",
+    "Не копируй чужие посты, не обещай скидки, охваты и что материал уже опубликован.",
+    `Тема: ${title}`,
+    why ? `Почему сейчас: ${why}` : "",
+    hook ? `Хук первой строки: ${hook}` : "",
+    `Исходная идея: ${item}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function createWatchService(
   db: PrismaClient,
   options?: {
@@ -123,7 +138,6 @@ export function createWatchService(
   const access = createAccessService(db);
   const vk = options?.vk ?? createVkTransport();
   const ai = options?.ai ?? createAiService(db);
-  const posts = createPostService(db);
   const now = options?.now ?? (() => new Date());
   const paceVk = !options?.vk;
 
@@ -482,26 +496,23 @@ export function createWatchService(
       if (!item) {
         throw new AccessError(400, "Идея не найдена.");
       }
-      const [titlePart, why, hook] = item.split("||").map((part) => part.trim());
-      const title = (titlePart || "Идея из VK").slice(0, 180);
-      const body = [hook, why].filter(Boolean).join("\n\n") || item;
-      const created = await posts.create(userId, workspaceId, projectId, title);
-      await posts.saveDraft(userId, workspaceId, created.id, {
-        title,
-        body,
-        platforms: ["vk"],
-        mediaIds: [],
+      const composed = await ai.composeAgentPost(userId, workspaceId, {
+        prompt: ideaToAgentPrompt(item),
+        tone: "friendly",
+        length: "medium",
+        platform: "vk",
+        projectId,
       });
       await db.auditLog.create({
         data: {
           action: "APPLY_VK_WATCH_IDEA",
           entityType: "post",
-          entityId: created.id,
+          entityId: composed.post.id,
           actorId: userId,
-          details: `${requestId}:${itemIndex}`,
+          details: `${requestId}:${itemIndex}:${composed.mediaId}`,
         },
       });
-      return posts.get(userId, workspaceId, created.id);
+      return composed.post;
     },
 
     async listIdeas(userId: string, workspaceId: string) {

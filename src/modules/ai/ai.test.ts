@@ -132,7 +132,7 @@ describe("AI assistant", () => {
     await expectAccess(
       ai.generate(owner.userId, owner.workspaceId, { kind: "post", prompt: "борщ" }),
       400,
-      /подключите ChatGPT/,
+      /ChatGPT|DeepSeek/
     );
     expect(await prisma.aIRequest.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
     const usage = await ai.usage(owner.userId, owner.workspaceId);
@@ -163,6 +163,25 @@ describe("AI assistant", () => {
     expect(post.status).toBe("draft");
     expect(post.versions.some((version) => version.title === "Борщ по пятницам")).toBe(true);
     expect(post.targets.map((target) => target.platform)).toEqual(["telegram"]);
+  });
+
+  it("does not paste a VK watch idea into a draft from AI history", async () => {
+    const owner = await registerOwner("ai-watch-apply");
+    const ai = createAiService(prisma, { provider: scriptedProvider([sample]) });
+    const generated = await ai.generate(owner.userId, owner.workspaceId, {
+      kind: "ideas",
+      prompt: "полки",
+    });
+    await prisma.aIRequest.update({
+      where: { id: generated.id },
+      data: { kind: "watch_ideas" },
+    });
+    await expectAccess(
+      ai.applyToPost(owner.userId, owner.workspaceId, generated.id, owner.projectId),
+      400,
+      /страницы наблюдения VK/,
+    );
+    expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
   });
 
   it("enforces the monthly limit atomically and releases usage if the provider fails", async () => {
@@ -299,7 +318,7 @@ describe("AI assistant", () => {
         projectId: owner.projectId,
       }),
       400,
-      /подключите ChatGPT/,
+      /ChatGPT|DeepSeek/
     );
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
     expect(await prisma.mediaAsset.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);

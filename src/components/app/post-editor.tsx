@@ -48,6 +48,8 @@ export function PostEditor({
     () => draftMediaIds.map((id) => `/api/media/${id}`),
     [draftMediaIds],
   );
+  const attachedMedia = media.filter((item) => draftMediaIds.includes(item.id));
+  const libraryMedia = media.filter((item) => !draftMediaIds.includes(item.id));
 
   function toggle(list: string[], value: string) {
     return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
@@ -108,20 +110,47 @@ export function PostEditor({
               Сервисный ключ приложения и пароль не подходят.
             </p>
           </fieldset>
-          <fieldset className="grid gap-2">
-            <legend className="text-sm font-medium text-ink">Медиа</legend>
-            {media.length === 0 ? <p className="text-sm text-ink/60">Сначала загрузите файл в медиатеке.</p> : null}
-            {media.map((item) => (
-              <label key={item.id} className="flex items-center gap-2 text-sm text-ink/80">
+          <fieldset className="grid gap-3">
+            <legend className="text-sm font-medium text-ink">Визуал этого черновика</legend>
+            {attachedMedia.length === 0 ? (
+              <p className="text-sm text-ink/60">
+                К этому черновику картинка не приложена. Файлы ниже — из медиатеки других постов, сами они не
+                подставляются.
+              </p>
+            ) : null}
+            {attachedMedia.map((item) => (
+              <label key={item.id} className="flex items-center gap-3 text-sm text-ink/80">
+                {item.mimeType.startsWith("image/") ? (
+                  <img src={`/api/media/${item.id}`} alt="" className="h-14 w-14 rounded-xl object-cover" />
+                ) : null}
                 <input
                   type="checkbox"
                   disabled={!canEdit}
-                  checked={draftMediaIds.includes(item.id)}
+                  checked
                   onChange={() => setDraftMediaIds(toggle(draftMediaIds, item.id))}
                 />
                 {item.originalName}
               </label>
             ))}
+            {libraryMedia.length > 0 ? (
+              <div className="grid gap-2 rounded-2xl bg-sand-50 p-3">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Медиатека, не этот пост</p>
+                <p className="text-xs text-ink/60">Отметьте файл, только если хотите приложить его вместо нового визуала.</p>
+                {libraryMedia.map((item) => (
+                  <label key={item.id} className="flex items-center gap-2 text-sm text-ink/70">
+                    <input
+                      type="checkbox"
+                      disabled={!canEdit}
+                      checked={false}
+                      onChange={() => setDraftMediaIds(toggle(draftMediaIds, item.id))}
+                    />
+                    {item.originalName}
+                  </label>
+                ))}
+              </div>
+            ) : media.length === 0 ? (
+              <p className="text-sm text-ink/60">Сначала загрузите файл в медиатеке.</p>
+            ) : null}
           </fieldset>
           {state.message ? (
             <StatusBanner tone={state.status === "success" ? "success" : "warning"}>{state.message}</StatusBanner>
