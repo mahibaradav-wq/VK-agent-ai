@@ -4,7 +4,15 @@ import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions"
 import { OPENAI_IMAGE_REGION_MESSAGE, OPENAI_REGION_MESSAGE, isOpenAiRegionError } from "@/server/ai/errors";
 import { createAccessService } from "@/modules/access/access-service";
 import { parseKind, parseLength, parseTone } from "@/modules/ai/kinds";
-import { imageSizeForAspect, parseVisualAspect, parseVisualKind, prepareVisualPrompt } from "@/modules/ai/visual";
+import {
+  agentUsageUnits,
+  imageSizeForAspect,
+  parseCarouselCount,
+  parseVisualAspect,
+  parseVisualKind,
+  prepareVisualPrompt,
+  slideVisualPrompt,
+} from "@/modules/ai/visual";
 import { createAiConnectionService } from "@/modules/ai/provider-service";
 import { getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { getUsage, releaseUsage, reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
@@ -16,7 +24,6 @@ import { storage as defaultStorage } from "@/server/storage";
 import type { StorageDriver } from "@/server/storage/types";
 
 const AGENT_KIND = "agent";
-const AGENT_USAGE_UNITS = 2;
 
 const WATCH_IDEAS_KIND = "watch_ideas";
 
@@ -425,6 +432,7 @@ export function createAiService(
         visualKind?: string;
         visualAspect?: string;
         visualPrompt?: string;
+        carouselCount?: string | number;
         shopProductId?: string;
       },
     ) {
@@ -444,6 +452,8 @@ export function createAiService(
       const platform = input.platform ? parsePlatforms([input.platform])[0] ?? "" : "";
       const visualKind = parseVisualKind(input.visualKind ?? "image");
       const visualAspect = parseVisualAspect(input.visualAspect ?? "", visualKind);
+      const slideCount = parseCarouselCount(input.carouselCount, visualKind);
+      const usageUnits = agentUsageUnits(visualKind, slideCount);
 
       const copy = await providerFor(workspaceId, "copy");
       const imageProvider = await providerFor(workspaceId, "image");
@@ -480,8 +490,10 @@ export function createAiService(
         USAGE_METRICS.ai,
         limit,
         at,
-        `Агенту нужны две генерации (текст и визуал). Лимит AI на месяц исчерпан (${limit}).`,
-        AGENT_USAGE_UNITS,
+        visualKind === "carousel"
+          ? `Агенту нужны ${usageUnits} генерации (текст и ${slideCount} карточек). Лимит AI на месяц исчерпан (${limit}).`
+          : `Агенту нужны две генерации (текст и визуал). Лимит AI на месяц исчерпан (${limit}).`,
+        usageUnits,
       );
 
       try {
@@ -496,31 +508,41 @@ export function createAiService(
         );
         const title = generated.title.trim() || "Черновик агента";
         const body = generated.body.trim() || prompt;
-        const image = await callWithFallback(workspaceId, "image", (item) =>
-          item.generateImage({
-            prompt: visualPromptForCopy({
-              brief: prompt,
-              title,
-              body,
-              visualKind,
-              visualAspect,
-              visualPrompt: input.visualPrompt,
-            }),
-            size: imageSizeForAspect(visualAspect),
-          }),
-        );
-        const asset = await media.upload(userId, workspaceId, {
-          filename: `agent-visual.${extensionForMime(image.mimeType)}`,
-          declaredType: image.mimeType,
-          bytes: image.bytes,
+        const baseVisualPrompt = visualPromptForCopy({
+          brief: prompt,
+          title,
+          body,
+          visualKind,
+          visualAspect,
+          visualPrompt: input.visualPrompt,
         });
+        const assets = [];
+        let imageModel = "";
+        for (let index = 0; index < slideCount; index += 1) {
+          const image = await callWithFallback(workspaceId, "image", (item) =>
+            item.generateImage({
+              prompt: slideVisualPrompt(baseVisualPrompt, index, slideCount),
+              size: imageSizeForAspect(visualAspect),
+            }),
+          );
+          imageModel = image.model;
+          assets.push(
+            await media.upload(userId, workspaceId, {
+              filename: `agent-visual-${index + 1}.${extensionForMime(image.mimeType)}`,
+              declaredType: image.mimeType,
+              bytes: image.bytes,
+            }),
+          );
+        }
+        const mediaIds = assets.map((asset) => asset.id);
+        const coverId = mediaIds[0] ?? "";
 
         const created = await posts.create(userId, workspaceId, input.projectId, title);
         await posts.saveDraft(userId, workspaceId, created.id, {
           title: title.slice(0, 180),
           body,
           platforms: platform ? [platform] : [],
-          mediaIds: [asset.id],
+          mediaIds,
         });
         const row = await db.aIRequest.create({
           data: {
@@ -534,9 +556,9 @@ export function createAiService(
             platform,
             title,
             body,
-            itemsJson: JSON.stringify([visualItem(asset.id), postItem(created.id)]),
+            itemsJson: JSON.stringify([...mediaIds.map(visualItem), postItem(created.id)]),
             provider: generated.provider,
-            model: `${generated.model}+${image.model}`,
+            model: `${generated.model}+${imageModel}`,
             inputTokens: generated.inputTokens,
             outputTokens: generated.outputTokens,
           },
@@ -557,17 +579,17 @@ export function createAiService(
             entityType: "post",
             entityId: created.id,
             actorId: userId,
-            details: `${row.id}:${asset.id}`,
+            details: `${row.id}:${mediaIds.join(",")}`,
           },
         });
 
         return {
           request: toPublic(row),
           post: await posts.get(userId, workspaceId, created.id),
-          mediaId: asset.id,
+          mediaId: coverId,
         };
       } catch (error) {
-        await releaseUsage(db, workspaceId, USAGE_METRICS.ai, periodStart, AGENT_USAGE_UNITS);
+        await releaseUsage(db, workspaceId, USAGE_METRICS.ai, periodStart, usageUnits);
         throw error;
       }
     },

@@ -96,13 +96,14 @@ function scriptedVk(
 function scriptedTelegram(
   script: Record<string, TelegramApiResult<unknown>> | ((method: string) => TelegramApiResult<unknown>),
 ): TelegramTransport & {
-  calls: Array<{ method: string; token: string; body?: Record<string, unknown>; fileName?: string }>;
+  calls: Array<{ method: string; token: string; body?: Record<string, unknown>; fileName?: string; fileCount?: number }>;
 } {
-  const calls: Array<{ method: string; token: string; body?: Record<string, unknown>; fileName?: string }> = [];
+  const calls: Array<{ method: string; token: string; body?: Record<string, unknown>; fileName?: string; fileCount?: number }> = [];
   return {
     calls,
     async request(token, method, body, file) {
-      calls.push({ method, token, body, fileName: file?.filename });
+      const files = file ? (Array.isArray(file) ? file : [file]) : [];
+      calls.push({ method, token, body, fileName: files[0]?.filename, fileCount: files.length });
       if (typeof script === "function") {
         return script(method);
       }
@@ -416,6 +417,62 @@ describe("social accounts", () => {
     expect(String(photo?.body?.caption)).toContain("Разложили специи.");
     expect(photo?.fileName).toBe("photo.png");
     expect(transport.calls.some((item) => item.method === "sendMessage")).toBe(false);
+  });
+
+  it("publishes a Telegram album when the post has several photos", async () => {
+    const owner = await registerOwner("soc-tg-album");
+    const transport = scriptedTelegram({
+      getMe: { ok: true, result: { id: 9, is_bot: true, username: "pub_bot" } },
+      getChat: { ok: true, result: { id: -1004392473566, type: "channel", title: "ДОМ по полочкам" } },
+      sendMediaGroup: {
+        ok: true,
+        result: [
+          { message_id: 201, chat: { id: -1004392473566 } },
+          { message_id: 202, chat: { id: -1004392473566 } },
+        ],
+      },
+    });
+    const social = createSocialService(prisma, { telegram: transport });
+    await social.connectTelegram(owner.userId, owner.workspaceId, {
+      token: BOT_TOKEN,
+      chatId: "https://t.me/dom_po_polochkam",
+      projectId: owner.projectId,
+    });
+    const media = createMediaService(prisma, createLocalStorage(storageDir));
+    const first = await media.upload(owner.userId, owner.workspaceId, {
+      filename: "one.png",
+      declaredType: "image/png",
+      bytes: png,
+    });
+    const second = await media.upload(owner.userId, owner.workspaceId, {
+      filename: "two.png",
+      declaredType: "image/png",
+      bytes: png,
+    });
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Карусель");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Карусель",
+      body: "Три полки подряд.",
+      platforms: ["telegram"],
+      mediaIds: [first.id, second.id],
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: {
+        get: () => createTelegramAdapter({ db: prisma, transport, storage: createLocalStorage(storageDir) }),
+      },
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-tg-album");
+    const stored = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, include: { targets: true } });
+    expect(stored.status).toBe("published");
+    expect(stored.targets[0]?.externalId).toBe("201");
+    const album = transport.calls.find((item) => item.method === "sendMediaGroup");
+    expect(album?.fileCount).toBe(2);
+    expect(String(album?.body?.media)).toContain("attach://photo0");
+    expect(String(album?.body?.media)).toContain("Три полки подряд.");
+    expect(transport.calls.some((item) => item.method === "sendPhoto")).toBe(false);
   });
 
   it("does not fake a VK publish while the community token is missing", async () => {

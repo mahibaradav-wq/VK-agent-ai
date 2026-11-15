@@ -1,9 +1,11 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
 import { AccessError } from "@/modules/access/permissions";
+import { watchIdeaAgentHref } from "@/modules/watch/prompt";
 import { createWatchService } from "@/modules/watch/watch-service";
 import { prisma } from "@/server/db/prisma";
 
@@ -112,6 +114,35 @@ export async function collectWatchIdeas(_prev: WatchFormState, formData: FormDat
   } catch (error) {
     const message = error instanceof AccessError ? error.message : "Не удалось собрать идеи.";
     return { status: "invalid", message };
+  }
+}
+
+export async function sendWatchIdeaToStudio(formData: FormData) {
+  const item = await createWatchService(prisma).consumeIdea(
+    await requireUserId(),
+    readField(formData, "workspaceId"),
+    readField(formData, "requestId"),
+    Number(readField(formData, "itemIndex")),
+  );
+  revalidateWatch();
+  revalidatePath("/app/studio");
+  redirect(watchIdeaAgentHref(item));
+}
+
+export async function dismissWatchIdea(formData: FormData) {
+  try {
+    await createWatchService(prisma).dismissIdea(
+      await requireUserId(),
+      readField(formData, "workspaceId"),
+      readField(formData, "requestId"),
+      Number(readField(formData, "itemIndex")),
+    );
+    revalidateWatch();
+  } catch (error) {
+    if (error instanceof AccessError) {
+      throw error;
+    }
+    throw new AccessError(403, "Не удалось убрать идею.");
   }
 }
 

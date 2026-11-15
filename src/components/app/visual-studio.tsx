@@ -6,14 +6,19 @@ import { Button } from "@/components/ui/button";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { checkVisualModels, type AiFormState } from "@/modules/ai/actions";
 import {
+  agentUsageUnits,
   aspectLabel,
+  carouselCounts,
+  defaultCarouselCount,
   defaultVisualAspect,
   isVisualKindLive,
+  parseCarouselCount,
   parseVisualAspect,
   prepareVisualPrompt,
   visualAspectsByKind,
   visualKindLabels,
   visualKinds,
+  type CarouselCount,
   type VisualAspect,
   type VisualKind,
 } from "@/modules/ai/visual";
@@ -50,6 +55,7 @@ export function VisualStudio({
 }) {
   const [kind, setKind] = useState<VisualKind>("image");
   const [aspect, setAspect] = useState<VisualAspect>(defaultVisualAspect("image"));
+  const [carouselCount, setCarouselCount] = useState<CarouselCount>(defaultCarouselCount);
   const [visualPrompt, setVisualPrompt] = useState("");
   const [prepareHint, setPrepareHint] = useState("");
   const [checkState, setCheckState] = useState<AiFormState>(idle);
@@ -57,6 +63,8 @@ export function VisualStudio({
   const remaining = Math.max(0, limit - used);
   const live = isVisualKindLive(kind);
   const aspects = visualAspectsByKind[kind];
+  const slideCount = parseCarouselCount(carouselCount, kind);
+  const needed = agentUsageUnits(kind, carouselCount);
   const missing: string[] = [];
   if (!imageReady) {
     missing.push("подключение генератора картинок");
@@ -64,8 +72,8 @@ export function VisualStudio({
   if (!storageReady) {
     missing.push("хранение файлов");
   }
-  if (remaining < 2) {
-    missing.push("две генерации в лимите этого месяца");
+  if (remaining < needed) {
+    missing.push(`${needed} генерации в лимите этого месяца`);
   }
 
   useEffect(() => {
@@ -74,18 +82,19 @@ export function VisualStudio({
       if (!raw) {
         return;
       }
-      const saved = JSON.parse(raw) as { kind?: string; aspect?: string };
+      const saved = JSON.parse(raw) as { kind?: string; aspect?: string; carouselCount?: number };
       const nextKind = visualKinds.includes(saved.kind as VisualKind) ? (saved.kind as VisualKind) : "image";
       setKind(nextKind);
       setAspect(parseVisualAspect(saved.aspect ?? "", nextKind));
+      setCarouselCount(parseCarouselCount(saved.carouselCount, "carousel") as CarouselCount);
     } catch {
       // Keep defaults if the browser storage is empty or damaged.
     }
   }, [workspaceId]);
 
   useEffect(() => {
-    window.localStorage.setItem(settingsKey(workspaceId), JSON.stringify({ kind, aspect }));
-  }, [aspect, kind, workspaceId]);
+    window.localStorage.setItem(settingsKey(workspaceId), JSON.stringify({ kind, aspect, carouselCount }));
+  }, [aspect, carouselCount, kind, workspaceId]);
 
   useEffect(() => {
     onLiveChange?.(live);
@@ -141,6 +150,28 @@ export function VisualStudio({
         ))}
       </div>
       <input type="hidden" name="visualKind" value={kind} />
+      <input type="hidden" name="carouselCount" value={String(slideCount)} />
+
+      {kind === "carousel" ? (
+        <div className="grid gap-2">
+          <p className="text-sm font-medium text-ink">Карточек в посте</p>
+          <p className="text-sm text-ink/60">Столько кадров ChatGPT нарисует в одном посте. ВКонтакте — карусель фото, в Telegram — альбом.</p>
+          <div className="flex flex-wrap gap-2">
+            {carouselCounts.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setCarouselCount(item)}
+                className={`min-h-11 min-w-11 rounded-full px-4 text-sm font-semibold ring-1 ${
+                  carouselCount === item ? "bg-ink text-white ring-ink" : "bg-white text-ink ring-ink/10"
+                }`}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <dl className="grid gap-2 text-sm text-ink/80">
         <div className="grid gap-1 sm:grid-cols-[10rem_1fr]">
@@ -178,7 +209,7 @@ export function VisualStudio({
         </StatusBanner>
       ) : kind === "carousel" ? (
         <StatusBanner tone="info">
-          Карусель сейчас — одна обложка. Все будущие слайды этой серии будут в том же формате {aspect}.
+          Карусель: {slideCount} кадров в формате {aspect}. Каждый кадр отдельный, рамка одна.
         </StatusBanner>
       ) : kind === "infographic" ? (
         <StatusBanner tone="info">
@@ -207,7 +238,8 @@ export function VisualStudio({
         <p className="text-sm font-medium text-ink">{visualKindLabels[kind]}</p>
         <p className="mt-1 text-sm text-ink/60">
           Формат {aspectLabel(aspect)}. Модель отдаёт ближайший кадр ChatGPT, предпросмотр держит выбранные пропорции без
-          обрезки. Агент берёт 2 генерации из лимита {used}/{limit}.
+          обрезки. Агент берёт {needed} генерации из лимита {used}/{limit}
+          {kind === "carousel" ? ` · ${slideCount} карточек` : ""}.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {aspects.map((item) => (

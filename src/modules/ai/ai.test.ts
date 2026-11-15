@@ -404,6 +404,28 @@ describe("AI assistant", () => {
     expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(2);
   });
 
+  it("draws a carousel of several cards and spends one unit per card", async () => {
+    const owner = await registerOwner("agent-carousel");
+    const provider = scriptedProvider([sample]);
+    const ai = createAiService(prisma, {
+      provider,
+      storage: createLocalStorage(storageDir),
+      monthlyLimit: 10,
+    });
+    const composed = await ai.composeAgentPost(owner.userId, owner.workspaceId, {
+      prompt: "карусель полок",
+      projectId: owner.projectId,
+      visualKind: "carousel",
+      visualAspect: "4:5",
+      carouselCount: 3,
+    });
+    expect(composed.post.media).toHaveLength(3);
+    expect(provider.imagePrompts).toHaveLength(3);
+    expect(provider.imagePrompts[0]).toContain("Slide 1 of 3");
+    expect(provider.imagePrompts[2]).toContain("Slide 3 of 3");
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(4);
+  });
+
   it("draws a 9:16 video cover still, not an MP4", async () => {
     const owner = await registerOwner("agent-video");
     const provider = scriptedProvider([sample]);

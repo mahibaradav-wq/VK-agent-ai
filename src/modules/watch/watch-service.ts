@@ -461,6 +461,62 @@ export function createWatchService(
       };
     },
 
+    async takeIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number, permission: "post.create" | "ai.generate") {
+      await access.requirePermission(userId, workspaceId, permission);
+      const request = await db.aIRequest.findUnique({ where: { id: requestId } });
+      assertWorkspaceBound(workspaceId, request, "AI-запрос");
+      if (request.kind !== WATCH_IDEAS_KIND) {
+        throw new AccessError(400, "Это не идеи агента наблюдения VK.");
+      }
+      let items: string[] = [];
+      try {
+        const parsed = JSON.parse(request.itemsJson) as unknown;
+        if (Array.isArray(parsed)) {
+          items = parsed.filter((item): item is string => typeof item === "string");
+        }
+      } catch {
+        items = [];
+      }
+      const item = items[itemIndex]?.trim();
+      if (!item) {
+        throw new AccessError(400, "Идея не найдена.");
+      }
+      const remaining = items.filter((_, index) => index !== itemIndex);
+      await db.aIRequest.update({
+        where: { id: request.id },
+        data: { itemsJson: JSON.stringify(remaining) },
+      });
+      return { request, item, remaining };
+    },
+
+    async consumeIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number) {
+      const taken = await this.takeIdea(userId, workspaceId, requestId, itemIndex, "post.create");
+      await db.auditLog.create({
+        data: {
+          action: "CONSUME_VK_WATCH_IDEA",
+          entityType: "ai_request",
+          entityId: requestId,
+          actorId: userId,
+          details: `${itemIndex}`,
+        },
+      });
+      return taken.item;
+    },
+
+    async dismissIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number) {
+      const taken = await this.takeIdea(userId, workspaceId, requestId, itemIndex, "ai.generate");
+      await db.auditLog.create({
+        data: {
+          action: "DISMISS_VK_WATCH_IDEA",
+          entityType: "ai_request",
+          entityId: requestId,
+          actorId: userId,
+          details: `${itemIndex}`,
+        },
+      });
+      return taken.item;
+    },
+
     async applyIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number, projectId: string) {
       await access.requirePermission(userId, workspaceId, "post.create");
       const request = await db.aIRequest.findUnique({ where: { id: requestId } });

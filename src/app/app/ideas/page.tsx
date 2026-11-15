@@ -28,12 +28,23 @@ export default async function IdeasPage() {
   }
 
   const watch = createWatchService(prisma);
-  const [credential, communities, ideas, aiStatus] = await Promise.all([
+  const [credential, communities, ideas, aiStatus, studioCard] = await Promise.all([
     watch.credential(session.user.id, activeMembership.workspaceId),
     watch.listCommunities(session.user.id, activeMembership.workspaceId),
     watch.listIdeas(session.user.id, activeMembership.workspaceId),
     createAiService(prisma).workspaceStatus(session.user.id, activeMembership.workspaceId),
+    activeProject
+      ? prisma.post.findFirst({
+          where: {
+            workspaceId: activeMembership.workspaceId,
+            projectId: activeProject.id,
+            status: { in: ["draft", "pending_approval", "approved"] },
+          },
+          select: { id: true },
+        })
+      : Promise.resolve(null),
   ]);
+  const studioBusy = Boolean(studioCard);
 
   return (
     <>
@@ -53,6 +64,7 @@ export default async function IdeasPage() {
           aiProvider={aiStatus.ideasProvider}
           copyReady={aiStatus.copyReady}
           imageReady={aiStatus.imageReady && aiStatus.storageReady}
+          studioBusy={studioBusy}
           communities={communities.map((item) => ({
             ...item,
             lastFetchedAt: item.lastFetchedAt?.toISOString() ?? null,

@@ -139,6 +139,7 @@ export async function composeAgentPost(_prev: AiFormState, formData: FormData): 
         visualKind: readField(formData, "visualKind"),
         visualAspect: readField(formData, "visualAspect"),
         visualPrompt: readField(formData, "visualPrompt"),
+        carouselCount: readField(formData, "carouselCount"),
         shopProductId: readField(formData, "shopProductId") || undefined,
       },
     );

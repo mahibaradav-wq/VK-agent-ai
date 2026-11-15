@@ -6,8 +6,13 @@ import { useActionState, useState } from "react";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StatusBanner } from "@/components/ui/status-banner";
-import { addWatchCommunity, removeWatchCommunity, type WatchFormState } from "@/modules/watch/actions";
-import { watchIdeaAgentHref } from "@/modules/watch/prompt";
+import {
+  addWatchCommunity,
+  dismissWatchIdea,
+  removeWatchCommunity,
+  sendWatchIdeaToStudio,
+  type WatchFormState,
+} from "@/modules/watch/actions";
 
 const idle: WatchFormState = { status: "idle", message: "" };
 
@@ -60,6 +65,7 @@ export function WatchBoard({
   aiProvider,
   copyReady,
   imageReady,
+  studioBusy = false,
 }: {
   workspaceId: string;
   projectId?: string;
@@ -72,6 +78,7 @@ export function WatchBoard({
   aiProvider: string;
   copyReady: boolean;
   imageReady: boolean;
+  studioBusy?: boolean;
 }) {
   const router = useRouter();
   const [addState, addAction, addPending] = useActionState(addWatchCommunity, idle);
@@ -147,26 +154,49 @@ export function WatchBoard({
               Выберите проект в шапке кабинета — иначе агент не создаст черновик после брифа.
             </StatusBanner>
           ) : null}
+          {studioBusy ? (
+            <StatusBanner tone="warning">
+              В Студии уже есть карточка. Сначала опубликуйте, поставьте в календарь или удалите её — иначе идея не уйдёт.
+            </StatusBanner>
+          ) : null}
           <ul className="grid gap-3">
             {batch.items.map((item, index) => {
               const key = `${batch.id}-${index}`;
               return (
                 <li key={key} className="rounded-2xl ring-1 ring-ink/10 p-4">
                   <IdeaParts item={item} />
-                  {canApply ? (
-                    <div className="mt-3">
-                      <ButtonLink href={watchIdeaAgentHref(item)}>В бриф: пост + визуал</ButtonLink>
+                  {canApply || canGenerate ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {canApply && projectId && !studioBusy ? (
+                        <form action={sendWatchIdeaToStudio}>
+                          <input type="hidden" name="workspaceId" value={workspaceId} />
+                          <input type="hidden" name="projectId" value={projectId} />
+                          <input type="hidden" name="requestId" value={batch.id} />
+                          <input type="hidden" name="itemIndex" value={String(index)} />
+                          <Button>В Студию</Button>
+                        </form>
+                      ) : null}
+                      {canGenerate ? (
+                        <form action={dismissWatchIdea}>
+                          <input type="hidden" name="workspaceId" value={workspaceId} />
+                          <input type="hidden" name="requestId" value={batch.id} />
+                          <input type="hidden" name="itemIndex" value={String(index)} />
+                          <Button type="submit" variant="ghost">
+                            Убрать
+                          </Button>
+                        </form>
+                      ) : null}
                     </div>
                   ) : (
-                    <p className="mt-3 text-sm text-ink/60">Открыть идею в брифе агента могут Editor, Admin и Owner.</p>
+                    <p className="mt-3 text-sm text-ink/60">Открыть идею в Студии могут Editor, Admin и Owner.</p>
                   )}
                 </li>
               );
             })}
           </ul>
           <p className="text-xs text-ink/50">
-            Кнопка открывает раздел «Пост + визуал» с этой идеей в брифе. Тон, длину и площадку выбираете сами — пост и
-            картинка появятся только после «Создать пост с визуалом».
+            «В Студию» забирает идею в бриф и убирает её из списка. Не понравилась — «Убрать». Пост появится только после
+            «Создать пост с визуалом».
           </p>
         </Card>
       ))}

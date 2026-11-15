@@ -114,7 +114,7 @@ export function createTelegramAdapter(options: {
       }
 
       const text = composeText(input);
-      const mediaKeys = input.mediaKeys.filter(Boolean);
+      const mediaKeys = input.mediaKeys.filter(Boolean).slice(0, 10);
       let sent;
 
       if (mediaKeys.length > 0) {
@@ -125,40 +125,61 @@ export function createTelegramAdapter(options: {
             message: storage.setupMessage || "Хранилище не настроено, картинку в Telegram отправить нельзя.",
           };
         }
-        let bytes: Uint8Array;
-        try {
-          bytes = await storage.get(mediaKeys[0]!);
-        } catch {
-          return {
-            kind: "temporary_failure",
-            code: "media_missing",
-            message: "Файл публикации не найден в хранилище. Повторите после загрузки медиа.",
-          };
-        }
-        const mimeType = detectMediaType(bytes);
-        if (!mimeType) {
-          return {
-            kind: "permanent_failure",
-            code: "media_type",
-            message: "В Telegram можно прикрепить только изображение JPEG, PNG, GIF или WebP.",
-          };
+        const photos: TelegramFilePart[] = [];
+        for (const [index, key] of mediaKeys.entries()) {
+          let bytes: Uint8Array;
+          try {
+            bytes = await storage.get(key);
+          } catch {
+            return {
+              kind: "temporary_failure",
+              code: "media_missing",
+              message: "Файл публикации не найден в хранилище. Повторите после загрузки медиа.",
+            };
+          }
+          const mimeType = detectMediaType(bytes);
+          if (!mimeType) {
+            return {
+              kind: "permanent_failure",
+              code: "media_type",
+              message: "В Telegram можно прикрепить только изображение JPEG, PNG, GIF или WebP.",
+            };
+          }
+          photos.push({
+            field: mediaKeys.length > 1 ? `photo${index}` : "photo",
+            filename: filenameForMime(mimeType),
+            mimeType,
+            bytes,
+          });
         }
         const caption = text.length <= TELEGRAM_CAPTION_LIMIT ? text : text.slice(0, TELEGRAM_CAPTION_LIMIT);
-        const file: TelegramFilePart = {
-          field: "photo",
-          filename: filenameForMime(mimeType),
-          mimeType,
-          bytes,
-        };
-        sent = await transport.request(
-          token,
-          "sendPhoto",
-          {
-            chat_id: account.externalId,
-            caption,
-          },
-          file,
-        );
+        if (photos.length === 1) {
+          sent = await transport.request(
+            token,
+            "sendPhoto",
+            {
+              chat_id: account.externalId,
+              caption,
+            },
+            photos[0],
+          );
+        } else {
+          sent = await transport.request(
+            token,
+            "sendMediaGroup",
+            {
+              chat_id: account.externalId,
+              media: JSON.stringify(
+                photos.map((photo, index) => ({
+                  type: "photo",
+                  media: `attach://${photo.field}`,
+                  ...(index === 0 ? { caption } : {}),
+                })),
+              ),
+            },
+            photos,
+          );
+        }
         if (sent.ok && text.length > TELEGRAM_CAPTION_LIMIT) {
           const rest = await transport.request(token, "sendMessage", {
             chat_id: account.externalId,
@@ -193,7 +214,8 @@ export function createTelegramAdapter(options: {
         });
       }
 
-      const message = sent.result as TelegramMessage;
+      const first = Array.isArray(sent.result) ? sent.result[0] : sent.result;
+      const message = (first ?? {}) as TelegramMessage;
       const chat = message.chat as TelegramChat | undefined;
       return {
         kind: "success",
