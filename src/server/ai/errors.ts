@@ -11,6 +11,12 @@ export function isOpenAiRegionError(error: unknown) {
   );
 }
 
+export const QWEN_KEY_REGION_MESSAGE =
+  "Ключ Qwen не принят китайским DashScope (Пекин). Возьмите ключ в 百炼 bailian.console.aliyun.com, регион Китай — Пекин. Ключ из международной Model Studio (Сингапур) с этого сервера не открывается.";
+
+export const QWEN_UNAVAILABLE_MESSAGE =
+  "Qwen (DashScope) с этого сервера не открылся. Нужен ключ 百炼, регион Пекин. Сингапурский endpoint с VPS в РФ недоступен. Ключ в ответ не попадает.";
+
 export const AI_UNAVAILABLE_MESSAGE = "Провайдер AI недоступен. Это не замена ответа модели.";
 
 export const AI_BALANCE_MESSAGE =

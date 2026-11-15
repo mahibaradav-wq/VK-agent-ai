@@ -208,7 +208,7 @@ export function createOpenAiCompatibleProvider(options: {
             authorization: `Bearer ${options.apiKey}`,
             "content-type": "application/json",
           },
-          signal: AbortSignal.timeout(25_000),
+          signal: AbortSignal.timeout(60_000),
           body: JSON.stringify(imageGenerationBody(imageModel, prompt, input.size ?? "1024x1024")),
         });
       } catch {

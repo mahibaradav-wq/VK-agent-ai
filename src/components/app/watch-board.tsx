@@ -209,7 +209,7 @@ export function WatchBoard({
           {!agentReady ? (
             <StatusBanner tone="warning">
               ChatGPT с этого сервера в РФ часто недоступен. Текст может написать DeepSeek. Для новой картинки подключите
-              Qwen — или нужен VPS в ЕС/США. Кнопка на идее всё равно отправляет в агент.
+              Qwen в 百炼 (Пекин), не сингапурскую Model Studio. Кнопка на идее всё равно отправляет в агент.
               <span className="mt-3 block">
                 <ButtonLink href="/app/ai" variant="secondary">
                   Открыть агент AI

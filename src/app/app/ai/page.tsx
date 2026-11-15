@@ -12,7 +12,7 @@ import { prisma } from "@/server/db/prisma";
 
 export const metadata = createPageMetadata({
   title: "AI-ассистент",
-  description: "DeepSeek ищет идеи по стенам ВК. ChatGPT пишет текст поста и рисует визуал. Ключи только на сервере.",
+  description: "DeepSeek ищет идеи по стенам ВК. Qwen пишет визуал с российского VPS. Ключи только на сервере.",
   path: "/app/ai",
 });
 
@@ -42,7 +42,7 @@ export default async function AiPage({
       <PageHeader
         eyebrow="AI"
         title="Ассистент контента"
-        description="DeepSeek — идеи. ChatGPT — тексты и визуал. Ключи можно держать оба. Без ключа генерация не имитируется."
+        description="DeepSeek — идеи. Qwen — тексты и визуал с этого VPS в РФ. Ключ Qwen берите в 百炼, регион Пекин. Без ключа генерация не имитируется."
       />
       <Container className="grid gap-6 pb-20">
         <AiProviderBoard
