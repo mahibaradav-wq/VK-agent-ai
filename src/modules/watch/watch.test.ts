@@ -112,7 +112,7 @@ function scriptedAi(
     async generateImage(input) {
       imagePrompts.push(input.prompt);
       if (!image) {
-        throw new AccessError(400, "Для визуала подключите ChatGPT или Qwen. DeepSeek картинки не рисует.");
+        throw new AccessError(400, "Для визуала подключите ChatGPT.");
       }
       return image;
     },

@@ -162,15 +162,15 @@ export function createAiService(
     if (providers.length === 0) {
       const openaiBlocked = await connections.openaiRegionBlocked(workspaceId);
       if (role === "image") {
-        throw new AccessError(400, openaiBlocked ? OPENAI_IMAGE_REGION_MESSAGE : "Для визуала подключите ChatGPT или Qwen. DeepSeek картинки не рисует.");
+        throw new AccessError(400, openaiBlocked ? OPENAI_IMAGE_REGION_MESSAGE : "Для визуала подключите ChatGPT.");
       }
       throw new AccessError(
         400,
         openaiBlocked
           ? OPENAI_REGION_MESSAGE
           : role === "ideas"
-            ? "Идеи недоступны: подключите DeepSeek. Это не ответ модели."
-            : "Генерация текста недоступна: подключите DeepSeek или ChatGPT. Это не ответ модели.",
+            ? "Идеи недоступны: подключите ChatGPT. Это не ответ модели."
+            : "Генерация текста недоступна: подключите ChatGPT. Это не ответ модели.",
       );
     }
     let last: unknown;
@@ -291,8 +291,8 @@ export function createAiService(
           openaiBlocked
             ? OPENAI_REGION_MESSAGE
             : role === "ideas"
-              ? "Идеи недоступны: подключите DeepSeek. Это не ответ модели."
-              : "Генерация текста недоступна: подключите DeepSeek или ChatGPT. Это не ответ модели.",
+              ? "Идеи недоступны: подключите ChatGPT. Это не ответ модели."
+              : "Генерация текста недоступна: подключите ChatGPT. Это не ответ модели.",
         );
       }
 
@@ -452,7 +452,7 @@ export function createAiService(
           400,
           openaiBlocked
             ? OPENAI_REGION_MESSAGE
-            : "Генерация поста недоступна: подключите DeepSeek или ChatGPT. Это не ответ модели.",
+            : "Генерация поста недоступна: подключите ChatGPT. Это не ответ модели.",
         );
       }
       if (!imageProvider.imageReady) {
@@ -461,7 +461,7 @@ export function createAiService(
           400,
           openaiBlocked
             ? OPENAI_IMAGE_REGION_MESSAGE
-            : "Для визуала подключите ChatGPT или Qwen. DeepSeek картинки не рисует.",
+            : "Для визуала подключите ChatGPT.",
         );
       }
       if (!storageDriver.ready) {

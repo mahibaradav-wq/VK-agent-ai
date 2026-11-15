@@ -135,7 +135,7 @@ describe("AI assistant", () => {
     await expectAccess(
       ai.generate(owner.userId, owner.workspaceId, { kind: "post", prompt: "борщ" }),
       400,
-      /ChatGPT|DeepSeek/
+      /ChatGPT/
     );
     expect(await prisma.aIRequest.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
     const usage = await ai.usage(owner.userId, owner.workspaceId);
@@ -290,12 +290,12 @@ describe("AI assistant", () => {
     );
   });
 
-  it("explains an empty DeepSeek balance instead of a generic 402", async () => {
+  it("explains an empty ChatGPT balance instead of a generic 402", async () => {
     const provider = createOpenAiCompatibleProvider({
       apiKey: "sk-test-secret-key",
-      baseUrl: "https://api.deepseek.com",
-      name: "deepseek",
-      model: "deepseek-chat",
+      baseUrl: "https://api.openai.com/v1",
+      name: "openai",
+      model: "gpt-4o-mini",
       imageReady: false,
       fetchImpl: async () =>
         new Response(JSON.stringify({ error: { message: "Insufficient Balance" } }), { status: 402 }),
@@ -323,7 +323,7 @@ describe("AI assistant", () => {
         projectId: owner.projectId,
       }),
       400,
-      /ChatGPT|DeepSeek/
+      /ChatGPT/
     );
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
     expect(await prisma.mediaAsset.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
@@ -540,9 +540,9 @@ describe("AI assistant", () => {
     const provider = createOpenAiCompatibleProvider({
       apiKey: "sk-test-secret-key",
       baseUrl: "https://dashscope.test/v1",
-      model: "qwen-plus",
-      imageModel: "qwen-image-plus",
-      name: "qwen",
+      model: "gpt-4o-mini",
+      imageModel: "gpt-image-1.5",
+      name: "openai",
       fetchImpl: async (url) => {
         if (String(url).endsWith("/images/generations")) {
           return new Response(JSON.stringify({ data: [{ url: "https://cdn.example.test/visual.png" }] }), {
@@ -556,7 +556,7 @@ describe("AI assistant", () => {
       },
     });
     const image = await provider.generateImage({ prompt: "тарелка борща" });
-    expect(image.provider).toBe("qwen");
+    expect(image.provider).toBe("openai");
     expect(image.mimeType).toBe("image/png");
   });
 });

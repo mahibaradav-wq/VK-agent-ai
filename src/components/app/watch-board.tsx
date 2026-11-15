@@ -151,8 +151,7 @@ export function WatchBoard({
           {batch.body ? <p className="whitespace-pre-wrap text-sm text-ink/80">{batch.body}</p> : null}
           {!agentReady ? (
             <StatusBanner tone="warning">
-              ChatGPT с этого сервера в РФ часто недоступен. Текст может написать DeepSeek. Для новой картинки подключите
-              Qwen в 百炼 (Пекин), не сингапурскую Model Studio. Кнопка на идее всё равно откроет бриф агента.
+              Для новой картинки подключите ChatGPT. Кнопка на идее всё равно откроет бриф агента.
               <span className="mt-3 block">
                 <ButtonLink href="/app/ai" variant="secondary">
                   Открыть агент AI
@@ -192,16 +191,15 @@ export function WatchBoard({
       <Card className="grid gap-3">
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Собрать идеи для ВК</p>
         <p className="text-sm text-ink/70">
-          DeepSeek читает стены наблюдаемых сообществ и предлагает темы для «Дом по полочкам». Тексты готового поста и
-          визуал пишет ChatGPT. Чужие тексты не копируются.
+          ChatGPT читает стены наблюдаемых сообществ и предлагает темы для «Дом по полочкам». Тем же ключом пишет пост и
+          рисует визуал. Чужие тексты не копируются.
         </p>
-        {aiProvider !== "deepseek" ? (
+        {aiProvider !== "openai" ? (
           <StatusBanner tone="warning">
-            Для идей нужен DeepSeek. ChatGPT остаётся для постов и картинок: с этого VPS OpenAI часто не открывается.
-            Подключите DeepSeek в разделе AI.
+            Для идей нужен ChatGPT. Подключите ключ OpenAI в разделе AI.
             <span className="mt-3 block">
               <ButtonLink href="/app/ai" variant="secondary">
-                Подключить DeepSeek
+                Подключить ChatGPT
               </ButtonLink>
             </span>
           </StatusBanner>

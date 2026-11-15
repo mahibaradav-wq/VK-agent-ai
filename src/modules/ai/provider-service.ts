@@ -40,9 +40,9 @@ export type PublicAiModelProbe = {
 };
 
 const ROLE_ORDER: Record<AiRole, readonly AiProviderId[]> = {
-  ideas: ["deepseek", "qwen", "openai"],
-  copy: ["openai", "qwen", "deepseek"],
-  image: ["openai", "qwen"],
+  ideas: ["openai"],
+  copy: ["openai"],
+  image: ["openai"],
 };
 
 function looksLikeApiKey(value: string) {
@@ -118,8 +118,11 @@ export function createAiConnectionService(
     status: string;
     lastError: string | null;
     encryptedApiKey: string;
-  }): PublicAiConnection {
-    const spec = getAiProviderSpec(row.provider);
+  }): PublicAiConnection | null {
+    const spec = aiProviderCatalog.find((item) => item.id === row.provider);
+    if (!spec) {
+      return null;
+    }
     return {
       provider: row.provider,
       label: spec.label,
@@ -159,7 +162,7 @@ export function createAiConnectionService(
     lastError: string | null;
     encryptedApiKey: string;
   }>, envProvider: AiProvider): PublicAiWorkspace {
-    const connections = rows.map(toPublic);
+    const connections = rows.map(toPublic).filter((item): item is PublicAiConnection => item !== null);
     const env = connections.length === 0 ? envAsConnection(envProvider) : null;
     if (env) {
       connections.push(env);
@@ -261,7 +264,7 @@ export function createAiConnectionService(
 
       const apiKey = input.apiKey.trim();
       if (!looksLikeApiKey(apiKey)) {
-        throw new AccessError(400, "Нужен API-ключ (sk-...), не пароль от ChatGPT, DeepSeek или Qwen.");
+        throw new AccessError(400, "Нужен API-ключ (sk-...), не пароль от ChatGPT.");
       }
 
       const spec = getAiProviderSpec(providerId);
@@ -298,7 +301,11 @@ export function createAiConnectionService(
           details: spec.id,
         },
       });
-      return toPublic(row);
+      const connected = toPublic(row);
+      if (!connected) {
+        throw new AccessError(400, "Неизвестный AI-провайдер.");
+      }
+      return connected;
     },
 
     async probeImageModels(userId: string, workspaceId: string): Promise<PublicAiModelProbe> {

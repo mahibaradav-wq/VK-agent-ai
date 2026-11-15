@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import { AccessError } from "@/modules/access/permissions";
+import { AI_UNAVAILABLE_MESSAGE } from "@/server/ai/errors";
 import { probeAiApiKey } from "@/server/ai/probe";
-import { QWEN_KEY_REGION_MESSAGE, QWEN_UNAVAILABLE_MESSAGE } from "@/server/ai/errors";
 
 describe("AI key probe", () => {
-  it("explains a Qwen 401 as a Beijing vs Singapore key mismatch", async () => {
+  it("explains a 401 as a rejected key, not a chat password", async () => {
     await expect(
       probeAiApiKey({
-        apiKey: "sk-qwen-secret-key",
-        baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        provider: "qwen",
+        apiKey: "sk-openai-secret-key",
+        baseUrl: "https://api.openai.com/v1",
+        provider: "openai",
         fetchImpl: async () =>
           new Response(JSON.stringify({ error: { code: "invalid_api_key", message: "Incorrect API key provided" } }), {
             status: 401,
@@ -18,7 +18,7 @@ describe("AI key probe", () => {
       }),
     ).rejects.toMatchObject({
       status: 400,
-      message: QWEN_KEY_REGION_MESSAGE,
+      message: "Провайдер отклонил ключ. Нужен API-ключ, не пароль от чата.",
     } satisfies Partial<AccessError>);
   });
 
@@ -32,12 +32,12 @@ describe("AI key probe", () => {
     expect(result.models).toEqual(["gpt-4o-mini", "gpt-image-1.5"]);
   });
 
-  it("fails fast when DashScope never answers", async () => {
+  it("fails fast when OpenAI never answers", async () => {
     await expect(
       probeAiApiKey({
-        apiKey: "sk-qwen-secret-key",
-        baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        provider: "qwen",
+        apiKey: "sk-openai-secret-key",
+        baseUrl: "https://api.openai.com/v1",
+        provider: "openai",
         timeoutMs: 40,
         fetchImpl: (_url, init) =>
           new Promise((_, reject) => {
@@ -48,7 +48,7 @@ describe("AI key probe", () => {
       }),
     ).rejects.toMatchObject({
       status: 400,
-      message: QWEN_UNAVAILABLE_MESSAGE,
+      message: AI_UNAVAILABLE_MESSAGE,
     } satisfies Partial<AccessError>);
   });
 });

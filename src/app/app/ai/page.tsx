@@ -12,7 +12,7 @@ import { prisma } from "@/server/db/prisma";
 
 export const metadata = createPageMetadata({
   title: "AI-ассистент",
-  description: "DeepSeek ищет идеи по стенам ВК. Qwen пишет визуал с российского VPS. Ключи только на сервере.",
+  description: "ChatGPT ищет идеи, пишет посты и рисует визуал. Ключ только на сервере. Без ключа генерация не имитируется.",
   path: "/app/ai",
 });
 
@@ -35,14 +35,13 @@ export default async function AiPage({
   const ai = createAiService(prisma);
   const status = await ai.workspaceStatus(session.user.id, activeMembership.workspaceId);
   const usage = await ai.usage(session.user.id, activeMembership.workspaceId);
-  const history = await ai.list(session.user.id, activeMembership.workspaceId);
 
   return (
     <>
       <PageHeader
         eyebrow="AI"
         title="Ассистент контента"
-        description="DeepSeek — идеи. Qwen — тексты и визуал с этого VPS в РФ. Ключ Qwen берите в 百炼, регион Пекин. Без ключа генерация не имитируется."
+        description="ChatGPT — идеи, тексты и визуал. Один ключ OpenAI. Без ключа генерация не имитируется."
       />
       <Container className="grid gap-6 pb-20">
         <AiProviderBoard
@@ -57,7 +56,6 @@ export default async function AiPage({
           workspaceId={activeMembership.workspaceId}
           projectId={activeProject?.id}
           canGenerate={hasPermission(activeMembership.role, "ai.generate")}
-          canApply={hasPermission(activeMembership.role, "post.create")}
           ready={status.ready}
           imageReady={status.imageReady}
           storageReady={status.storageReady}
@@ -66,10 +64,6 @@ export default async function AiPage({
           imageModel={status.imageModel}
           used={usage.used}
           limit={usage.limit}
-          history={history.map((item) => ({
-            ...item,
-            createdAt: item.createdAt.toISOString(),
-          }))}
           defaultPrompt={typeof params.prompt === "string" ? params.prompt : ""}
           defaultPlatform={
             params.platform === "vk" || params.platform === "telegram"

@@ -28,7 +28,7 @@
 |---|---|---|
 | `TOKEN_ENCRYPTION_KEY` | Ключ AES для токенов соцаккаунтов | Берётся `AUTH_SECRET` |
 | `REDIS_URL` + `QUEUE_DRIVER=redis` | BullMQ | Задачи пишутся в PostgreSQL, диспетчер Redis не стартует |
-| `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_IMAGE_MODEL`, `AI_MONTHLY_LIMIT` | запасной AI, если в кабинете нет ключа | UI предлагает подключить ChatGPT / DeepSeek / Qwen |
+| `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_IMAGE_MODEL`, `AI_MONTHLY_LIMIT` | запасной AI, если в кабинете нет ключа | UI предлагает подключить ChatGPT |
 | `YOOKASSA_SHOP_ID` + `YOOKASSA_SECRET_KEY` | ЮKassa (самозанятый / ИП) | Checkout не имитирует оплату |
 | `BILLING_WEBHOOK_SECRET` | запасной HMAC-стенд для тестов | Не нужен, если задана ЮKassa |
 | `ADMIN_EMAILS` | Email через запятую → Superadmin при первом заходе в `/admin` | Админка пуста, пока роль не выдана |
