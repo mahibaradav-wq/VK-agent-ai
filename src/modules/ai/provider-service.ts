@@ -256,7 +256,7 @@ export function createAiConnectionService(
       }
 
       const spec = getAiProviderSpec(providerId);
-      await probeAiApiKey({ apiKey, baseUrl: spec.baseUrl, fetchImpl });
+      await probeAiApiKey({ apiKey, baseUrl: spec.baseUrl, provider: spec.id, fetchImpl });
       const encryptedApiKey = encryptToken(apiKey);
 
       const row = await db.workspaceAiConnection.upsert({

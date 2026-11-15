@@ -362,4 +362,39 @@ describe("AI provider connection", () => {
     );
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
   });
+
+  it("connects Qwen against Chinese DashScope and explains a Singapore key", async () => {
+    const owner = await registerOwner("ai-qwen");
+    const urls: string[] = [];
+    const ok = createAiConnectionService(prisma, {
+      envProvider: createUnconfiguredAiProvider(),
+      fetchImpl: async (url) => {
+        urls.push(String(url));
+        return new Response(JSON.stringify({ data: [{ id: "qwen-plus" }] }), { status: 200 });
+      },
+    });
+    const connected = await ok.connect(owner.userId, owner.workspaceId, {
+      provider: "qwen",
+      apiKey: "sk-qwen-beijing-key",
+    });
+    expect(connected.provider).toBe("qwen");
+    expect(connected.imageReady).toBe(true);
+    expect(connected.imageModel).toBe("qwen-image-plus");
+    expect(urls[0]).toContain("dashscope.aliyuncs.com/compatible-mode/v1/models");
+    expect(urls[0]).not.toContain("dashscope-intl");
+    expect(JSON.stringify(connected)).not.toMatch(/sk-qwen-beijing-key/);
+
+    const rejected = createAiConnectionService(prisma, {
+      envProvider: createUnconfiguredAiProvider(),
+      fetchImpl: async () => new Response("{}", { status: 401 }),
+    });
+    await expectAccess(
+      rejected.connect(owner.userId, owner.workspaceId, {
+        provider: "qwen",
+        apiKey: "sk-qwen-singapore-key",
+      }),
+      400,
+      /Пекин|百炼|Сингапур/,
+    );
+  });
 });

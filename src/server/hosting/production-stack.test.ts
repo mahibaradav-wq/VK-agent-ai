@@ -19,6 +19,12 @@ describe("production hosting stack", () => {
     expect(dockerfile).toContain("npm start -- --hostname 0.0.0.0 --port 3000");
   });
 
+  it("gives the app IPv6 so Qwen DashScope is reachable from a RU VPS", () => {
+    expect(compose).toContain("enable_ipv6: true");
+    expect(compose).toContain("fd12:706f:6c6b:1::/64");
+    expect(compose).toContain("172.18.0.1");
+  });
+
   it("exposes HTTPS via Caddy on a real domain", () => {
     expect(compose).toContain("caddy:2-alpine");
     expect(compose).toContain('"80:80"');

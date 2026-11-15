@@ -103,3 +103,12 @@ volumes:
 
 networks:
   polka:
+    # DashScope (Qwen) from this RU VPS is reachable on IPv6 only. Without
+    # IPv6 the app container times out on IPv4 and the Qwen key never connects.
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+          gateway: 172.18.0.1
+        - subnet: fd12:706f:6c6b:1::/64
+          gateway: fd12:706f:6c6b:1::1

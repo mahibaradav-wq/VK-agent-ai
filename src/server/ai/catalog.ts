@@ -48,9 +48,10 @@ export const aiProviderCatalog: AiProviderSpec[] = [
     model: "qwen-plus",
     imageModel: "qwen-image-plus",
     imageReady: true,
-    keyUrl: "https://modelstudio.console.alibabacloud.com/",
-    keyHint: "Ключ DashScope / Model Studio, начинается с sk-.",
-    notes: "Пишет текст и может нарисовать визуал. С российского VPS открывается китайский DashScope, не intl.",
+    keyUrl: "https://bailian.console.aliyun.com/?tab=model#/api-key",
+    keyHint: "Ключ 百炼 (Пекин), начинается с sk-. Не пароль от чата и не ключ сингапурской Model Studio.",
+    notes:
+      "Пишет текст и рисует визуал. Ключ берите в китайском 百炼, регион Пекин. С этого VPS в РФ открывается только китайский DashScope; сингапурский Model Studio недоступен.",
   },
 ];
 
