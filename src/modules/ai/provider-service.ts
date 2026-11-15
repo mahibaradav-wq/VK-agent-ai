@@ -30,6 +30,15 @@ export type PublicAiWorkspace = {
   image: PublicAiConnection;
 };
 
+export type PublicAiModelProbe = {
+  provider: string;
+  label: string;
+  imageModel: string;
+  reachable: boolean;
+  inCatalog: boolean;
+  modelCount: number;
+};
+
 const ROLE_ORDER: Record<AiRole, readonly AiProviderId[]> = {
   ideas: ["deepseek", "qwen", "openai"],
   copy: ["openai", "qwen", "deepseek"],
@@ -290,6 +299,64 @@ export function createAiConnectionService(
         },
       });
       return toPublic(row);
+    },
+
+    async probeImageModels(userId: string, workspaceId: string): Promise<PublicAiModelProbe> {
+      await access.requirePermission(userId, workspaceId, "ai.generate");
+      const rows = await loadRows(workspaceId);
+      let row:
+        | {
+            provider: string;
+            model: string;
+            imageModel: string;
+            lastError: string | null;
+            encryptedApiKey: string;
+          }
+        | undefined;
+      for (const id of ROLE_ORDER.image) {
+        const found = rows.find((item) => item.provider === id);
+        if (!found || isOpenAiRegionRecord(found) || !getAiProviderSpec(id).imageReady) {
+          continue;
+        }
+        row = found;
+        break;
+      }
+      if (!row) {
+        const env = options?.envProvider ?? getAiProvider();
+        if (!env.imageReady) {
+          throw new AccessError(
+            400,
+            "Для визуала подключите ChatGPT. Проверка каталога не запускает генерацию и кредиты не тратит.",
+          );
+        }
+        return {
+          provider: env.name,
+          label: env.name,
+          imageModel: env.imageModel,
+          reachable: true,
+          inCatalog: true,
+          modelCount: 0,
+        };
+      }
+      const spec = getAiProviderSpec(row.provider);
+      const imageModel = currentImageModel(spec, row.imageModel);
+      const result = await probeAiApiKey({
+        apiKey: decryptToken(row.encryptedApiKey),
+        baseUrl: spec.baseUrl,
+        provider: spec.id,
+        fetchImpl,
+      });
+      const inCatalog = result.models.some(
+        (id) => id === imageModel || id.startsWith("gpt-image") || id.includes("dall-e") || id.toLowerCase().includes("image"),
+      );
+      return {
+        provider: spec.id,
+        label: spec.label,
+        imageModel,
+        reachable: true,
+        inCatalog,
+        modelCount: result.models.length,
+      };
     },
 
     async disconnect(userId: string, workspaceId: string, provider?: string) {

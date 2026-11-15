@@ -63,9 +63,10 @@ const sampleImage: AiImageOutput = {
 function scriptedProvider(
   outputs: AiGenerateOutput[] | (() => Promise<AiGenerateOutput>),
   images: AiImageOutput[] | (() => Promise<AiImageOutput>) = [sampleImage],
-): AiProvider & { prompts: string[]; imagePrompts: string[] } {
+): AiProvider & { prompts: string[]; imagePrompts: string[]; imageSizes: string[] } {
   const prompts: string[] = [];
   const imagePrompts: string[] = [];
+  const imageSizes: string[] = [];
   let index = 0;
   let imageIndex = 0;
   return {
@@ -76,6 +77,7 @@ function scriptedProvider(
     imageReady: true,
     prompts,
     imagePrompts,
+    imageSizes,
     async generate(input) {
       prompts.push(`${input.kind}:${input.tone}:${input.length}:${input.platform}:${input.prompt}`);
       if (typeof outputs === "function") {
@@ -90,6 +92,7 @@ function scriptedProvider(
     },
     async generateImage(input) {
       imagePrompts.push(input.prompt);
+      imageSizes.push(input.size ?? "1024x1024");
       if (typeof images === "function") {
         return images();
       }
@@ -369,8 +372,54 @@ describe("AI assistant", () => {
     expect(opened.id).toBe(composed.post.id);
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(1);
     expect(provider.imagePrompts[0]).toContain("Борщ по пятницам");
+    expect(provider.imageSizes[0]).toBe("1024x1536");
     expect(JSON.stringify(composed.request)).not.toMatch(/sk-|apiKey|AI_API_KEY|b64/);
     expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(2);
+  });
+
+  it("uses a prepared visual request, VK 4:5 frame, and does not spend credits on a catalog check", async () => {
+    const owner = await registerOwner("agent-studio");
+    const provider = scriptedProvider([sample]);
+    const ai = createAiService(prisma, {
+      provider,
+      storage: createLocalStorage(storageDir),
+      monthlyLimit: 10,
+    });
+    const checked = await ai.checkVisualModels(owner.userId, owner.workspaceId);
+    expect(checked.reachable).toBe(true);
+    expect(checked.message).toMatch(/генерация не запускалась/i);
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(0);
+
+    const composed = await ai.composeAgentPost(owner.userId, owner.workspaceId, {
+      prompt: "полки без хаоса",
+      platform: "vk",
+      projectId: owner.projectId,
+      visualKind: "infographic",
+      visualAspect: "4:5",
+      visualPrompt: "Custom infographic of empty shelves, no logos.",
+    });
+    expect(composed.post.media).toHaveLength(1);
+    expect(provider.imagePrompts[0]).toBe("Custom infographic of empty shelves, no logos.");
+    expect(provider.imageSizes[0]).toBe("1024x1536");
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(2);
+  });
+
+  it("draws a 9:16 video cover still, not an MP4", async () => {
+    const owner = await registerOwner("agent-video");
+    const provider = scriptedProvider([sample]);
+    const ai = createAiService(prisma, {
+      provider,
+      storage: createLocalStorage(storageDir),
+    });
+    const composed = await ai.composeAgentPost(owner.userId, owner.workspaceId, {
+      prompt: "ролик про полки",
+      projectId: owner.projectId,
+      visualKind: "video",
+      visualAspect: "9:16",
+    });
+    expect(composed.post.media).toHaveLength(1);
+    expect(provider.imageSizes[0]).toBe("1024x1536");
+    expect(provider.imagePrompts[0]).toMatch(/cover still|opening frame/i);
   });
 
   it("fails entirely if the image is missing and does not leave a text-only post", async () => {

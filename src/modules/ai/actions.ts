@@ -112,6 +112,19 @@ export async function disconnectAiProvider(_prev: AiFormState, formData: FormDat
   }
 }
 
+export async function checkVisualModels(_prev: AiFormState, formData: FormData): Promise<AiFormState> {
+  try {
+    const result = await createAiService(prisma).checkVisualModels(
+      await requireUserId(),
+      readField(formData, "workspaceId"),
+    );
+    return { status: "success", message: result.message };
+  } catch (error) {
+    const message = error instanceof AccessError ? error.message : "Не удалось проверить модели.";
+    return { status: "invalid", message };
+  }
+}
+
 export async function composeAgentPost(_prev: AiFormState, formData: FormData): Promise<AiFormState> {
   try {
     const result = await createAiService(prisma).composeAgentPost(
@@ -123,6 +136,9 @@ export async function composeAgentPost(_prev: AiFormState, formData: FormData): 
         length: readField(formData, "length"),
         platform: readField(formData, "platform"),
         projectId: readField(formData, "projectId"),
+        visualKind: readField(formData, "visualKind"),
+        visualAspect: readField(formData, "visualAspect"),
+        visualPrompt: readField(formData, "visualPrompt"),
       },
     );
     revalidatePath("/app/ai");

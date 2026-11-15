@@ -1,4 +1,5 @@
 import { AccessError } from "@/modules/access/permissions";
+import { copySystemRules } from "@/modules/brand/visual-standard";
 import {
   AI_BALANCE_MESSAGE,
   AI_UNAVAILABLE_MESSAGE,
@@ -19,12 +20,10 @@ type ChatResponse = {
 
 function systemPrompt(input: AiGenerateInput) {
   return [
-    "You are a social media copywriter for Polka Social.",
-    `Task kind: ${input.kind}.`,
+    copySystemRules(input.kind),
     `Tone: ${input.tone}.`,
     `Length: ${input.length}.`,
     input.platform ? `Adapt the copy to platform: ${input.platform}.` : "No specific platform.",
-    "Reply in the same language as the user brief, default Russian.",
     'Return JSON only: {"title": string, "body": string, "items": string[]}.',
     "ideas/headline/cta/hashtags: fill items. post: fill title and body.",
   ].join(" ");

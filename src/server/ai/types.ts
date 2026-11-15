@@ -26,7 +26,8 @@ export type AiGenerateOutput = {
   outputTokens?: number;
 };
 
-export type AiImageSize = "1024x1024";
+export const aiImageSizes = ["1024x1024", "1024x1536", "1536x1024"] as const;
+export type AiImageSize = (typeof aiImageSizes)[number];
 
 export type AiImageInput = {
   prompt: string;
