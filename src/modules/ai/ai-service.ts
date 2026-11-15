@@ -340,7 +340,7 @@ export function createAiService(
       if (request.kind === WATCH_IDEAS_KIND) {
         throw new AccessError(
           400,
-          "Идею в пост отправляйте со страницы наблюдения VK кнопкой «В агент: пост и визуал». Из истории текст не копируется.",
+          "Идею в пост отправляйте со страницы наблюдения VK кнопкой «В бриф: пост + визуал». Из истории текст не копируется.",
         );
       }
       const publicRequest = toPublic(request);

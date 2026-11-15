@@ -30,21 +30,29 @@ export type AiHistoryItem = {
 function BriefFields({
   defaultPrompt = "",
   defaultPlatform = "telegram",
+  textareaId,
+  highlight = false,
 }: {
   defaultPrompt?: string;
   defaultPlatform?: string;
+  textareaId?: string;
+  highlight?: boolean;
 }) {
   return (
     <>
       <label className="grid gap-2 text-sm font-medium text-ink">
         Бриф
         <textarea
+          id={textareaId}
           name="prompt"
           required
           minLength={3}
           defaultValue={defaultPrompt}
+          autoFocus={highlight}
           placeholder="О чём написать: борщ, весеннее меню, скидка на доставку..."
-          className="min-h-32 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
+          className={`min-h-32 rounded-2xl border bg-white px-4 py-3 text-base font-normal ${
+            highlight ? "border-brand-dark ring-2 ring-brand-dark/20" : "border-ink/10"
+          }`}
         />
       </label>
       <div className="grid gap-4 md:grid-cols-3">
@@ -128,6 +136,17 @@ export function AiStudio({
     }
   }, [agentState.postId, agentState.status, router]);
 
+  useEffect(() => {
+    if (!defaultPrompt) {
+      return;
+    }
+    const node = document.getElementById("agent-brief");
+    node?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (node instanceof HTMLTextAreaElement) {
+      node.focus();
+    }
+  }, [defaultPrompt]);
+
   return (
     <div className="grid gap-6">
       <Card className="grid gap-4 ring-2 ring-brand-dark/15">
@@ -162,10 +181,21 @@ export function AiStudio({
             Выберите проект в шапке кабинета. Агент кладёт черновик только в активный проект.
           </StatusBanner>
         ) : null}
+        {defaultPrompt ? (
+          <StatusBanner tone="success">
+            Идея уже в брифе. Отредактируйте текст, тон, длину и площадку — пост появится только после кнопки «Создать
+            пост с визуалом».
+          </StatusBanner>
+        ) : null}
         <form action={agentAction} className="grid gap-4">
           <input type="hidden" name="workspaceId" value={workspaceId} />
           {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
-          <BriefFields defaultPrompt={defaultPrompt} defaultPlatform={defaultPlatform} />
+          <BriefFields
+            defaultPrompt={defaultPrompt}
+            defaultPlatform={defaultPlatform}
+            textareaId="agent-brief"
+            highlight={Boolean(defaultPrompt)}
+          />
           {agentState.message ? (
             <StatusBanner tone={agentState.status === "success" ? "success" : "warning"}>{agentState.message}</StatusBanner>
           ) : null}
@@ -276,7 +306,7 @@ export function AiStudio({
               </p>
               {item.kind === "watch_ideas" ? (
                 <p className="text-sm text-ink/70">
-                  Идею в пост отправляйте со страницы наблюдения кнопкой «В агент: пост и визуал».
+                  Идею в пост отправляйте со страницы наблюдения кнопкой «В бриф: пост + визуал».
                   <span className="mt-3 block">
                     <ButtonLink href="/app/watch" variant="secondary">
                       К идеям VK

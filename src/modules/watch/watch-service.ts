@@ -4,6 +4,7 @@ import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions"
 import { createAccessService } from "@/modules/access/access-service";
 import { createAiService, type PublicAiRequest } from "@/modules/ai/ai-service";
 import { parseVkCommunitySource } from "@/modules/watch/parse";
+import { ideaToAgentPrompt } from "@/modules/watch/prompt";
 import { RECOMMENDED_WATCH_COMMUNITIES } from "@/modules/watch/recommended";
 import { decryptToken, encryptToken } from "@/server/crypto/token-cipher";
 import {
@@ -111,21 +112,7 @@ function summarizePosts(posts: WatchedPost[]) {
     .join("\n\n---\n\n");
 }
 
-export function ideaToAgentPrompt(item: string) {
-  const [titlePart, why, hook] = item.split("||").map((part) => part.trim());
-  const title = titlePart || "Идея из VK";
-  return [
-    "Напиши готовый пост на стену ВКонтакте для сообщества «Дом по полочкам».",
-    "Это бриф идеи, а не готовый текст: раскрой тему своими словами.",
-    "Не копируй чужие посты, не обещай скидки, охваты и что материал уже опубликован.",
-    `Тема: ${title}`,
-    why ? `Почему сейчас: ${why}` : "",
-    hook ? `Хук первой строки: ${hook}` : "",
-    `Исходная идея: ${item}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
+export { ideaToAgentPrompt };
 
 export function createWatchService(
   db: PrismaClient,

@@ -71,7 +71,13 @@ export default async function AiPage({
             createdAt: item.createdAt.toISOString(),
           }))}
           defaultPrompt={typeof params.prompt === "string" ? params.prompt : ""}
-          defaultPlatform={params.platform === "vk" || params.platform === "telegram" ? params.platform : "telegram"}
+          defaultPlatform={
+            params.platform === "vk" || params.platform === "telegram"
+              ? params.platform
+              : params.prompt
+                ? "vk"
+                : "telegram"
+          }
         />
       </Container>
     </>
