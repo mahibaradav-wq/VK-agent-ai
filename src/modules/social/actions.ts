@@ -72,7 +72,7 @@ export async function connectVk(_prev: SocialFormState, formData: FormData): Pro
     revalidateSocial();
     return {
       status: "success",
-      message: `ВКонтакте подключено как ${account.displayName}. Ключ сохранён в зашифрованном виде. Публикация идёт wall.post на стену этого сообщества.`,
+      message: `ВКонтакте подключено как ${account.displayName}. Ключ сохранён в зашифрованном виде. Текст и фото уходят wall.post на стену этого сообщества.`,
     };
   } catch (error) {
     const message = error instanceof AccessError ? error.message : "Не удалось подключить ВКонтакте.";

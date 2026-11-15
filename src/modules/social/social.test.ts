@@ -1,3 +1,7 @@
+import { mkdtemp } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { AccessError } from "@/modules/access/permissions";
@@ -7,6 +11,7 @@ import { createCollaborationService } from "@/modules/collaboration/collaboratio
 import { createPostService } from "@/modules/posts/post-service";
 import { createProjectService } from "@/modules/projects/project-service";
 import { createPublishService } from "@/modules/publishing/publish-service";
+import { createMediaService } from "@/modules/media/media-service";
 import { createSocialService } from "@/modules/social/social-service";
 import { createWorkspaceService } from "@/modules/workspaces/workspace-service";
 import { prisma } from "@/server/db/prisma";
@@ -14,7 +19,8 @@ import { createInlineQueue } from "@/server/queue";
 import { createTelegramAdapter } from "@/server/social/telegram-adapter";
 import { createVkAdapter } from "@/server/social/vk-adapter";
 import { isTelegramBotToken, type TelegramApiResult, type TelegramTransport } from "@/server/social/telegram-api";
-import type { VkApiResult, VkTransport } from "@/server/social/vk-api";
+import type { VkApiResult, VkTransport, VkWallUploadFile } from "@/server/social/vk-api";
+import { createLocalStorage } from "@/server/storage/local-storage";
 
 const auth = createAuthService(prisma, "http://localhost:3000");
 const posts = createPostService(prisma);
@@ -29,6 +35,10 @@ async function approveCurrent(owner: { userId: string; workspaceId: string }, po
 
 const BOT_TOKEN = "123456789:AAExampleTokenForTestsAbcdefghijkl";
 const VK_COMMUNITY_TOKEN = `vk1.a.${"C".repeat(80)}`;
+const png = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
 
 function email(label: string) {
   return `${label}.${Date.now()}.${Math.random().toString(16).slice(2)}@example.test`;
@@ -60,10 +70,12 @@ async function registerOwner(label: string) {
 
 function scriptedVk(
   handlers: Record<string, VkApiResult<unknown> | ((params: Record<string, string | number>) => VkApiResult<unknown>)>,
-): VkTransport & { methods: string[] } {
+): VkTransport & { methods: string[]; uploads: VkWallUploadFile[] } {
   const methods: string[] = [];
+  const uploads: VkWallUploadFile[] = [];
   return {
     methods,
+    uploads,
     async call(_token, method, params = {}) {
       methods.push(method);
       const handler = handlers[method];
@@ -71,6 +83,11 @@ function scriptedVk(
         return { ok: false, error_code: 3, error_msg: `unexpected ${method}` };
       }
       return typeof handler === "function" ? handler(params) : handler;
+    },
+    async uploadWallPhoto(_uploadUrl, file) {
+      methods.push("uploadWallPhoto");
+      uploads.push(file);
+      return { ok: true, response: { server: 9, photo: "[uploaded-photo]", hash: "wall-hash" } };
     },
   };
 }
@@ -99,9 +116,11 @@ describe("social platform research", () => {
 
 describe("social accounts", () => {
   const previousKey = process.env.TOKEN_ENCRYPTION_KEY;
+  let storageDir = "";
 
   beforeAll(async () => {
     process.env.TOKEN_ENCRYPTION_KEY = "stage8-social-tests";
+    storageDir = await mkdtemp(path.join(os.tmpdir(), "polka-vk-media-"));
     await prisma.$connect();
   });
 
@@ -352,6 +371,8 @@ describe("social accounts", () => {
         }
         expect(params.owner_id).toBe(-242155421);
         expect(params.from_group).toBe(1);
+        expect(String(params.message)).not.toMatch(/publish_media|не прикреплено/);
+        expect(params.attachments).toBeUndefined();
         return { ok: true, response: { post_id: 77 } };
       },
     });
@@ -373,6 +394,8 @@ describe("social accounts", () => {
     expect(connected.platform).toBe("vk");
     expect(connected.externalId).toBe("242155421");
     expect(connected.displayName).toBe("ДОМ по полочкам");
+    expect(connected.capabilities.some((item) => item.name === "publish_text" && item.enabled)).toBe(true);
+    expect(connected.capabilities.some((item) => item.name === "publish_media" && item.enabled)).toBe(true);
     expect(JSON.stringify(connected)).not.toContain(VK_COMMUNITY_TOKEN);
 
     const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Полки");
@@ -393,6 +416,113 @@ describe("social accounts", () => {
     expect(stored.status).toBe("published");
     expect(stored.targets[0]?.externalId).toBe("77");
     expect(transport.methods.filter((method) => method === "wall.post")).toHaveLength(2);
+  });
+
+  it("uploads wall photos and attaches them to wall.post", async () => {
+    const owner = await registerOwner("soc-vk-media");
+    const transport = scriptedVk({
+      "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
+      "photos.getWallUploadServer": (params) => {
+        expect(params.group_id).toBe(242155421);
+        return { ok: true, response: { upload_url: "https://upload.vk.test/wall" } };
+      },
+      "photos.saveWallPhoto": (params) => {
+        expect(params.group_id).toBe(242155421);
+        expect(params.photo).toBe("[uploaded-photo]");
+        return { ok: true, response: [{ id: 501, owner_id: -242155421 }] };
+      },
+      "wall.post": (params) => {
+        if (!String(params.message ?? "").trim()) {
+          return { ok: false, error_code: 100, error_msg: "message is empty" };
+        }
+        expect(params.attachments).toBe("photo-242155421_501");
+        expect(String(params.message)).toContain("Разложили специи.");
+        expect(String(params.message)).not.toMatch(/не прикреплено|publish_media/);
+        return { ok: true, response: { post_id: 88 } };
+      },
+    });
+    const social = createSocialService(prisma, { vk: transport });
+    await social.connectVk(owner.userId, owner.workspaceId, {
+      token: VK_COMMUNITY_TOKEN,
+      source: "https://vk.com/club242155421",
+    });
+    const media = createMediaService(prisma, createLocalStorage(storageDir));
+    const asset = await media.upload(owner.userId, owner.workspaceId, {
+      filename: "cover.png",
+      declaredType: "image/png",
+      bytes: png,
+    });
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Полки");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Полки",
+      body: "Разложили специи.",
+      platforms: ["vk"],
+      mediaIds: [asset.id],
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createVkAdapter({ db: prisma, transport, storage: createLocalStorage(storageDir) }) },
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-vk-media");
+    const stored = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, include: { targets: true } });
+    expect(stored.status).toBe("published");
+    expect(stored.targets[0]?.externalId).toBe("88");
+    expect(transport.uploads).toHaveLength(1);
+    expect(transport.uploads[0]?.filename).toBe("photo.png");
+    expect(transport.methods).toEqual([
+      "groups.getById",
+      "wall.post",
+      "photos.getWallUploadServer",
+      "uploadWallPhoto",
+      "photos.saveWallPhoto",
+      "wall.post",
+    ]);
+  });
+
+  it("fails a media publish when the community key cannot upload photos", async () => {
+    const owner = await registerOwner("soc-vk-nophoto");
+    const transport = scriptedVk({
+      "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
+      "photos.getWallUploadServer": { ok: false, error_code: 200, error_msg: "Access denied" },
+      "wall.post": (params) => {
+        if (!String(params.message ?? "").trim()) {
+          return { ok: false, error_code: 100, error_msg: "message is empty" };
+        }
+        throw new Error("wall.post must not run after a photo upload failure");
+      },
+    });
+    const social = createSocialService(prisma, { vk: transport });
+    await social.connectVk(owner.userId, owner.workspaceId, {
+      token: VK_COMMUNITY_TOKEN,
+      source: "https://vk.com/club242155421",
+    });
+    const media = createMediaService(prisma, createLocalStorage(storageDir));
+    const asset = await media.upload(owner.userId, owner.workspaceId, {
+      filename: "cover.png",
+      declaredType: "image/png",
+      bytes: png,
+    });
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Полки");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Полки",
+      body: "Разложили специи.",
+      platforms: ["vk"],
+      mediaIds: [asset.id],
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createVkAdapter({ db: prisma, transport, storage: createLocalStorage(storageDir) }) },
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-vk-nophoto");
+    const attempt = await prisma.publishAttempt.findFirstOrThrow({ where: { jobId: job.id } });
+    expect(attempt.kind).toBe("permanent_failure");
+    expect(attempt.errorCode).toBe("vk_200");
+    expect(attempt.errorMessage).toMatch(/Фотографии/);
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).not.toBe("published");
   });
 
   it("rejects a VK key that cannot write the community wall", async () => {
