@@ -64,7 +64,7 @@ export default async function AppHomePage() {
       detail:
         accounts > 0
           ? `Подключено аккаунтов: ${accounts}.`
-          : "Telegram Bot API — без токена публикация не имитируется. VK пока не подключается.",
+          : "Telegram-канал t.me/dom_po_polochkam и стена ВК. Без ключа публикация не имитируется.",
     },
     {
       done: Boolean(ai?.ready),

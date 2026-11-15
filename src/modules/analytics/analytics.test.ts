@@ -51,9 +51,13 @@ function scriptedTelegram(
     calls,
     async request(token, method) {
       calls.push({ method, token });
-      return typeof script === "function"
-        ? script(method)
-        : (script[method] ?? { ok: false, error_code: 400, description: "unexpected method" });
+      if (typeof script === "function") {
+        return script(method);
+      }
+      if (method === "getChatMember" && script.getChatMember === undefined) {
+        return { ok: true, result: { status: "administrator" } };
+      }
+      return script[method] ?? { ok: false, error_code: 400, description: "unexpected method" };
     },
   };
 }

@@ -33,8 +33,20 @@ export type TelegramMessage = {
   chat?: TelegramChat;
 };
 
+export type TelegramFilePart = {
+  field: string;
+  filename: string;
+  mimeType: string;
+  bytes: Uint8Array;
+};
+
 export type TelegramTransport = {
-  request: (token: string, method: string, body?: Record<string, unknown>) => Promise<TelegramApiResult<unknown>>;
+  request: (
+    token: string,
+    method: string,
+    body?: Record<string, unknown>,
+    file?: TelegramFilePart,
+  ) => Promise<TelegramApiResult<unknown>>;
 };
 
 type TelegramJson = {
@@ -55,14 +67,30 @@ export function createTelegramFetch(): typeof fetch {
 
 export function createTelegramTransport(fetchImpl: typeof fetch = createTelegramFetch()): TelegramTransport {
   return {
-    async request(token, method, body) {
+    async request(token, method, body, file) {
       try {
-        const response = await fetchImpl(`${telegramApiRoot()}/bot${token}/${method}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: body ? JSON.stringify(body) : undefined,
-          signal: AbortSignal.timeout(12_000),
-        });
+        const url = `${telegramApiRoot()}/bot${token}/${method}`;
+        const response = file
+          ? await fetchImpl(url, {
+              method: "POST",
+              body: (() => {
+                const form = new FormData();
+                for (const [key, value] of Object.entries(body ?? {})) {
+                  if (value !== undefined && value !== null) {
+                    form.set(key, String(value));
+                  }
+                }
+                form.set(file.field, new Blob([Buffer.from(file.bytes)], { type: file.mimeType }), file.filename);
+                return form;
+              })(),
+              signal: AbortSignal.timeout(20_000),
+            })
+          : await fetchImpl(url, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: body ? JSON.stringify(body) : undefined,
+              signal: AbortSignal.timeout(12_000),
+            });
         const json = (await response.json()) as TelegramJson;
         if (json.ok) {
           return { ok: true, result: json.result };
