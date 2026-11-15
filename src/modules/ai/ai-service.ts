@@ -120,11 +120,11 @@ export function createAiService(
   const monthlyLimit = options?.monthlyLimit ?? Number(process.env.AI_MONTHLY_LIMIT ?? DEFAULT_MONTHLY_LIMIT);
   const now = options?.now ?? (() => new Date());
 
-  async function providerFor(workspaceId: string) {
+  async function providerFor(workspaceId: string, role: "ideas" | "copy" | "image" = "copy") {
     if (injected) {
       return injected;
     }
-    return connections.resolveProvider(workspaceId);
+    return connections.resolveProvider(workspaceId, role);
   }
 
   async function loadBoundRequest(workspaceId: string, requestId: string) {
@@ -158,16 +158,23 @@ export function createAiService(
     },
 
     async workspaceStatus(userId: string, workspaceId: string) {
-      const connection = await connections.get(userId, workspaceId);
-      const provider = await providerFor(workspaceId);
+      const workspace = await connections.get(userId, workspaceId);
+      const copy = await providerFor(workspaceId, "copy");
+      const image = await providerFor(workspaceId, "image");
+      const ideas = await providerFor(workspaceId, "ideas");
       return {
-        ready: provider.ready,
-        imageReady: provider.imageReady,
+        ready: copy.ready || ideas.ready,
+        imageReady: image.imageReady,
         storageReady: storageDriver.ready,
-        provider: provider.name,
-        model: provider.ready ? provider.model : "не настроен",
-        imageModel: provider.imageReady ? provider.imageModel : "не настроен",
-        connection,
+        provider: copy.name,
+        model: copy.ready ? copy.model : "не настроен",
+        imageModel: image.imageReady ? image.imageModel : "не настроен",
+        ideasProvider: ideas.name,
+        copyProvider: copy.name,
+        imageProvider: image.name,
+        connection: workspace.copy,
+        connections: workspace.connections,
+        roles: { ideas: workspace.ideas, copy: workspace.copy, image: workspace.image },
       };
     },
 
@@ -205,11 +212,14 @@ export function createAiService(
         const project = await db.project.findUnique({ where: { id: input.projectId } });
         assertWorkspaceBound(workspaceId, project, "Проект");
       }
-      const provider = await providerFor(workspaceId);
+      const role = kind === "ideas" ? "ideas" : "copy";
+      const provider = await providerFor(workspaceId, role);
       if (!provider.ready) {
         throw new AccessError(
           400,
-          "Генерация недоступна: подключите ChatGPT, DeepSeek или Qwen. Это не ответ модели.",
+          role === "ideas"
+            ? "Идеи недоступны: подключите DeepSeek. Это не ответ модели."
+            : "Генерация текста недоступна: подключите ChatGPT. Это не ответ модели.",
         );
       }
 
@@ -308,17 +318,18 @@ export function createAiService(
       const length = parseLength(input.length ?? "");
       const platform = input.platform ? parsePlatforms([input.platform])[0] ?? "" : "";
 
-      const provider = await providerFor(workspaceId);
-      if (!provider.ready) {
+      const copy = await providerFor(workspaceId, "copy");
+      const imageProvider = await providerFor(workspaceId, "image");
+      if (!copy.ready) {
         throw new AccessError(
           400,
-          "Генерация поста и визуала недоступна: подключите ChatGPT или Qwen. Это не ответ модели.",
+          "Генерация поста недоступна: подключите ChatGPT. Это не ответ модели.",
         );
       }
-      if (!provider.imageReady) {
+      if (!imageProvider.imageReady) {
         throw new AccessError(
           400,
-          "Этот провайдер не генерирует картинки. Для визуала подключите ChatGPT или Qwen.",
+          "Для визуала подключите ChatGPT или Qwen. DeepSeek картинки не рисует.",
         );
       }
       if (!storageDriver.ready) {
@@ -341,7 +352,7 @@ export function createAiService(
       );
 
       try {
-        const generated = await provider.generate({
+        const generated = await copy.generate({
           kind: "post",
           prompt,
           tone,
@@ -350,7 +361,7 @@ export function createAiService(
         });
         const title = generated.title.trim() || "Черновик агента";
         const body = generated.body.trim() || prompt;
-        const image = await provider.generateImage({
+        const image = await imageProvider.generateImage({
           prompt: imagePromptFromCopy(prompt, title, body),
         });
         const asset = await media.upload(userId, workspaceId, {

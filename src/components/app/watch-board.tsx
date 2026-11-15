@@ -168,13 +168,13 @@ export function WatchBoard({
       <Card className="grid gap-3">
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Собрать идеи для ВК</p>
         <p className="text-sm text-ink/70">
-          Агент читает стены наблюдаемых сообществ и предлагает темы для стены «Дом по полочкам». Чужие тексты не
-          копируются, во ВК ничего не публикуется.
+          DeepSeek читает стены наблюдаемых сообществ и предлагает темы для «Дом по полочкам». Тексты готового поста и
+          визуал пишет ChatGPT. Чужие тексты не копируются.
         </p>
-        {aiProvider === "openai" ? (
+        {aiProvider !== "deepseek" ? (
           <StatusBanner tone="warning">
-            ChatGPT с этого сервера OpenAI не обслуживает (регион VPS). Ключ сохранён, но идеи через него не придут.
-            Подключите DeepSeek в разделе AI — он открывается напрямую.
+            Для идей нужен DeepSeek. ChatGPT остаётся для постов и картинок: с этого VPS OpenAI часто не открывается.
+            Подключите DeepSeek в разделе AI.
             <span className="mt-3 block">
               <ButtonLink href="/app/ai" variant="secondary">
                 Подключить DeepSeek

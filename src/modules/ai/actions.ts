@@ -95,12 +95,17 @@ export async function connectAiProvider(_prev: AiFormState, formData: FormData):
 
 export async function disconnectAiProvider(_prev: AiFormState, formData: FormData): Promise<AiFormState> {
   try {
+    const provider = readField(formData, "provider");
     await createAiConnectionService(prisma).disconnect(
       await requireUserId(),
       readField(formData, "workspaceId"),
+      provider || undefined,
     );
     revalidatePath("/app/ai");
-    return { status: "success", message: "AI-провайдер отключён. Генерация больше не имитируется." };
+    return {
+      status: "success",
+      message: provider ? `${provider} отключён.` : "AI-провайдер отключён. Генерация больше не имитируется.",
+    };
   } catch (error) {
     const message = error instanceof AccessError ? error.message : "Не удалось отключить AI.";
     return { status: "invalid", message };

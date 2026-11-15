@@ -74,7 +74,7 @@ describe("AI provider connection", () => {
     expect(calls[0]).toContain("/models");
 
     const stored = await prisma.workspaceAiConnection.findUniqueOrThrow({
-      where: { workspaceId: owner.workspaceId },
+      where: { workspaceId_provider: { workspaceId: owner.workspaceId, provider: "openai" } },
     });
     expect(stored.encryptedApiKey).not.toContain("sk-test-secret-key");
 
@@ -154,8 +154,83 @@ describe("AI provider connection", () => {
         projectId: owner.projectId,
       }),
       400,
-      /не генерирует картинки/,
+      /Для визуала подключите ChatGPT/,
     );
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
+  });
+
+  it("keeps DeepSeek for ideas and ChatGPT for copy plus visuals", async () => {
+    const owner = await registerOwner("ai-split");
+    const hosts: string[] = [];
+    const connections = createAiConnectionService(prisma, {
+      envProvider: createUnconfiguredAiProvider(),
+      fetchImpl: async (url, init) => {
+        hosts.push(String(url));
+        if (String(init?.method ?? "GET").toUpperCase() === "GET") {
+          return new Response(JSON.stringify({ data: [] }), { status: 200 });
+        }
+        if (String(url).includes("/images/generations")) {
+          return new Response(
+            JSON.stringify({
+              data: [
+                {
+                  b64_json:
+                    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=",
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            model: String(url).includes("deepseek") ? "deepseek-chat" : "gpt-4o-mini",
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    title: String(url).includes("deepseek") ? "Идея DeepSeek" : "Пост ChatGPT",
+                    body: "Текст",
+                    items: ["один"],
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      },
+    });
+
+    await connections.connect(owner.userId, owner.workspaceId, {
+      provider: "deepseek",
+      apiKey: "sk-deepseek-secret-key",
+    });
+    await connections.connect(owner.userId, owner.workspaceId, {
+      provider: "openai",
+      apiKey: "sk-openai-secret-key",
+    });
+    expect(await prisma.workspaceAiConnection.count({ where: { workspaceId: owner.workspaceId } })).toBe(2);
+
+    const ai = createAiService(prisma, { connections });
+    const status = await ai.workspaceStatus(owner.userId, owner.workspaceId);
+    expect(status.ideasProvider).toBe("deepseek");
+    expect(status.copyProvider).toBe("openai");
+    expect(status.imageProvider).toBe("openai");
+
+    const ideas = await ai.generate(owner.userId, owner.workspaceId, {
+      kind: "ideas",
+      prompt: "темы для полки",
+    });
+    expect(ideas.provider).toBe("deepseek");
+    expect(ideas.title).toBe("Идея DeepSeek");
+
+    const post = await ai.generate(owner.userId, owner.workspaceId, {
+      kind: "post",
+      prompt: "текст для полки",
+    });
+    expect(post.provider).toBe("openai");
+    expect(post.title).toBe("Пост ChatGPT");
+    expect(JSON.stringify({ ideas, post, status })).not.toMatch(/sk-deepseek-secret-key|sk-openai-secret-key/);
   });
 });
