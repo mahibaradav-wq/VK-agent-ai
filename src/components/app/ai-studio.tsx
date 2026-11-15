@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StatusBanner } from "@/components/ui/status-banner";
+import { VisualStudio } from "@/components/app/visual-studio";
 import { applyAiToPost, composeAgentPost, generateAi, type AiFormState } from "@/modules/ai/actions";
 import { aiKinds, aiLengths, aiTones, displayKind, kindLabels, lengthLabels, toneLabels } from "@/modules/ai/kinds";
 import { previewPlatforms } from "@/modules/posts/platforms";
@@ -128,6 +129,7 @@ export function AiStudio({
   const router = useRouter();
   const [state, formAction, pending] = useActionState(generateAi, idle);
   const [agentState, agentAction, agentPending] = useActionState(composeAgentPost, idle);
+  const [visualLive, setVisualLive] = useState(true);
   const agentReady = ready && imageReady && storageReady;
 
   useEffect(() => {
@@ -196,11 +198,23 @@ export function AiStudio({
             textareaId="agent-brief"
             highlight={Boolean(defaultPrompt)}
           />
+          <VisualStudio
+            workspaceId={workspaceId}
+            briefTextareaId="agent-brief"
+            defaultPlatform={defaultPlatform}
+            imageReady={imageReady}
+            storageReady={storageReady}
+            imageModel={imageModel}
+            used={used}
+            limit={limit}
+            pending={agentPending}
+            onLiveChange={setVisualLive}
+          />
           {agentState.message ? (
             <StatusBanner tone={agentState.status === "success" ? "success" : "warning"}>{agentState.message}</StatusBanner>
           ) : null}
           {canGenerate && projectId ? (
-            <Button disabled={agentPending || !agentReady}>
+            <Button disabled={agentPending || !agentReady || !visualLive}>
               {agentPending ? "Агент пишет и рисует..." : "Создать пост с визуалом"}
             </Button>
           ) : (

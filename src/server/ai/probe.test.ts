@@ -22,6 +22,16 @@ describe("AI key probe", () => {
     } satisfies Partial<AccessError>);
   });
 
+  it("returns catalog ids without spending a generation", async () => {
+    const result = await probeAiApiKey({
+      apiKey: "sk-test-openai-key",
+      baseUrl: "https://api.openai.com/v1",
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ data: [{ id: "gpt-4o-mini" }, { id: "gpt-image-1.5" }] }), { status: 200 }),
+    });
+    expect(result.models).toEqual(["gpt-4o-mini", "gpt-image-1.5"]);
+  });
+
   it("fails fast when DashScope never answers", async () => {
     await expect(
       probeAiApiKey({

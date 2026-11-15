@@ -4,6 +4,7 @@ import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions"
 import { OPENAI_IMAGE_REGION_MESSAGE, OPENAI_REGION_MESSAGE, isOpenAiRegionError } from "@/server/ai/errors";
 import { createAccessService } from "@/modules/access/access-service";
 import { parseKind, parseLength, parseTone } from "@/modules/ai/kinds";
+import { imageSizeForAspect, parseVisualAspect, parseVisualKind, prepareVisualPrompt } from "@/modules/ai/visual";
 import { createAiConnectionService } from "@/modules/ai/provider-service";
 import { getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { getUsage, releaseUsage, reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
@@ -46,15 +47,25 @@ function extensionForMime(mime: string) {
   return "png";
 }
 
-function imagePromptFromCopy(brief: string, title: string, body: string) {
-  return [
-    "Create a square social-media photograph or illustration. No text, captions, watermarks, logos, or UI chrome.",
-    title ? `Topic: ${title}.` : "",
-    body ? `Context: ${body.slice(0, 400)}.` : "",
-    `User brief: ${brief.slice(0, 400)}.`,
-  ]
-    .filter(Boolean)
-    .join(" ");
+function visualPromptForCopy(input: {
+  brief: string;
+  title: string;
+  body: string;
+  visualKind: string;
+  visualAspect: string;
+  visualPrompt?: string;
+}) {
+  const prepared = input.visualPrompt?.trim();
+  if (prepared) {
+    return prepared;
+  }
+  return prepareVisualPrompt({
+    brief: input.brief,
+    kind: input.visualKind,
+    aspect: input.visualAspect,
+    title: input.title,
+    body: input.body,
+  });
 }
 
 const DEFAULT_MONTHLY_LIMIT = 50;
@@ -376,10 +387,45 @@ export function createAiService(
       return posts.get(userId, workspaceId, created.id);
     },
 
+    async checkVisualModels(userId: string, workspaceId: string) {
+      await access.requirePermission(userId, workspaceId, "ai.generate");
+      if (injected) {
+        return {
+          provider: injected.name,
+          imageModel: injected.imageModel,
+          reachable: injected.imageReady,
+          inCatalog: injected.imageReady,
+          message: injected.imageReady
+            ? `Генератор ${injected.name} · ${injected.imageModel}. Каталог не запрашивался, генерация не запускалась.`
+            : "Генератор картинок не подключён. Проверка каталога не запускает генерацию.",
+        };
+      }
+      const probe = await connections.probeImageModels(userId, workspaceId);
+      const catalogNote = probe.inCatalog
+        ? `модель ${probe.imageModel} есть в каталоге`
+        : `${probe.imageModel} в публичном каталоге может не отображаться`;
+      return {
+        provider: probe.provider,
+        imageModel: probe.imageModel,
+        reachable: probe.reachable,
+        inCatalog: probe.inCatalog,
+        message: `Каталог ${probe.label} ответил (${probe.modelCount} моделей): ${catalogNote}. Генерация не запускалась.`,
+      };
+    },
+
     async composeAgentPost(
       userId: string,
       workspaceId: string,
-      input: { prompt: string; tone?: string; length?: string; platform?: string; projectId: string },
+      input: {
+        prompt: string;
+        tone?: string;
+        length?: string;
+        platform?: string;
+        projectId: string;
+        visualKind?: string;
+        visualAspect?: string;
+        visualPrompt?: string;
+      },
     ) {
       await access.requirePermission(userId, workspaceId, "ai.generate");
       const prompt = input.prompt.trim();
@@ -395,6 +441,8 @@ export function createAiService(
       const tone = parseTone(input.tone ?? "");
       const length = parseLength(input.length ?? "");
       const platform = input.platform ? parsePlatforms([input.platform])[0] ?? "" : "";
+      const visualKind = parseVisualKind(input.visualKind ?? "image");
+      const visualAspect = parseVisualAspect(input.visualAspect ?? "", visualKind);
 
       const copy = await providerFor(workspaceId, "copy");
       const imageProvider = await providerFor(workspaceId, "image");
@@ -449,7 +497,15 @@ export function createAiService(
         const body = generated.body.trim() || prompt;
         const image = await callWithFallback(workspaceId, "image", (item) =>
           item.generateImage({
-            prompt: imagePromptFromCopy(prompt, title, body),
+            prompt: visualPromptForCopy({
+              brief: prompt,
+              title,
+              body,
+              visualKind,
+              visualAspect,
+              visualPrompt: input.visualPrompt,
+            }),
+            size: imageSizeForAspect(visualAspect),
           }),
         );
         const asset = await media.upload(userId, workspaceId, {

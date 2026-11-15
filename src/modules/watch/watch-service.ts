@@ -488,6 +488,8 @@ export function createWatchService(
         tone: "friendly",
         length: "medium",
         platform: "vk",
+        visualKind: "image",
+        visualAspect: "4:5",
         projectId,
       });
       const remaining = items.filter((_, index) => index !== itemIndex);
