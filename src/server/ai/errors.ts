@@ -1,8 +1,8 @@
 export const OPENAI_REGION_MESSAGE =
-  "OpenAI не обслуживает регион этого сервера. Ключ не виноват и в ответ не попадает. Для текста подключите DeepSeek в разделе AI — он открывается напрямую. Это не замена ответа модели.";
+  "OpenAI не обслуживает регион этого сервера. Ключ не виноват и в ответ не попадает. ChatGPT нужен хостинг в ЕС — этот продукт уже работает с Amsterdam. Это не замена ответа модели.";
 
 export const OPENAI_IMAGE_REGION_MESSAGE =
-  "ChatGPT с этого сервера в РФ картинки не рисует. Ключ не виноват. Подключите Qwen для визуала. Этот VPS SpaceWeb нельзя перенести в другую страну с этой машины — для ChatGPT нужен хостинг в ЕС или США.";
+  "ChatGPT с этого IP картинки не рисует. Ключ не виноват. Нужен сервер вне РФ (этот продукт уже на Amsterdam). Это не замена картинки.";
 
 export function isOpenAiRegionError(error: unknown) {
   return (
@@ -11,16 +11,10 @@ export function isOpenAiRegionError(error: unknown) {
   );
 }
 
-export const QWEN_KEY_REGION_MESSAGE =
-  "Ключ Qwen не принят китайским DashScope (Пекин). Возьмите ключ в 百炼 bailian.console.aliyun.com, регион Китай — Пекин. Ключ из международной Model Studio (Сингапур) с этого сервера не открывается.";
-
-export const QWEN_UNAVAILABLE_MESSAGE =
-  "Qwen (DashScope) с этого сервера не открылся. Нужен ключ 百炼, регион Пекин. Сингапурский endpoint с VPS в РФ недоступен. Ключ в ответ не попадает.";
-
 export const AI_UNAVAILABLE_MESSAGE = "Провайдер AI недоступен. Это не замена ответа модели.";
 
 export const AI_BALANCE_MESSAGE =
-  "На счёте AI-провайдера нет средств. Пополните баланс (DeepSeek: platform.deepseek.com). Это не замена ответа модели.";
+  "На счёте ChatGPT нет средств. Пополните баланс на platform.openai.com. Это не замена ответа модели.";
 
 export function isOpenAiRegionBlock(body: string) {
   return body.includes("unsupported_country_region_territory");

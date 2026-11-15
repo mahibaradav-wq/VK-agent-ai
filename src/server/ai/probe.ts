@@ -1,11 +1,5 @@
 import { AccessError } from "@/modules/access/permissions";
-import {
-  AI_UNAVAILABLE_MESSAGE,
-  OPENAI_REGION_MESSAGE,
-  QWEN_KEY_REGION_MESSAGE,
-  QWEN_UNAVAILABLE_MESSAGE,
-  isOpenAiRegionBlock,
-} from "@/server/ai/errors";
+import { AI_UNAVAILABLE_MESSAGE, OPENAI_REGION_MESSAGE, isOpenAiRegionBlock } from "@/server/ai/errors";
 import { createAiFetch } from "@/server/http/outbound-fetch";
 
 const PROBE_TIMEOUT_MS = 8_000;
@@ -30,7 +24,7 @@ export async function probeAiApiKey(options: {
       signal: AbortSignal.timeout(options.timeoutMs ?? PROBE_TIMEOUT_MS),
     });
   } catch {
-    throw new AccessError(400, options.provider === "qwen" ? QWEN_UNAVAILABLE_MESSAGE : AI_UNAVAILABLE_MESSAGE);
+    throw new AccessError(400, AI_UNAVAILABLE_MESSAGE);
   }
 
   if (response.status === 401 || response.status === 403) {
@@ -38,12 +32,7 @@ export async function probeAiApiKey(options: {
     if (isOpenAiRegionBlock(body)) {
       throw new AccessError(400, OPENAI_REGION_MESSAGE);
     }
-    throw new AccessError(
-      400,
-      options.provider === "qwen"
-        ? QWEN_KEY_REGION_MESSAGE
-        : "Провайдер отклонил ключ. Нужен API-ключ, не пароль от чата.",
-    );
+    throw new AccessError(400, "Провайдер отклонил ключ. Нужен API-ключ, не пароль от чата.");
   }
   if (!response.ok) {
     throw new AccessError(400, `Провайдер AI вернул ошибку ${response.status}. Ключ в ответ не попадает.`);

@@ -1,4 +1,4 @@
-export const aiProviderIds = ["openai", "deepseek", "qwen"] as const;
+export const aiProviderIds = ["openai"] as const;
 export type AiProviderId = (typeof aiProviderIds)[number];
 
 export type AiProviderSpec = {
@@ -26,32 +26,7 @@ export const aiProviderCatalog: AiProviderSpec[] = [
     keyUrl: "https://platform.openai.com/api-keys",
     keyHint: "Ключ с platform.openai.com, начинается с sk-. Пароль ChatGPT не подходит.",
     notes:
-      "Пишет посты (gpt-4o-mini) и рисует визуал (GPT Image). С VPS в РФ OpenAI может ответить unsupported_country.",
-  },
-  {
-    id: "deepseek",
-    label: "DeepSeek",
-    shortLabel: "DeepSeek",
-    baseUrl: "https://api.deepseek.com",
-    model: "deepseek-chat",
-    imageModel: "",
-    imageReady: false,
-    keyUrl: "https://platform.deepseek.com/api_keys",
-    keyHint: "Ключ с platform.deepseek.com, начинается с sk-.",
-    notes: "Ищет идеи по стенам ВК. Картинки не рисует — посты и визуал пишет ChatGPT.",
-  },
-  {
-    id: "qwen",
-    label: "Qwen (Квен)",
-    shortLabel: "Qwen",
-    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    model: "qwen-plus",
-    imageModel: "qwen-image-plus",
-    imageReady: true,
-    keyUrl: "https://bailian.console.aliyun.com/?tab=model#/api-key",
-    keyHint: "Ключ 百炼 (Пекин), начинается с sk-. Не пароль от чата и не ключ сингапурской Model Studio.",
-    notes:
-      "Пишет текст и рисует визуал. Ключ берите в китайском 百炼, регион Пекин. С этого VPS в РФ открывается только китайский DashScope; сингапурский Model Studio недоступен.",
+      "Ищет идеи, пишет посты (gpt-4o-mini) и рисует визуал (GPT Image). С IP в РФ OpenAI отвечает unsupported_country — этот сервер должен быть в ЕС.",
   },
 ];
 

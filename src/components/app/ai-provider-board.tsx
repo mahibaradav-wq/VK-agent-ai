@@ -81,10 +81,10 @@ export function AiProviderBoard({
     <Card className="grid gap-4">
       <div>
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Модели</p>
-        <h2 className="mt-2 text-2xl font-black text-ink">DeepSeek ищет идеи, Qwen рисует визуал</h2>
+        <h2 className="mt-2 text-2xl font-black text-ink">ChatGPT пишет идеи, посты и визуал</h2>
         <p className="mt-2 text-sm text-ink/70">
-          Ключ вставьте в карточку нужного провайдера, не в переписку: он шифруется на сервере. Пароль от чата не
-          принимается. ChatGPT с этого VPS в РФ картинки не рисует.
+          Один ключ OpenAI на сервере в ЕС: идеи по стенам ВК, текст поста и картинка. Ключ вставьте сюда, не в
+          переписку — он шифруется на сервере. Пароль от чата не принимается.
         </p>
       </div>
 
@@ -92,17 +92,17 @@ export function AiProviderBoard({
         <li>
           <span className="font-semibold text-ink">Идеи</span>
           {" — "}
-          {ideas.hasKey ? `${ideas.label} (${ideas.model})` : "подключите DeepSeek"}
+          {ideas.hasKey ? `${ideas.label} (${ideas.model})` : "подключите ChatGPT"}
         </li>
         <li>
           <span className="font-semibold text-ink">Тексты</span>
           {" — "}
-          {copy.hasKey ? `${copy.label} (${copy.model})` : "подключите DeepSeek или Qwen"}
+          {copy.hasKey ? `${copy.label} (${copy.model})` : "подключите ChatGPT"}
         </li>
         <li>
           <span className="font-semibold text-ink">Визуал</span>
           {" — "}
-          {image.imageReady ? `${image.label} (${image.imageModel})` : "подключите Qwen (百炼, Пекин)"}
+          {image.imageReady ? `${image.label} (${image.imageModel})` : "подключите ChatGPT"}
         </li>
       </ul>
 

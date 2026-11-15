@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { auth } from "@/auth";
 import { PageHeader } from "@/components/marketing/page-header";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { StatusBanner } from "@/components/ui/status-banner";
@@ -10,7 +10,6 @@ import { createPageMetadata } from "@/lib/metadata";
 import { getAppContext } from "@/modules/access/app-context";
 import { hasPermission } from "@/modules/access/permissions";
 import { createAiService } from "@/modules/ai/ai-service";
-import { createPost } from "@/modules/posts/actions";
 import { createStarterProjectIfMissing } from "@/modules/projects/project-service";
 import { prisma } from "@/server/db/prisma";
 
@@ -33,7 +32,6 @@ export default async function AppHomePage() {
     ({ activeMembership, activeProject, projects } = await getAppContext(session.user.id));
   }
 
-  const canCreatePost = activeMembership ? hasPermission(activeMembership.role, "post.create") : false;
   const [accounts, posts, ai] = activeMembership
     ? await Promise.all([
         prisma.socialAccount.count({ where: { workspaceId: activeMembership.workspaceId } }),
@@ -58,7 +56,7 @@ export default async function AppHomePage() {
     {
       done: posts > 0,
       title: "Первый черновик",
-      detail: posts > 0 ? `В проекте ${posts} публикаций.` : "Напишите пост вручную или через AI.",
+      detail: posts > 0 ? `В проекте ${posts} публикаций.` : "Напишите пост через ChatGPT: пост + визуал.",
     },
     {
       done: accounts > 0,
@@ -73,7 +71,7 @@ export default async function AppHomePage() {
       title: "AI-ассистент",
       detail: ai?.ready
         ? `Идеи: ${ai.ideasProvider}. Тексты: ${ai.copyProvider}${ai.imageReady ? `, визуал: ${ai.imageProvider}` : ""}.`
-        : "DeepSeek — идеи, ChatGPT — тексты и визуал. Без ключа генерация не имитируется.",
+        : "ChatGPT — идеи, тексты и визуал. Без ключа генерация не имитируется.",
     },
   ];
   const nextStep = steps.find((step) => !step.done);
@@ -120,17 +118,7 @@ export default async function AppHomePage() {
             <h2 className="mt-2 text-2xl font-black text-ink">{activeProject.name}</h2>
             <p className="mt-2 text-ink/70">{activeProject.description || "Описание не задано"}</p>
             <div className="mt-5 flex flex-wrap gap-3">
-              {canCreatePost && activeMembership ? (
-                <form action={createPost}>
-                  <input type="hidden" name="workspaceId" value={activeMembership.workspaceId} />
-                  <input type="hidden" name="projectId" value={activeProject.id} />
-                  <input type="hidden" name="title" value="Новый черновик" />
-                  <Button>Новый черновик</Button>
-                </form>
-              ) : null}
-              <ButtonLink href="/app/ai" variant="secondary">
-                Написать через AI
-              </ButtonLink>
+              <ButtonLink href="/app/ai">Написать через AI</ButtonLink>
               <ButtonLink href="/app/social-accounts" variant="secondary">
                 Подключить Telegram
               </ButtonLink>

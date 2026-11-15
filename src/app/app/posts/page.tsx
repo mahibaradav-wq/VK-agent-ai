@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { auth } from "@/auth";
 import { PageHeader } from "@/components/marketing/page-header";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { StatusBanner } from "@/components/ui/status-banner";
@@ -10,7 +10,6 @@ import { createPageMetadata } from "@/lib/metadata";
 import { getAppContext } from "@/modules/access/app-context";
 import { hasPermission } from "@/modules/access/permissions";
 import { utcToDisplay } from "@/modules/calendar/timezone";
-import { createPost } from "@/modules/posts/actions";
 import { createPostService } from "@/modules/posts/post-service";
 import { prisma } from "@/server/db/prisma";
 
@@ -41,17 +40,13 @@ export default async function PostsPage() {
       <PageHeader
         eyebrow="Публикации"
         title="Черновики проекта"
-        description="Содержимое версионируется. В очередь публикация попадает с текущей версией; успешные цели повторно не отправляются."
+        description="Черновики появляются из агента ChatGPT (пост + визуал). Здесь правите готовый текст перед публикацией."
       />
       <Container className="grid gap-6 pb-20">
         {!activeProject ? (
           <StatusBanner tone="warning">Сначала создайте или выберите проект.</StatusBanner>
         ) : canCreate ? (
-          <form action={createPost}>
-            <input type="hidden" name="workspaceId" value={activeMembership.workspaceId} />
-            <input type="hidden" name="projectId" value={activeProject.id} />
-            <Button>Новый черновик</Button>
-          </form>
+          <ButtonLink href="/app/ai">Написать через AI</ButtonLink>
         ) : (
           <StatusBanner tone="info">Создавать черновики могут Editor, Admin и Owner.</StatusBanner>
         )}

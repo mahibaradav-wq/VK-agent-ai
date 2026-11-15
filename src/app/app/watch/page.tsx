@@ -12,7 +12,7 @@ import { prisma } from "@/server/db/prisma";
 
 export const metadata = createPageMetadata({
   title: "Идеи по сообществам VK",
-  description: "DeepSeek предлагает темы по стенам ВК. Кнопка открывает бриф агента: тон, длину и площадку выбираете сами.",
+  description: "ChatGPT предлагает темы по стенам ВК. Кнопка открывает бриф агента: тон, длину и площадку выбираете сами.",
   path: "/app/watch",
 });
 
@@ -41,7 +41,7 @@ export default async function WatchPage() {
       <PageHeader
         eyebrow="Агент"
         title="Идеи для стены ВК"
-        description="DeepSeek смотрит указанные сообщества через VK API и предлагает темы. Кнопка кладёт идею в бриф агента «Пост + визуал»: вы правите тон, длину и площадку, затем создаёте пост."
+        description="ChatGPT смотрит указанные сообщества через VK API и предлагает темы. Кнопка кладёт идею в бриф агента «Пост + визуал»: вы правите тон, длину и площадку, затем создаёте пост."
       />
       <Container className="grid gap-6 pb-20">
         <WatchBoard

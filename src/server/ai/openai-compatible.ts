@@ -191,7 +191,7 @@ export function createOpenAiCompatibleProvider(options: {
       if (!imageReady) {
         throw new AccessError(
           400,
-          "Этот провайдер не генерирует картинки. Для визуала подключите ChatGPT или Qwen.",
+          "Этот провайдер не генерирует картинки. Для визуала подключите ChatGPT.",
         );
       }
       const prompt = input.prompt.trim();

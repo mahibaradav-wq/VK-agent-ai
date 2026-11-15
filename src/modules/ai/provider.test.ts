@@ -90,7 +90,7 @@ describe("AI provider connection", () => {
     expect(JSON.stringify(status)).not.toMatch(/sk-test-secret-key/);
   });
 
-  it("rejects a chat password, a bad key, DeepSeek visuals, and a Viewer", async () => {
+  it("rejects a chat password, a bad key, unknown providers, and a Viewer", async () => {
     const owner = await registerOwner("ai-rules");
     const viewer = await registerOwner("ai-rules-viewer");
     await workspaces.addMember(owner.userId, owner.workspaceId, viewer.address, "Viewer");
@@ -136,43 +136,49 @@ describe("AI provider connection", () => {
     );
     await expectAccess(
       connections.connect(viewer.userId, owner.workspaceId, {
-        provider: "deepseek",
+        provider: "openai",
         apiKey: "sk-test-secret-key",
       }),
       403,
       /Недостаточно прав/,
     );
 
-    const deepseek = createAiConnectionService(prisma, {
-      envProvider: createUnconfiguredAiProvider(),
-      fetchImpl: async () => new Response(JSON.stringify({ data: [] }), { status: 200 }),
-    });
-    const connected = await deepseek.connect(owner.userId, owner.workspaceId, {
-      provider: "deepseek",
-      apiKey: "sk-test-secret-key",
-    });
-    expect(connected.imageReady).toBe(false);
-    const ai = createAiService(prisma, { connections: deepseek });
+    await expectAccess(
+      connections.connect(owner.userId, owner.workspaceId, {
+        provider: "deepseek",
+        apiKey: "sk-test-secret-key",
+      }),
+      400,
+      /Неизвестный AI-провайдер/,
+    );
+    await expectAccess(
+      connections.connect(owner.userId, owner.workspaceId, {
+        provider: "qwen",
+        apiKey: "sk-test-secret-key",
+      }),
+      400,
+      /Неизвестный AI-провайдер/,
+    );
+
+    const ai = createAiService(prisma, { connections });
     await expectAccess(
       ai.composeAgentPost(owner.userId, owner.workspaceId, {
         prompt: "борщ на обед",
         projectId: owner.projectId,
       }),
       400,
-      /Для визуала подключите ChatGPT/,
+      /подключите ChatGPT/,
     );
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
   });
 
-  it("keeps DeepSeek for ideas and ChatGPT for copy plus visuals", async () => {
-    const owner = await registerOwner("ai-split");
-    const hosts: string[] = [];
+  it("uses ChatGPT for ideas, copy and visuals", async () => {
+    const owner = await registerOwner("ai-chatgpt");
     const connections = createAiConnectionService(prisma, {
       envProvider: createUnconfiguredAiProvider(),
       fetchImpl: async (url, init) => {
-        hosts.push(String(url));
         if (String(init?.method ?? "GET").toUpperCase() === "GET") {
-          return new Response(JSON.stringify({ data: [] }), { status: 200 });
+          return new Response(JSON.stringify({ data: [{ id: "gpt-4o-mini" }] }), { status: 200 });
         }
         if (String(url).includes("/images/generations")) {
           return new Response(
@@ -189,12 +195,12 @@ describe("AI provider connection", () => {
         }
         return new Response(
           JSON.stringify({
-            model: String(url).includes("deepseek") ? "deepseek-chat" : "gpt-4o-mini",
+            model: "gpt-4o-mini",
             choices: [
               {
                 message: {
                   content: JSON.stringify({
-                    title: String(url).includes("deepseek") ? "Идея DeepSeek" : "Пост ChatGPT",
+                    title: "Пост ChatGPT",
                     body: "Текст",
                     items: ["один"],
                   }),
@@ -208,18 +214,14 @@ describe("AI provider connection", () => {
     });
 
     await connections.connect(owner.userId, owner.workspaceId, {
-      provider: "deepseek",
-      apiKey: "sk-deepseek-secret-key",
-    });
-    await connections.connect(owner.userId, owner.workspaceId, {
       provider: "openai",
       apiKey: "sk-openai-secret-key",
     });
-    expect(await prisma.workspaceAiConnection.count({ where: { workspaceId: owner.workspaceId } })).toBe(2);
+    expect(await prisma.workspaceAiConnection.count({ where: { workspaceId: owner.workspaceId } })).toBe(1);
 
     const ai = createAiService(prisma, { connections });
     const status = await ai.workspaceStatus(owner.userId, owner.workspaceId);
-    expect(status.ideasProvider).toBe("deepseek");
+    expect(status.ideasProvider).toBe("openai");
     expect(status.copyProvider).toBe("openai");
     expect(status.imageProvider).toBe("openai");
 
@@ -227,8 +229,8 @@ describe("AI provider connection", () => {
       kind: "ideas",
       prompt: "темы для полки",
     });
-    expect(ideas.provider).toBe("deepseek");
-    expect(ideas.title).toBe("Идея DeepSeek");
+    expect(ideas.provider).toBe("openai");
+    expect(ideas.title).toBe("Пост ChatGPT");
 
     const post = await ai.generate(owner.userId, owner.workspaceId, {
       kind: "post",
@@ -236,79 +238,10 @@ describe("AI provider connection", () => {
     });
     expect(post.provider).toBe("openai");
     expect(post.title).toBe("Пост ChatGPT");
-    expect(JSON.stringify({ ideas, post, status })).not.toMatch(/sk-deepseek-secret-key|sk-openai-secret-key/);
+    expect(JSON.stringify({ ideas, post, status })).not.toMatch(/sk-openai-secret-key/);
   });
 
-  it("falls back to DeepSeek for copy when OpenAI blocks this region", async () => {
-    const owner = await registerOwner("ai-geo-fallback");
-    const storageDir = await mkdtemp(path.join(os.tmpdir(), "polka-geo-"));
-    const png =
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";
-    const connections = createAiConnectionService(prisma, {
-      envProvider: createUnconfiguredAiProvider(),
-      fetchImpl: async (url, init) => {
-        const href = String(url);
-        const method = String(init?.method ?? "GET").toUpperCase();
-        if (method === "GET") {
-          return new Response(JSON.stringify({ data: [] }), { status: 200 });
-        }
-        if (href.includes("api.openai.com")) {
-          return new Response(
-            JSON.stringify({ error: { code: "unsupported_country_region_territory" } }),
-            { status: 403 },
-          );
-        }
-        if (href.includes("/images/generations")) {
-          return new Response(JSON.stringify({ data: [{ b64_json: png }] }), { status: 200 });
-        }
-        return new Response(
-          JSON.stringify({
-            model: "deepseek-chat",
-            choices: [
-              {
-                message: {
-                  content: JSON.stringify({
-                    title: "Пост DeepSeek",
-                    body: "Текст стены без ChatGPT.",
-                    items: [],
-                  }),
-                },
-              },
-            ],
-          }),
-          { status: 200 },
-        );
-      },
-    });
-    await connections.connect(owner.userId, owner.workspaceId, {
-      provider: "deepseek",
-      apiKey: "sk-deepseek-secret-key",
-    });
-    await connections.connect(owner.userId, owner.workspaceId, {
-      provider: "openai",
-      apiKey: "sk-openai-secret-key",
-    });
-    await connections.connect(owner.userId, owner.workspaceId, {
-      provider: "qwen",
-      apiKey: "sk-qwen-secret-key",
-    });
-
-    const ai = createAiService(prisma, {
-      connections,
-      storage: createLocalStorage(storageDir),
-    });
-    const composed = await ai.composeAgentPost(owner.userId, owner.workspaceId, {
-      prompt: "полка для специй",
-      platform: "vk",
-      projectId: owner.projectId,
-    });
-    expect(["deepseek", "qwen"]).toContain(composed.request.provider);
-    expect(composed.request.title).toBe("Пост DeepSeek");
-    expect(composed.post.media).toHaveLength(1);
-    expect(composed.post.targets.map((target) => target.platform)).toEqual(["vk"]);
-  });
-
-  it("does not invent a visual when OpenAI is geo-blocked and Qwen is missing", async () => {
+  it("does not invent a post when OpenAI blocks this region", async () => {
     const owner = await registerOwner("ai-geo-no-image");
     const storageDir = await mkdtemp(path.join(os.tmpdir(), "polka-geo-noimg-"));
     const connections = createAiConnectionService(prisma, {
@@ -317,7 +250,7 @@ describe("AI provider connection", () => {
         const href = String(url);
         const method = String(init?.method ?? "GET").toUpperCase();
         if (method === "GET") {
-          return new Response(JSON.stringify({ data: [] }), { status: 200 });
+          return new Response(JSON.stringify({ data: [{ id: "gpt-4o-mini" }] }), { status: 200 });
         }
         if (href.includes("api.openai.com")) {
           return new Response(
@@ -325,24 +258,8 @@ describe("AI provider connection", () => {
             { status: 403 },
           );
         }
-        return new Response(
-          JSON.stringify({
-            model: "deepseek-chat",
-            choices: [
-              {
-                message: {
-                  content: JSON.stringify({ title: "Пост", body: "Текст", items: [] }),
-                },
-              },
-            ],
-          }),
-          { status: 200 },
-        );
+        return new Response("{}", { status: 500 });
       },
-    });
-    await connections.connect(owner.userId, owner.workspaceId, {
-      provider: "deepseek",
-      apiKey: "sk-deepseek-secret-key",
     });
     await connections.connect(owner.userId, owner.workspaceId, {
       provider: "openai",
@@ -358,43 +275,8 @@ describe("AI provider connection", () => {
         projectId: owner.projectId,
       }),
       400,
-      /Qwen|картинки не рисует/,
+      /регион этого сервера|картинки не рисует/,
     );
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
-  });
-
-  it("connects Qwen against Chinese DashScope and explains a Singapore key", async () => {
-    const owner = await registerOwner("ai-qwen");
-    const urls: string[] = [];
-    const ok = createAiConnectionService(prisma, {
-      envProvider: createUnconfiguredAiProvider(),
-      fetchImpl: async (url) => {
-        urls.push(String(url));
-        return new Response(JSON.stringify({ data: [{ id: "qwen-plus" }] }), { status: 200 });
-      },
-    });
-    const connected = await ok.connect(owner.userId, owner.workspaceId, {
-      provider: "qwen",
-      apiKey: "sk-qwen-beijing-key",
-    });
-    expect(connected.provider).toBe("qwen");
-    expect(connected.imageReady).toBe(true);
-    expect(connected.imageModel).toBe("qwen-image-plus");
-    expect(urls[0]).toContain("dashscope.aliyuncs.com/compatible-mode/v1/models");
-    expect(urls[0]).not.toContain("dashscope-intl");
-    expect(JSON.stringify(connected)).not.toMatch(/sk-qwen-beijing-key/);
-
-    const rejected = createAiConnectionService(prisma, {
-      envProvider: createUnconfiguredAiProvider(),
-      fetchImpl: async () => new Response("{}", { status: 401 }),
-    });
-    await expectAccess(
-      rejected.connect(owner.userId, owner.workspaceId, {
-        provider: "qwen",
-        apiKey: "sk-qwen-singapore-key",
-      }),
-      400,
-      /Пекин|百炼|Сингапур/,
-    );
   });
 });

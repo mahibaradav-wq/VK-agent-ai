@@ -103,8 +103,8 @@ volumes:
 
 networks:
   polka:
-    # DashScope (Qwen) from this RU VPS is reachable on IPv6 only. Without
-    # IPv6 the app container times out on IPv4 and the Qwen key never connects.
+    # Dual-stack outbound. Harmless for ChatGPT from Amsterdam; keeps IPv6
+    # available if a provider prefers it.
     enable_ipv6: true
     ipam:
       config:

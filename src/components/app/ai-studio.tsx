@@ -3,30 +3,15 @@
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { Button, ButtonLink } from "@/components/ui/button";
+import { VisualStudio } from "@/components/app/visual-studio";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StatusBanner } from "@/components/ui/status-banner";
-import { VisualStudio } from "@/components/app/visual-studio";
-import { applyAiToPost, composeAgentPost, generateAi, type AiFormState } from "@/modules/ai/actions";
-import { aiKinds, aiLengths, aiTones, displayKind, kindLabels, lengthLabels, toneLabels } from "@/modules/ai/kinds";
+import { composeAgentPost, type AiFormState } from "@/modules/ai/actions";
+import { aiLengths, aiTones, lengthLabels, toneLabels } from "@/modules/ai/kinds";
 import { previewPlatforms } from "@/modules/posts/platforms";
 
 const idle: AiFormState = { status: "idle", message: "" };
-
-export type AiHistoryItem = {
-  id: string;
-  kind: string;
-  prompt: string;
-  tone: string;
-  length: string;
-  platform: string;
-  title: string;
-  body: string;
-  items: string[];
-  provider: string;
-  model: string;
-  createdAt: string;
-};
 
 function BriefFields({
   defaultPrompt = "",
@@ -97,7 +82,6 @@ export function AiStudio({
   workspaceId,
   projectId,
   canGenerate,
-  canApply,
   ready,
   imageReady,
   storageReady,
@@ -106,14 +90,12 @@ export function AiStudio({
   imageModel,
   used,
   limit,
-  history,
   defaultPrompt = "",
   defaultPlatform = "telegram",
 }: {
   workspaceId: string;
   projectId?: string;
   canGenerate: boolean;
-  canApply: boolean;
   ready: boolean;
   imageReady: boolean;
   storageReady: boolean;
@@ -122,12 +104,10 @@ export function AiStudio({
   imageModel: string;
   used: number;
   limit: number;
-  history: AiHistoryItem[];
   defaultPrompt?: string;
   defaultPlatform?: string;
 }) {
   const router = useRouter();
-  const [state, formAction, pending] = useActionState(generateAi, idle);
   const [agentState, agentAction, agentPending] = useActionState(composeAgentPost, idle);
   const [visualLive, setVisualLive] = useState(true);
   const agentReady = ready && imageReady && storageReady;
@@ -157,7 +137,7 @@ export function AiStudio({
           <h2 className="mt-2 text-2xl font-black text-ink">Пост + визуал</h2>
           <p className="mt-2 text-sm text-ink/70">
             ChatGPT напишет текст и нарисует картинку, затем положит черновик в текущий проект. Без ключа картинка не
-            подменяется макетом. Идеи по стенам ВК собирает DeepSeek отдельно.
+            подменяется макетом. Идеи по стенам ВК тоже собирает ChatGPT — на странице наблюдения.
           </p>
         </div>
         {!ready ? (
@@ -166,9 +146,7 @@ export function AiStudio({
             модели.
           </StatusBanner>
         ) : !imageReady ? (
-          <StatusBanner tone="warning">
-            Тексты может писать DeepSeek, но картинки он не рисует. Для поста с визуалом подключите ChatGPT.
-          </StatusBanner>
+          <StatusBanner tone="warning">Для поста с визуалом подключите ChatGPT с доступом к картинкам.</StatusBanner>
         ) : !storageReady ? (
           <StatusBanner tone="warning">
             Хранилище не настроено. Визуал нельзя сохранить, поэтому агент не создаст черновик.
@@ -219,9 +197,7 @@ export function AiStudio({
             </Button>
           ) : (
             <StatusBanner tone="info">
-              {projectId
-                ? "Создать пост с визуалом могут Editor, Admin и Owner."
-                : "Сначала выберите проект."}
+              {projectId ? "Создать пост с визуалом могут Editor, Admin и Owner." : "Сначала выберите проект."}
             </StatusBanner>
           )}
         </form>
@@ -235,117 +211,6 @@ export function AiStudio({
           </div>
         ) : null}
       </Card>
-
-      <div className="grid gap-6 lg:grid-cols-[1fr_0.9fr]">
-        <Card className="grid gap-4">
-          {!ready ? (
-            <StatusBanner tone="warning">
-              Подключите ChatGPT выше для текста и визуала. Идеи — DeepSeek. Макет ниже не ответ модели.
-            </StatusBanner>
-          ) : (
-            <StatusBanner tone="info">
-              Только текст · {provider} · {model} · лимит {used}/{limit} в этом месяце
-            </StatusBanner>
-          )}
-          <form action={formAction} className="grid gap-4">
-            <input type="hidden" name="workspaceId" value={workspaceId} />
-            {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
-            <label className="grid gap-2 text-sm font-medium text-ink">
-              Тип
-              <select name="kind" defaultValue="post" className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4">
-                {aiKinds.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {kindLabels[kind]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <BriefFields />
-            {state.message ? (
-              <StatusBanner tone={state.status === "success" ? "success" : "warning"}>{state.message}</StatusBanner>
-            ) : null}
-            {state.status === "success" && state.title ? (
-              <div className="rounded-2xl bg-sand-50 p-4 text-sm text-ink/80">
-                <p className="font-semibold text-ink">{state.title}</p>
-                <p className="mt-2 whitespace-pre-wrap">{state.body}</p>
-                {state.items && state.items.length > 0 ? (
-                  <ul className="mt-2 list-disc pl-5">
-                    {state.items.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                ) : null}
-              </div>
-            ) : null}
-            {canGenerate ? (
-              <Button disabled={pending}>{pending ? "Генерируем..." : "Сгенерировать текст"}</Button>
-            ) : (
-              <StatusBanner tone="info">Генерировать могут Editor, Admin и Owner.</StatusBanner>
-            )}
-          </form>
-          {!ready ? (
-            <div className="rounded-2xl ring-1 ring-ink/10 p-4 text-sm text-ink/60">
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Макет интерфейса, не ответ модели</p>
-              <p className="mt-2 font-semibold text-ink">Весеннее меню на кухне</p>
-              <p className="mt-1">Пример карточки, чтобы увидеть форму. Без ключа сервер не подставит выдуманный текст.</p>
-            </div>
-          ) : null}
-        </Card>
-
-        <div className="grid gap-4">
-          <p className="text-sm font-semibold text-ink/70">История · {used}/{limit}</p>
-          {history.length === 0 ? <StatusBanner tone="info">Истории генераций пока нет.</StatusBanner> : null}
-          {history.map((item) => (
-            <Card key={item.id} className="grid gap-2">
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">
-                {displayKind(item.kind)} · {item.tone} · {item.length}
-                {item.platform ? ` · ${item.platform}` : ""}
-              </p>
-              <h2 className="text-lg font-black text-ink">{item.title}</h2>
-              <p className="text-sm text-ink/70 whitespace-pre-wrap">{item.body}</p>
-              {item.kind === "agent" ? (
-                <p className="text-sm font-semibold text-brand-dark">Визуал приложен к черновику</p>
-              ) : null}
-              {item.items.filter((entry) => !entry.startsWith("visual:")).length > 0 ? (
-                <ul className="text-sm text-ink/70 list-disc pl-5">
-                  {item.items
-                    .filter((entry) => !entry.startsWith("visual:"))
-                    .map((entry) => (
-                      <li key={entry}>{entry}</li>
-                    ))}
-                </ul>
-              ) : null}
-              <p className="text-xs text-ink/50">
-                {item.provider}/{item.model} · {item.createdAt}
-              </p>
-              {item.kind === "watch_ideas" ? (
-                <p className="text-sm text-ink/70">
-                  Идею в пост отправляйте со страницы наблюдения кнопкой «В бриф: пост + визуал».
-                  <span className="mt-3 block">
-                    <ButtonLink href="/app/watch" variant="secondary">
-                      К идеям VK
-                    </ButtonLink>
-                  </span>
-                </p>
-              ) : item.kind === "agent" && item.items.some((entry) => entry.startsWith("post:")) ? (
-                <ButtonLink
-                  href={`/app/posts/${item.items.find((entry) => entry.startsWith("post:"))?.slice(5)}`}
-                  variant="secondary"
-                >
-                  Открыть черновик с визуалом
-                </ButtonLink>
-              ) : canApply && projectId ? (
-                <form action={applyAiToPost}>
-                  <input type="hidden" name="workspaceId" value={workspaceId} />
-                  <input type="hidden" name="projectId" value={projectId} />
-                  <input type="hidden" name="requestId" value={item.id} />
-                  <Button variant="secondary">Перенести в редактор</Button>
-                </form>
-              ) : null}
-            </Card>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
