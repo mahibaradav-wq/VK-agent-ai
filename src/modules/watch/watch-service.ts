@@ -4,6 +4,7 @@ import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions"
 import { createAccessService } from "@/modules/access/access-service";
 import { createAiService, type PublicAiRequest } from "@/modules/ai/ai-service";
 import { parseVkCommunitySource } from "@/modules/watch/parse";
+import { ideaToAgentPrompt } from "@/modules/watch/prompt";
 import { RECOMMENDED_WATCH_COMMUNITIES } from "@/modules/watch/recommended";
 import { decryptToken, encryptToken } from "@/server/crypto/token-cipher";
 import {
@@ -111,21 +112,7 @@ function summarizePosts(posts: WatchedPost[]) {
     .join("\n\n---\n\n");
 }
 
-export function ideaToAgentPrompt(item: string) {
-  const [titlePart, why, hook] = item.split("||").map((part) => part.trim());
-  const title = titlePart || "Идея из VK";
-  return [
-    "Напиши готовый пост на стену ВКонтакте для сообщества «Дом по полочкам».",
-    "Это бриф идеи, а не готовый текст: раскрой тему своими словами.",
-    "Не копируй чужие посты, не обещай скидки, охваты и что материал уже опубликован.",
-    `Тема: ${title}`,
-    why ? `Почему сейчас: ${why}` : "",
-    hook ? `Хук первой строки: ${hook}` : "",
-    `Исходная идея: ${item}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
+export { ideaToAgentPrompt };
 
 export function createWatchService(
   db: PrismaClient,
@@ -503,6 +490,11 @@ export function createWatchService(
         platform: "vk",
         projectId,
       });
+      const remaining = items.filter((_, index) => index !== itemIndex);
+      await db.aIRequest.update({
+        where: { id: request.id },
+        data: { itemsJson: JSON.stringify(remaining) },
+      });
       await db.auditLog.create({
         data: {
           action: "APPLY_VK_WATCH_IDEA",
@@ -522,26 +514,28 @@ export function createWatchService(
         orderBy: { createdAt: "desc" },
         take: 10,
       });
-      return rows.map((row) => {
-        let items: string[] = [];
-        try {
-          const parsed = JSON.parse(row.itemsJson) as unknown;
-          if (Array.isArray(parsed)) {
-            items = parsed.filter((item): item is string => typeof item === "string");
+      return rows
+        .map((row) => {
+          let items: string[] = [];
+          try {
+            const parsed = JSON.parse(row.itemsJson) as unknown;
+            if (Array.isArray(parsed)) {
+              items = parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+            }
+          } catch {
+            items = [];
           }
-        } catch {
-          items = [];
-        }
-        return {
-          id: row.id,
-          title: row.title,
-          body: row.body,
-          items,
-          createdAt: row.createdAt,
-          provider: row.provider,
-          model: row.model,
-        };
-      });
+          return {
+            id: row.id,
+            title: row.title,
+            body: row.body,
+            items,
+            createdAt: row.createdAt,
+            provider: row.provider,
+            model: row.model,
+          };
+        })
+        .filter((row) => row.items.length > 0);
     },
   };
 }

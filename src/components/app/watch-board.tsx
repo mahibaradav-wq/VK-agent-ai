@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useActionState, useState, type FormEvent } from "react";
+import { useActionState, useState } from "react";
 
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import {
   removeWatchCommunity,
   type WatchFormState,
 } from "@/modules/watch/actions";
+import { watchIdeaAgentHref } from "@/modules/watch/prompt";
 
 const idle: WatchFormState = { status: "idle", message: "" };
 
@@ -85,26 +86,21 @@ export function WatchBoard({
   const [removeState, removeAction, removePending] = useActionState(removeWatchCommunity, idle);
   const [collectPending, setCollectPending] = useState(false);
   const [collectState, setCollectState] = useState<WatchFormState>(idle);
-  const [applyPending, setApplyPending] = useState(false);
-  const [applyKey, setApplyKey] = useState<string | null>(null);
-  const [applyState, setApplyState] = useState<WatchFormState>(idle);
   const agentReady = copyReady && imageReady;
   const message =
-    applyState.message ||
     collectState.message ||
     addState.message ||
     tokenState.message ||
     disconnectState.message ||
     removeState.message;
   const tone =
-    applyState.status === "invalid" ||
     collectState.status === "invalid" ||
     addState.status === "invalid" ||
     tokenState.status === "invalid" ||
     disconnectState.status === "invalid" ||
     removeState.status === "invalid"
       ? "warning"
-      : applyState.status === "success" || collectState.status === "success"
+      : collectState.status === "success"
         ? "success"
         : "info";
 
@@ -134,59 +130,6 @@ export function WatchBoard({
     }
   }
 
-  async function submitApply(formData: FormData, key: string) {
-    setApplyPending(true);
-    setApplyKey(key);
-    setApplyState({
-      status: "idle",
-      message: "Идея ушла в агент. Пишет текст и рисует новый визуал, обычно 20–60 секунд.",
-    });
-    try {
-      const response = await fetch("/api/watch/apply-idea", {
-        method: "POST",
-        body: formData,
-        credentials: "same-origin",
-        headers: { Accept: "application/json" },
-      });
-      const raw = await response.text();
-      let payload: WatchFormState = {
-        status: "invalid",
-        message: raw.trim() || `Сервер ответил ${response.status}.`,
-      };
-      try {
-        payload = JSON.parse(raw) as WatchFormState;
-      } catch {
-        payload = {
-          status: "invalid",
-          message: response.ok
-            ? "Сервер вернул не JSON. Обновите страницу и нажмите ещё раз."
-            : payload.message,
-        };
-      }
-      setApplyState({
-        status: payload.status === "success" ? "success" : "invalid",
-        message: payload.message || "Не удалось отправить идею в агент AI.",
-        postId: payload.postId,
-      });
-      if (payload.status === "success" && payload.postId) {
-        router.push(`/app/posts/${payload.postId}`);
-        return;
-      }
-    } catch {
-      setApplyState({
-        status: "invalid",
-        message: "Запрос до агента не дошёл. Обновите страницу и нажмите ещё раз.",
-      });
-    } finally {
-      setApplyPending(false);
-    }
-  }
-
-  function onApplySubmit(event: FormEvent<HTMLFormElement>, key: string) {
-    event.preventDefault();
-    void submitApply(new FormData(event.currentTarget), key);
-  }
-
   return (
     <div className="grid gap-6">
       {message ? <StatusBanner tone={tone}>{message}</StatusBanner> : null}
@@ -209,7 +152,7 @@ export function WatchBoard({
           {!agentReady ? (
             <StatusBanner tone="warning">
               ChatGPT с этого сервера в РФ часто недоступен. Текст может написать DeepSeek. Для новой картинки подключите
-              Qwen в 百炼 (Пекин), не сингапурскую Model Studio. Кнопка на идее всё равно отправляет в агент.
+              Qwen в 百炼 (Пекин), не сингапурскую Model Studio. Кнопка на идее всё равно откроет бриф агента.
               <span className="mt-3 block">
                 <ButtonLink href="/app/ai" variant="secondary">
                   Открыть агент AI
@@ -218,45 +161,30 @@ export function WatchBoard({
             </StatusBanner>
           ) : null}
           {!projectId ? (
-            <StatusBanner tone="warning">Выберите проект в шапке кабинета — иначе идею нельзя отправить в агент.</StatusBanner>
+            <StatusBanner tone="warning">
+              Выберите проект в шапке кабинета — иначе агент не создаст черновик после брифа.
+            </StatusBanner>
           ) : null}
           <ul className="grid gap-3">
             {batch.items.map((item, index) => {
               const key = `${batch.id}-${index}`;
-              const pendingThis = applyPending && applyKey === key;
               return (
                 <li key={key} className="rounded-2xl ring-1 ring-ink/10 p-4">
                   <IdeaParts item={item} />
                   {canApply ? (
-                    <form
-                      className="mt-3 grid gap-3"
-                      method="post"
-                      action="/api/watch/apply-idea"
-                      onSubmit={(event) => onApplySubmit(event, key)}
-                    >
-                      <input type="hidden" name="workspaceId" value={workspaceId} />
-                      {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
-                      <input type="hidden" name="requestId" value={batch.id} />
-                      <input type="hidden" name="itemIndex" value={String(index)} />
-                      <Button type="submit" disabled={applyPending || !projectId}>
-                        {pendingThis ? "Агент пишет и рисует..." : "В агент: пост и визуал"}
-                      </Button>
-                      {applyKey === key && applyState.message ? (
-                        <StatusBanner tone={applyState.status === "invalid" ? "warning" : applyPending ? "info" : "success"}>
-                          {applyState.message}
-                        </StatusBanner>
-                      ) : null}
-                    </form>
+                    <div className="mt-3">
+                      <ButtonLink href={watchIdeaAgentHref(item)}>В бриф: пост + визуал</ButtonLink>
+                    </div>
                   ) : (
-                    <p className="mt-3 text-sm text-ink/60">Отправлять идеи в агент могут Editor, Admin и Owner.</p>
+                    <p className="mt-3 text-sm text-ink/60">Открыть идею в брифе агента могут Editor, Admin и Owner.</p>
                   )}
                 </li>
               );
             })}
           </ul>
           <p className="text-xs text-ink/50">
-            Кнопка отправляет идею в агент: ChatGPT пишет текст стены ВК и рисует новый визуал, затем открывает этот
-            черновик. Картинка от другого поста не подставляется. Опубликовать можно ключом сообщества с правом «Стена».
+            Кнопка открывает раздел «Пост + визуал» с этой идеей в брифе. Тон, длину и площадку выбираете сами — пост и
+            картинка появятся только после «Создать пост с визуалом».
           </p>
         </Card>
       ))}
