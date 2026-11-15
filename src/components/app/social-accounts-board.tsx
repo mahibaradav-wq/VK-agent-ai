@@ -149,8 +149,9 @@ export function SocialAccountsBoard({
             <Card>
               <h2 className="text-xl font-black text-ink">Подключить ВКонтакте</h2>
               <p className="mt-2 text-sm text-ink/70">
-                Нужен ключ доступа сообщества: Управление → Настройки → Работа с API → Создать ключ, право «Стена». Не
-                сервисный ключ приложения VK ID и не пароль. Пишем только на стену этого клуба через wall.post.
+                Нужен ключ доступа сообщества: Управление → Настройки → Работа с API → Создать ключ, права «Стена» и
+                «Фотографии». Не сервисный ключ приложения VK ID и не пароль. Текст и картинки уходят на стену этого
+                клуба через wall.post.
               </p>
               <form action={vkAction} className="mt-4 grid gap-4">
                 <input type="hidden" name="workspaceId" value={workspaceId} />

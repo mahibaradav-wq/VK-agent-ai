@@ -46,8 +46,26 @@ export type VkWallResponse = {
   items?: VkWallPost[];
 };
 
+export type VkWallUploadFile = {
+  filename: string;
+  bytes: Uint8Array;
+  mimeType: string;
+};
+
+export type VkWallUploadResult = {
+  server: number;
+  photo: string;
+  hash: string;
+};
+
+export type VkSavedWallPhoto = {
+  id: number;
+  owner_id: number;
+};
+
 export type VkTransport = {
   call: (token: string, method: string, params?: Record<string, string | number>) => Promise<VkApiResult<unknown>>;
+  uploadWallPhoto?: (uploadUrl: string, file: VkWallUploadFile) => Promise<VkApiResult<VkWallUploadResult>>;
 };
 
 type VkJson = {
@@ -95,6 +113,37 @@ export function isVkAccessToken(value: string) {
   return /^(vk1\.|vk2\.)/i.test(token) || /^[A-Za-z0-9._\-/=+]{40,}$/.test(token);
 }
 
+function parseWallUploadPayload(payload: unknown): VkWallUploadResult | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  const body = payload as { server?: unknown; photo?: unknown; hash?: unknown };
+  const server = typeof body.server === "number" ? body.server : Number(body.server);
+  if (!Number.isFinite(server) || typeof body.photo !== "string" || !body.photo || typeof body.hash !== "string" || !body.hash) {
+    return null;
+  }
+  return { server, photo: body.photo, hash: body.hash };
+}
+
+export function extractSavedWallPhoto(response: unknown): VkSavedWallPhoto | null {
+  const list = Array.isArray(response)
+    ? response
+    : response && typeof response === "object" && Array.isArray((response as { items?: unknown[] }).items)
+      ? (response as { items: unknown[] }).items
+      : [];
+  const first = list[0];
+  if (!first || typeof first !== "object") {
+    return null;
+  }
+  const photo = first as { id?: unknown; owner_id?: unknown };
+  const id = typeof photo.id === "number" ? photo.id : Number(photo.id);
+  const ownerId = typeof photo.owner_id === "number" ? photo.owner_id : Number(photo.owner_id);
+  if (!Number.isFinite(id) || !Number.isFinite(ownerId) || id === 0 || ownerId === 0) {
+    return null;
+  }
+  return { id, owner_id: ownerId };
+}
+
 export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport {
   return {
     async call(token, method, params = {}) {
@@ -132,6 +181,29 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
         };
       }
     },
+    async uploadWallPhoto(uploadUrl, file) {
+      try {
+        const form = new FormData();
+        form.append("photo", new Blob([new Uint8Array(file.bytes)], { type: file.mimeType }), file.filename);
+        const response = await fetchImpl(uploadUrl, {
+          method: "POST",
+          body: form,
+          signal: AbortSignal.timeout(60_000),
+        });
+        const json = (await response.json()) as unknown;
+        const uploaded = parseWallUploadPayload(json);
+        if (!uploaded) {
+          return { ok: false, error_code: 0, error_msg: "VK не принял файл на загрузку стены." };
+        }
+        return { ok: true, response: uploaded };
+      } catch {
+        return {
+          ok: false,
+          error_code: 0,
+          error_msg: "Сеть до загрузчика VK недоступна, фото на стену не отправлено.",
+        };
+      }
+    },
   };
 }
 
@@ -150,6 +222,9 @@ export function describeVkApiError(error: VkApiFailure) {
   }
   if (error.error_code === 1051) {
     return "Этот тип ключа VK не умеет вызывать выбранный метод. Для чтения стен нужен сервисный ключ приложения.";
+  }
+  if (error.error_code === 200) {
+    return "VK запретил загрузку фото. В ключе сообщества нужны права «Стена» и «Фотографии».";
   }
   return `VK API: ${error.error_msg}`;
 }

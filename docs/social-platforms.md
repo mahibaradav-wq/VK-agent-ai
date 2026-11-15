@@ -25,11 +25,11 @@
 
 ## Capabilities первой интеграции
 
-| Capability | Telegram | Статус |
-|---|---|---|
-| `publish_text` | `sendMessage` | Реализовано |
-| `publish_media` | `sendPhoto` / upload | Не включено: вложения не выдаются за опубликованные |
-| `read_insights` | — | Этап 10 |
+| Capability | Telegram | VK | Статус |
+|---|---|---|---|
+| `publish_text` | `sendMessage` | `wall.post` | Реализовано |
+| `publish_media` | `sendPhoto` / upload | `photos.getWallUploadServer` + `photos.saveWallPhoto` + `wall.post` attachments | VK: включено. Telegram: пока текст с пометкой |
+| `read_insights` | — | — | Этап 10 |
 
 ## Официальные источники
 

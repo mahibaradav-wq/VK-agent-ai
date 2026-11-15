@@ -398,6 +398,11 @@ export function createSocialService(
           update: { enabled: true },
           create: { socialAccountId: saved.id, name: "publish_text", enabled: true },
         });
+        await tx.socialAccountCapability.upsert({
+          where: { socialAccountId_name: { socialAccountId: saved.id, name: "publish_media" } },
+          update: { enabled: true },
+          create: { socialAccountId: saved.id, name: "publish_media", enabled: true },
+        });
         await tx.postTarget.updateMany({
           where: { workspaceId, platform: "vk", socialAccountId: null },
           data: { socialAccountId: saved.id },
