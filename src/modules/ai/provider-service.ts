@@ -47,6 +47,13 @@ function currentImageModel(spec: { imageModel: string }, stored: string) {
   return stored;
 }
 
+export function isOpenAiRegionRecord(row: { provider: string; lastError: string | null }) {
+  return (
+    row.provider === "openai" &&
+    Boolean(row.lastError && (row.lastError.includes("регион этого сервера") || row.lastError.includes("unsupported_country")))
+  );
+}
+
 function unconfiguredConnection(): PublicAiConnection {
   return {
     provider: "unconfigured",
@@ -135,23 +142,6 @@ export function createAiConnectionService(
     });
   }
 
-  function pickRow<T extends { provider: string }>(
-    rows: T[],
-    role: AiRole,
-  ): T | null {
-    for (const id of ROLE_ORDER[role]) {
-      const row = rows.find((item) => item.provider === id);
-      if (!row) {
-        continue;
-      }
-      if (role === "image" && !getAiProviderSpec(id).imageReady) {
-        continue;
-      }
-      return row;
-    }
-    return null;
-  }
-
   function summarize(rows: Array<{
     provider: string;
     model: string;
@@ -173,6 +163,9 @@ export function createAiConnectionService(
           continue;
         }
         if (role === "image" && !item.imageReady) {
+          continue;
+        }
+        if (isOpenAiRegionRecord({ provider: item.provider, lastError: item.lastError })) {
           continue;
         }
         return item;
@@ -201,19 +194,48 @@ export function createAiConnectionService(
     },
 
     async resolveProvider(workspaceId: string, role: AiRole = "copy"): Promise<AiProvider> {
+      const listed = await this.listProviders(workspaceId, role);
+      return listed[0] ?? createUnconfiguredAiProvider();
+    },
+
+    async listProviders(workspaceId: string, role: AiRole = "copy"): Promise<AiProvider[]> {
       const rows = await loadRows(workspaceId);
-      const row = pickRow(rows, role);
-      if (row) {
-        return providerFromRow(row);
+      const listed: AiProvider[] = [];
+      for (const id of ROLE_ORDER[role]) {
+        const row = rows.find((item) => item.provider === id);
+        if (!row) {
+          continue;
+        }
+        if (role === "image" && !getAiProviderSpec(id).imageReady) {
+          continue;
+        }
+        if (isOpenAiRegionRecord(row)) {
+          continue;
+        }
+        listed.push(providerFromRow(row));
       }
-      if (rows.length === 0) {
+      if (listed.length === 0 && rows.length === 0) {
         const env = options?.envProvider ?? getAiProvider();
         if (role === "image") {
-          return env.imageReady ? env : createUnconfiguredAiProvider();
+          return env.imageReady ? [env] : [];
         }
-        return env;
+        return env.ready ? [env] : [];
       }
-      return createUnconfiguredAiProvider();
+      return listed;
+    },
+
+    async rememberError(workspaceId: string, provider: string, lastError: string | null) {
+      await db.workspaceAiConnection.updateMany({
+        where: { workspaceId, provider },
+        data: { lastError },
+      });
+    },
+
+    async openaiRegionBlocked(workspaceId: string) {
+      const row = await db.workspaceAiConnection.findUnique({
+        where: { workspaceId_provider: { workspaceId, provider: "openai" } },
+      });
+      return Boolean(row && isOpenAiRegionRecord(row));
     },
 
     async connect(userId: string, workspaceId: string, input: { provider: string; apiKey: string }) {

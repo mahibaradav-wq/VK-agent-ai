@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
 import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
+import { OPENAI_IMAGE_REGION_MESSAGE, OPENAI_REGION_MESSAGE, isOpenAiRegionError } from "@/server/ai/errors";
 import { createAccessService } from "@/modules/access/access-service";
 import { parseKind, parseLength, parseTone } from "@/modules/ai/kinds";
 import { createAiConnectionService } from "@/modules/ai/provider-service";
@@ -127,6 +128,52 @@ export function createAiService(
     return connections.resolveProvider(workspaceId, role);
   }
 
+  async function callWithFallback<T>(
+    workspaceId: string,
+    role: "ideas" | "copy" | "image",
+    fn: (provider: AiProvider) => Promise<T>,
+  ): Promise<T> {
+    if (injected) {
+      return fn(injected);
+    }
+    const providers = await connections.listProviders(workspaceId, role);
+    if (providers.length === 0) {
+      const openaiBlocked = await connections.openaiRegionBlocked(workspaceId);
+      if (role === "image") {
+        throw new AccessError(400, openaiBlocked ? OPENAI_IMAGE_REGION_MESSAGE : "Для визуала подключите ChatGPT или Qwen. DeepSeek картинки не рисует.");
+      }
+      throw new AccessError(
+        400,
+        openaiBlocked
+          ? OPENAI_REGION_MESSAGE
+          : role === "ideas"
+            ? "Идеи недоступны: подключите DeepSeek. Это не ответ модели."
+            : "Генерация текста недоступна: подключите DeepSeek или ChatGPT. Это не ответ модели.",
+      );
+    }
+    let last: unknown;
+    for (const provider of providers) {
+      try {
+        return await fn(provider);
+      } catch (error) {
+        last = error;
+        if (isOpenAiRegionError(error) && provider.name === "openai") {
+          await connections.rememberError(
+            workspaceId,
+            "openai",
+            error instanceof AccessError ? error.message : OPENAI_REGION_MESSAGE,
+          );
+          continue;
+        }
+        throw error;
+      }
+    }
+    if (role === "image" && isOpenAiRegionError(last)) {
+      throw new AccessError(400, OPENAI_IMAGE_REGION_MESSAGE);
+    }
+    throw last;
+  }
+
   async function loadBoundRequest(workspaceId: string, requestId: string) {
     const row = await db.aIRequest.findUnique({ where: { id: requestId } });
     assertWorkspaceBound(workspaceId, row, "AI-запрос");
@@ -216,11 +263,14 @@ export function createAiService(
       const role = kind === "ideas" ? "ideas" : "copy";
       const provider = await providerFor(workspaceId, role);
       if (!provider.ready) {
+        const openaiBlocked = injected ? false : await connections.openaiRegionBlocked(workspaceId);
         throw new AccessError(
           400,
-          role === "ideas"
-            ? "Идеи недоступны: подключите DeepSeek. Это не ответ модели."
-            : "Генерация текста недоступна: подключите ChatGPT. Это не ответ модели.",
+          openaiBlocked
+            ? OPENAI_REGION_MESSAGE
+            : role === "ideas"
+              ? "Идеи недоступны: подключите DeepSeek. Это не ответ модели."
+              : "Генерация текста недоступна: подключите DeepSeek или ChatGPT. Это не ответ модели.",
         );
       }
 
@@ -235,7 +285,9 @@ export function createAiService(
         `Лимит AI-генераций на месяц исчерпан (${limit}).`,
       );
       try {
-        const generated = await provider.generate({ kind, prompt, tone, length, platform });
+        const generated = await callWithFallback(workspaceId, role, (item) =>
+          item.generate({ kind, prompt, tone, length, platform }),
+        );
         const row = await db.aIRequest.create({
           data: {
             workspaceId,
@@ -328,15 +380,21 @@ export function createAiService(
       const copy = await providerFor(workspaceId, "copy");
       const imageProvider = await providerFor(workspaceId, "image");
       if (!copy.ready) {
+        const openaiBlocked = injected ? false : await connections.openaiRegionBlocked(workspaceId);
         throw new AccessError(
           400,
-          "Генерация поста недоступна: подключите ChatGPT. Это не ответ модели.",
+          openaiBlocked
+            ? OPENAI_REGION_MESSAGE
+            : "Генерация поста недоступна: подключите DeepSeek или ChatGPT. Это не ответ модели.",
         );
       }
       if (!imageProvider.imageReady) {
+        const openaiBlocked = injected ? false : await connections.openaiRegionBlocked(workspaceId);
         throw new AccessError(
           400,
-          "Для визуала подключите ChatGPT или Qwen. DeepSeek картинки не рисует.",
+          openaiBlocked
+            ? OPENAI_IMAGE_REGION_MESSAGE
+            : "Для визуала подключите ChatGPT или Qwen. DeepSeek картинки не рисует.",
         );
       }
       if (!storageDriver.ready) {
@@ -359,18 +417,22 @@ export function createAiService(
       );
 
       try {
-        const generated = await copy.generate({
-          kind: "post",
-          prompt,
-          tone,
-          length,
-          platform,
-        });
+        const generated = await callWithFallback(workspaceId, "copy", (item) =>
+          item.generate({
+            kind: "post",
+            prompt,
+            tone,
+            length,
+            platform,
+          }),
+        );
         const title = generated.title.trim() || "Черновик агента";
         const body = generated.body.trim() || prompt;
-        const image = await imageProvider.generateImage({
-          prompt: imagePromptFromCopy(prompt, title, body),
-        });
+        const image = await callWithFallback(workspaceId, "image", (item) =>
+          item.generateImage({
+            prompt: imagePromptFromCopy(prompt, title, body),
+          }),
+        );
         const asset = await media.upload(userId, workspaceId, {
           filename: `agent-visual.${extensionForMime(image.mimeType)}`,
           declaredType: image.mimeType,

@@ -132,7 +132,7 @@ describe("AI assistant", () => {
     await expectAccess(
       ai.generate(owner.userId, owner.workspaceId, { kind: "post", prompt: "борщ" }),
       400,
-      /подключите ChatGPT/,
+      /ChatGPT|DeepSeek/
     );
     expect(await prisma.aIRequest.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
     const usage = await ai.usage(owner.userId, owner.workspaceId);
@@ -318,7 +318,7 @@ describe("AI assistant", () => {
         projectId: owner.projectId,
       }),
       400,
-      /подключите ChatGPT/,
+      /ChatGPT|DeepSeek/
     );
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
     expect(await prisma.mediaAsset.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);

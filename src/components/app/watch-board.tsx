@@ -208,8 +208,8 @@ export function WatchBoard({
           {batch.body ? <p className="whitespace-pre-wrap text-sm text-ink/80">{batch.body}</p> : null}
           {!agentReady ? (
             <StatusBanner tone="warning">
-              Для новой картинки нужен ChatGPT. Кнопка на идее всё равно есть: агент попытается написать пост и нарисовать
-              визуал. Без ключа черновик с чужой картинкой не создаётся.
+              ChatGPT с этого сервера в РФ часто недоступен. Текст может написать DeepSeek. Для новой картинки подключите
+              Qwen — или нужен VPS в ЕС/США. Кнопка на идее всё равно отправляет в агент.
               <span className="mt-3 block">
                 <ButtonLink href="/app/ai" variant="secondary">
                   Открыть агент AI
