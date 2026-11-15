@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StatusBanner } from "@/components/ui/status-banner";
 import {
+  bindTelegramChannel,
   connectTelegram,
   connectVk,
   createSetupAccount,
@@ -41,6 +42,7 @@ export function SocialAccountsBoard({
 }) {
   const [setupState, setupAction, setupPending] = useActionState(createSetupAccount, idle);
   const [connectState, connectAction, connectPending] = useActionState(connectTelegram, idle);
+  const [bindState, bindAction, bindPending] = useActionState(bindTelegramChannel, idle);
   const [vkState, vkAction, vkPending] = useActionState(connectVk, idle);
   const [disconnectState, disconnectAction, disconnectPending] = useActionState(disconnectSocial, idle);
 
@@ -67,11 +69,38 @@ export function SocialAccountsBoard({
             </p>
             {account.platform === "telegram" && account.hasToken && !account.externalId ? (
               <p className="text-sm text-ink/70">
-                Бот сохранён. Сам по себе он не канал: посты выйдут, когда появится ваш канал или группа и бот станет там
-                администратором.
+                Бот сохранён. Сам по себе он не канал: посты выйдут в t.me/dom_po_polochkam, когда канал будет привязан.
+              </p>
+            ) : null}
+            {account.platform === "telegram" && account.externalId ? (
+              <p className="text-sm text-ink/70">
+                Канал привязан. Публикация идёт туда от имени бота, который уже администратор.
               </p>
             ) : null}
             {account.lastError ? <p className="text-sm text-ink/60">{account.lastError}</p> : null}
+            {canConnect && account.platform === "telegram" && account.hasToken ? (
+              <form action={bindAction} className="grid gap-3">
+                <input type="hidden" name="workspaceId" value={workspaceId} />
+                <input type="hidden" name="accountId" value={account.id} />
+                {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
+                <label className="grid gap-2 text-sm font-medium text-ink">
+                  Канал
+                  <input
+                    name="chatId"
+                    required
+                    defaultValue={account.externalId ? "" : "@dom_po_polochkam"}
+                    placeholder="https://t.me/dom_po_polochkam"
+                    className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
+                  />
+                </label>
+                {bindState.message ? (
+                  <StatusBanner tone={bindState.status === "success" ? "success" : "warning"}>{bindState.message}</StatusBanner>
+                ) : null}
+                <Button type="submit" variant="secondary" disabled={bindPending}>
+                  {bindPending ? "Проверяем канал..." : account.externalId ? "Сменить канал" : "Привязать канал к проекту"}
+                </Button>
+              </form>
+            ) : null}
             {canConnect ? (
               <form action={disconnectAction}>
                 <input type="hidden" name="workspaceId" value={workspaceId} />
@@ -109,8 +138,8 @@ export function SocialAccountsBoard({
             <Card>
               <h2 className="text-xl font-black text-ink">Подключить Telegram</h2>
               <p className="mt-2 text-sm text-ink/70">
-                Достаточно токена от @BotFather. Канал не обязателен: бот — это не лента, в него нельзя «выложить пост».
-                Если позже появится ваш канал или группа, укажите @username или chat_id. Поля «пароль Telegram» нет.
+                Токен от @BotFather и канал t.me/dom_po_polochkam. Бот уже должен быть администратором канала. Пароль
+                Telegram не принимается.
               </p>
               <form action={connectAction} className="mt-4 grid gap-4">
                 <input type="hidden" name="workspaceId" value={workspaceId} />
@@ -126,10 +155,12 @@ export function SocialAccountsBoard({
                   />
                 </label>
                 <label className="grid gap-2 text-sm font-medium text-ink">
-                  Канал или чат (не обязательно)
+                  Канал
                   <input
                     name="chatId"
-                    placeholder="@ваш_канал или chat_id"
+                    required
+                    defaultValue="@dom_po_polochkam"
+                    placeholder="https://t.me/dom_po_polochkam"
                     className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
                   />
                 </label>

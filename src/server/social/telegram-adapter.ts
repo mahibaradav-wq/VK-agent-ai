@@ -1,20 +1,35 @@
 import type { PrismaClient } from "@prisma/client";
 
+import { detectMediaType } from "@/modules/media/file-validation";
 import { decryptToken } from "@/server/crypto/token-cipher";
 import {
   createTelegramTransport,
   type TelegramChat,
+  type TelegramFilePart,
   type TelegramMessage,
   type TelegramTransport,
 } from "@/server/social/telegram-api";
 import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/social/types";
+import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
+
+const TELEGRAM_CAPTION_LIMIT = 1024;
 
 function composeText(input: PublishInput) {
   const parts = [input.title.trim(), input.body.trim()].filter(Boolean);
-  if (input.mediaKeys.length > 0) {
-    parts.push("Медиа в Telegram не отправлено: capability publish_media не включена.");
-  }
   return parts.join("\n\n") || "Публикация Polka Social";
+}
+
+function filenameForMime(mimeType: string) {
+  if (mimeType === "image/png") {
+    return "photo.png";
+  }
+  if (mimeType === "image/gif") {
+    return "photo.gif";
+  }
+  if (mimeType === "image/webp") {
+    return "photo.webp";
+  }
+  return "photo.jpg";
 }
 
 function mapTelegramFailure(errorCode: number, description: string, retryAfter?: number): PublishOutcome {
@@ -40,8 +55,10 @@ function mapTelegramFailure(errorCode: number, description: string, retryAfter?:
 export function createTelegramAdapter(options: {
   db: PrismaClient;
   transport?: TelegramTransport;
+  storage?: StorageDriver;
 }): SocialAdapter {
   const transport = options.transport ?? createTelegramTransport();
+  const storage = options.storage ?? createStorageFromEnv();
 
   return {
     platform: "telegram",
@@ -80,7 +97,7 @@ export function createTelegramAdapter(options: {
           kind: "permanent_failure",
           code: "telegram_no_chat",
           message:
-            "Бот подключён, но писать некуда: у Telegram нет ленты у бота. Создайте канал или группу, добавьте бота администратором и укажите @username или chat_id.",
+            "Бот подключён, но канал не указан. Привяжите t.me/dom_po_polochkam — бот уже должен быть там администратором.",
         };
       }
 
@@ -95,10 +112,67 @@ export function createTelegramAdapter(options: {
         };
       }
 
-      const sent = await transport.request(token, "sendMessage", {
-        chat_id: account.externalId,
-        text: composeText(input),
-      });
+      const text = composeText(input);
+      const mediaKeys = input.mediaKeys.filter(Boolean);
+      let sent;
+
+      if (mediaKeys.length > 0) {
+        if (!storage.ready) {
+          return {
+            kind: "permanent_failure",
+            code: "storage_unavailable",
+            message: storage.setupMessage || "Хранилище не настроено, картинку в Telegram отправить нельзя.",
+          };
+        }
+        let bytes: Uint8Array;
+        try {
+          bytes = await storage.get(mediaKeys[0]!);
+        } catch {
+          return {
+            kind: "temporary_failure",
+            code: "media_missing",
+            message: "Файл публикации не найден в хранилище. Повторите после загрузки медиа.",
+          };
+        }
+        const mimeType = detectMediaType(bytes);
+        if (!mimeType) {
+          return {
+            kind: "permanent_failure",
+            code: "media_type",
+            message: "В Telegram можно прикрепить только изображение JPEG, PNG, GIF или WebP.",
+          };
+        }
+        const caption = text.length <= TELEGRAM_CAPTION_LIMIT ? text : text.slice(0, TELEGRAM_CAPTION_LIMIT);
+        const file: TelegramFilePart = {
+          field: "photo",
+          filename: filenameForMime(mimeType),
+          mimeType,
+          bytes,
+        };
+        sent = await transport.request(
+          token,
+          "sendPhoto",
+          {
+            chat_id: account.externalId,
+            caption,
+          },
+          file,
+        );
+        if (sent.ok && text.length > TELEGRAM_CAPTION_LIMIT) {
+          const rest = await transport.request(token, "sendMessage", {
+            chat_id: account.externalId,
+            text,
+          });
+          if (!rest.ok) {
+            sent = rest;
+          }
+        }
+      } else {
+        sent = await transport.request(token, "sendMessage", {
+          chat_id: account.externalId,
+          text,
+        });
+      }
 
       if (!sent.ok) {
         if (sent.error_code === 401) {
@@ -108,6 +182,14 @@ export function createTelegramAdapter(options: {
           });
         }
         return mapTelegramFailure(sent.error_code, sent.description, sent.retry_after);
+      }
+
+      if (mediaKeys.length > 0) {
+        await options.db.socialAccountCapability.upsert({
+          where: { socialAccountId_name: { socialAccountId: account.id, name: "publish_media" } },
+          update: { enabled: true },
+          create: { socialAccountId: account.id, name: "publish_media", enabled: true },
+        });
       }
 
       const message = sent.result as TelegramMessage;

@@ -105,6 +105,29 @@ export async function connectTelegram(_prev: SocialFormState, formData: FormData
   }
 }
 
+export async function bindTelegramChannel(_prev: SocialFormState, formData: FormData): Promise<SocialFormState> {
+  try {
+    const account = await createSocialService(prisma).bindTelegramChannel(
+      await requireUserId(),
+      readField(formData, "workspaceId"),
+      {
+        accountId: readField(formData, "accountId"),
+        chatId: readField(formData, "chatId"),
+        projectId: readField(formData, "projectId") || undefined,
+        password: readField(formData, "password"),
+      },
+    );
+    revalidateSocial();
+    return {
+      status: "success",
+      message: `Канал привязан: ${account.displayName}. Посты уходят туда через бота, токен повторно не нужен.`,
+    };
+  } catch (error) {
+    const message = error instanceof AccessError ? error.message : "Не удалось привязать канал Telegram.";
+    return { status: "invalid", message };
+  }
+}
+
 export async function disconnectSocial(_prev: SocialFormState, formData: FormData): Promise<SocialFormState> {
   try {
     await createSocialService(prisma).disconnect(

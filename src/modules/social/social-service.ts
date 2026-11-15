@@ -4,8 +4,9 @@ import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions"
 import { createAccessService } from "@/modules/access/access-service";
 import { getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { lockWorkspaceMetric } from "@/modules/billing/usage";
-import { encryptToken } from "@/server/crypto/token-cipher";
+import { decryptToken, encryptToken } from "@/server/crypto/token-cipher";
 import { FIRST_SOCIAL_PLATFORM } from "@/modules/social/catalog";
+import { parseTelegramChatSource } from "@/modules/social/telegram-chat";
 import { parseVkCommunitySource } from "@/modules/watch/parse";
 import {
   createTelegramTransport,
@@ -77,6 +78,44 @@ export function createSocialService(
   const access = createAccessService(db);
   const telegram = options?.telegram ?? createTelegramTransport();
   const vk = options?.vk ?? createVkTransport();
+
+  async function assertBotAdminsChat(token: string, botId: number, chatSource: string) {
+    const chatId = parseTelegramChatSource(chatSource);
+    const chat = await telegram.request(token, "getChat", { chat_id: chatId });
+    if (!chat.ok) {
+      throw new AccessError(
+        400,
+        chat.error_code === 0
+          ? `С этого сервера нет сети до Telegram: ${chat.description}`
+          : `Telegram не подтвердил канал: ${chat.description}`,
+      );
+    }
+    const info = chat.result as TelegramChat;
+    const member = await telegram.request(token, "getChatMember", {
+      chat_id: info.id ?? chatId,
+      user_id: botId,
+    });
+    if (!member.ok) {
+      throw new AccessError(
+        400,
+        member.error_code === 0
+          ? `С этого сервера нет сети до Telegram: ${member.description}`
+          : `Бот не виден в канале ${chatId}: ${member.description}`,
+      );
+    }
+    const status = (member.result as { status?: string }).status;
+    if (status !== "administrator" && status !== "creator") {
+      throw new AccessError(
+        400,
+        `Бот не администратор канала ${chatId}. Добавьте его администратором с правом публиковать сообщения.`,
+      );
+    }
+    return {
+      externalId: String(info.id ?? chatId),
+      title: info.title?.trim() || "",
+      username: info.username?.trim() || "",
+    };
+  }
 
   async function loadBoundAccount(workspaceId: string, accountId: string) {
     const account = await db.socialAccount.findUnique({
@@ -191,29 +230,18 @@ export function createSocialService(
         );
       }
       const bot = me.result as TelegramUser;
-      let chatInfo: TelegramChat | undefined;
-      if (chatId) {
-        const chat = await telegram.request(token, "getChat", { chat_id: chatId });
-        if (!chat.ok) {
-          throw new AccessError(
-            400,
-            chat.error_code === 0
-              ? `С этого сервера нет сети до Telegram: ${chat.description}`
-              : `Telegram не подтвердил чат: ${chat.description}`,
-          );
-        }
-        chatInfo = chat.result as TelegramChat;
-      }
+      const destination = chatId ? await assertBotAdminsChat(token, bot.id, chatId) : null;
       const encryptedToken = encryptToken(token);
       const displayName =
         input.displayName?.trim() ||
+        destination?.title ||
+        (destination?.username ? `@${destination.username}` : "") ||
         (bot.username ? `@${bot.username}` : bot.first_name) ||
-        chatInfo?.title ||
         "Telegram";
-      const externalId = chatInfo ? String(chatInfo.id ?? chatId) : "";
+      const externalId = destination?.externalId ?? "";
       const lastError = externalId
         ? null
-        : "Бот подключён. У бота нет своей ленты — укажите канал или группу, куда он может писать.";
+        : "Бот подключён. У бота нет своей ленты — укажите канал t.me/dom_po_polochkam, куда он может писать.";
 
       const account = await db.$transaction(async (tx) => {
         let saved;
@@ -264,6 +292,13 @@ export function createSocialService(
           update: { enabled: true },
           create: { socialAccountId: saved.id, name: "publish_text", enabled: true },
         });
+        if (externalId) {
+          await tx.socialAccountCapability.upsert({
+            where: { socialAccountId_name: { socialAccountId: saved.id, name: "publish_media" } },
+            update: { enabled: true },
+            create: { socialAccountId: saved.id, name: "publish_media", enabled: true },
+          });
+        }
         await tx.postTarget.updateMany({
           where: { workspaceId, platform: "telegram", socialAccountId: null },
           data: { socialAccountId: saved.id },
@@ -281,6 +316,93 @@ export function createSocialService(
       });
 
       return toPublic(account);
+    },
+
+    async bindTelegramChannel(
+      userId: string,
+      workspaceId: string,
+      input: { accountId: string; chatId: string; projectId?: string; password?: string },
+    ) {
+      await access.requirePermission(userId, workspaceId, "social.connect");
+      rejectPassword(input);
+      const account = await loadBoundAccount(workspaceId, input.accountId);
+      if (account.platform !== "telegram") {
+        throw new AccessError(400, "Этот аккаунт не Telegram.");
+      }
+      if (account.status !== "connected" || !account.encryptedToken) {
+        throw new AccessError(400, "Сначала подключите бота токеном от @BotFather.");
+      }
+      if (input.projectId) {
+        const project = await db.project.findUnique({ where: { id: input.projectId } });
+        assertWorkspaceBound(workspaceId, project, "Проект");
+      }
+
+      let token: string;
+      try {
+        token = decryptToken(account.encryptedToken);
+      } catch {
+        throw new AccessError(400, "Токен бота не удалось расшифровать. Подключите аккаунт заново.");
+      }
+
+      const me = await telegram.request(token, "getMe");
+      if (!me.ok) {
+        if (me.error_code === 401) {
+          await db.socialAccount.update({
+            where: { id: account.id },
+            data: { status: "token_expired", lastError: me.description },
+          });
+        }
+        throw new AccessError(
+          400,
+          me.error_code === 0
+            ? `С этого сервера нет сети до Telegram: ${me.description}`
+            : `Telegram отклонил токен: ${me.description}`,
+        );
+      }
+      const bot = me.result as TelegramUser;
+      const destination = await assertBotAdminsChat(token, bot.id, input.chatId);
+      const displayName =
+        destination.title ||
+        (destination.username ? `@${destination.username}` : account.displayName);
+
+      const saved = await db.$transaction(async (tx) => {
+        const updated = await tx.socialAccount.update({
+          where: { id: account.id },
+          data: {
+            projectId: input.projectId || account.projectId,
+            displayName,
+            externalId: destination.externalId,
+            status: "connected",
+            lastError: null,
+          },
+          include: accountInclude,
+        });
+        await tx.socialAccountCapability.upsert({
+          where: { socialAccountId_name: { socialAccountId: updated.id, name: "publish_text" } },
+          update: { enabled: true },
+          create: { socialAccountId: updated.id, name: "publish_text", enabled: true },
+        });
+        await tx.socialAccountCapability.upsert({
+          where: { socialAccountId_name: { socialAccountId: updated.id, name: "publish_media" } },
+          update: { enabled: true },
+          create: { socialAccountId: updated.id, name: "publish_media", enabled: true },
+        });
+        await tx.postTarget.updateMany({
+          where: { workspaceId, platform: "telegram", socialAccountId: null },
+          data: { socialAccountId: updated.id },
+        });
+        await tx.auditLog.create({
+          data: {
+            action: "BIND_TELEGRAM_CHANNEL",
+            entityType: "social_account",
+            entityId: updated.id,
+            actorId: userId,
+            details: `telegram:${destination.externalId}`,
+          },
+        });
+        return tx.socialAccount.findUniqueOrThrow({ where: { id: updated.id }, include: accountInclude });
+      });
+      return toPublic(saved);
     },
 
     async connectVk(

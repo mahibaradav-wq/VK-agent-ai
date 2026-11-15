@@ -11,7 +11,7 @@ import { prisma } from "@/server/db/prisma";
 
 export const metadata = createPageMetadata({
   title: "Социальные аккаунты",
-  description: "Официальное подключение Telegram Bot API и ключа сообщества ВК. Пароль соцсети не запрашивается.",
+  description: "Telegram-канал t.me/dom_po_polochkam через бота. ВКонтакте — ключ сообщества. Пароль соцсети не запрашивается.",
   path: "/app/social-accounts",
 });
 
@@ -33,7 +33,7 @@ export default async function SocialAccountsPage() {
       <PageHeader
         eyebrow="Интеграции"
         title="Социальные аккаунты"
-        description="Telegram — токен бота. ВКонтакте — ключ доступа сообщества с правом «Стена». Токены шифруются. Без ключа публикация не притворяется успешной."
+        description="Канал t.me/dom_po_polochkam публикует бот @dom_po_polochkam_bot, уже администратор. ВКонтакте — ключ сообщества со «Стеной». Без ключа успех не имитируется."
       />
       <Container className="pb-20">
         <SocialAccountsBoard

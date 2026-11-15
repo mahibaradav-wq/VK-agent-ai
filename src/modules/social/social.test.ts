@@ -94,13 +94,21 @@ function scriptedVk(
 
 function scriptedTelegram(
   script: Record<string, TelegramApiResult<unknown>> | ((method: string) => TelegramApiResult<unknown>),
-): TelegramTransport & { calls: Array<{ method: string; token: string }> } {
-  const calls: Array<{ method: string; token: string }> = [];
+): TelegramTransport & {
+  calls: Array<{ method: string; token: string; body?: Record<string, unknown>; fileName?: string }>;
+} {
+  const calls: Array<{ method: string; token: string; body?: Record<string, unknown>; fileName?: string }> = [];
   return {
     calls,
-    async request(token, method) {
-      calls.push({ method, token });
-      return typeof script === "function" ? script(method) : (script[method] ?? { ok: false, error_code: 400, description: "unexpected method" });
+    async request(token, method, body, file) {
+      calls.push({ method, token, body, fileName: file?.filename });
+      if (typeof script === "function") {
+        return script(method);
+      }
+      if (method === "getChatMember" && script.getChatMember === undefined) {
+        return { ok: true, result: { status: "administrator" } };
+      }
+      return script[method] ?? { ok: false, error_code: 400, description: "unexpected method" };
     },
   };
 }
@@ -200,7 +208,30 @@ describe("social accounts", () => {
     const stored = await prisma.socialAccount.findUniqueOrThrow({ where: { id: connected.id } });
     expect(stored.encryptedToken).toBeTruthy();
     expect(stored.encryptedToken).not.toContain(BOT_TOKEN);
-    expect(transport.calls.map((item) => item.method)).toEqual(["getMe", "getChat"]);
+    expect(transport.calls.map((item) => item.method)).toEqual(["getMe", "getChat", "getChatMember"]);
+  });
+
+  it("binds t.me/dom_po_polochkam to an existing bot without a new token", async () => {
+    const owner = await registerOwner("soc-bind-channel");
+    const transport = scriptedTelegram({
+      getMe: { ok: true, result: { id: 897, is_bot: true, username: "dom_po_polochkam_bot" } },
+      getChat: { ok: true, result: { id: -1004392473566, type: "channel", title: "ДОМ по полочкам", username: "dom_po_polochkam" } },
+    });
+    const social = createSocialService(prisma, { telegram: transport });
+    const connected = await social.connectTelegram(owner.userId, owner.workspaceId, { token: BOT_TOKEN });
+    expect(connected.externalId).toBe("");
+
+    const bound = await social.bindTelegramChannel(owner.userId, owner.workspaceId, {
+      accountId: connected.id,
+      chatId: "https://t.me/dom_po_polochkam",
+      projectId: owner.projectId,
+    });
+    expect(bound.externalId).toBe("-1004392473566");
+    expect(bound.displayName).toBe("ДОМ по полочкам");
+    expect(bound.projectName).toBe(`Проект soc-bind-channel`);
+    expect(bound.capabilities.some((item) => item.name === "publish_media" && item.enabled)).toBe(true);
+    expect(transport.calls.map((item) => item.method)).toEqual(["getMe", "getMe", "getChat", "getChatMember"]);
+    expect(transport.calls.find((item) => item.method === "getChat")?.body).toEqual({ chat_id: "@dom_po_polochkam" });
   });
 
   it("does not blame the bot token when Telegram is unreachable", async () => {
@@ -284,6 +315,7 @@ describe("social accounts", () => {
 
     const sendOk = scriptedTelegram({
       sendMessage: { ok: true, result: { message_id: 501, chat: { id: 77 } } },
+      sendPhoto: { ok: true, result: { message_id: 502, chat: { id: 77 } } },
     });
     const publishing = createPublishService(prisma, {
       queue: createInlineQueue(),
@@ -338,6 +370,51 @@ describe("social accounts", () => {
     const attempt = await prisma.publishAttempt.findFirstOrThrow({ where: { jobId: limitedJob.id } });
     expect(attempt.kind).toBe("temporary_failure");
     expect(attempt.errorCode).toBe("rate_limit");
+  });
+
+  it("publishes a photo to the bound Telegram channel", async () => {
+    const owner = await registerOwner("soc-tg-photo");
+    const transport = scriptedTelegram({
+      getMe: { ok: true, result: { id: 9, is_bot: true, username: "pub_bot" } },
+      getChat: { ok: true, result: { id: -1004392473566, type: "channel", title: "ДОМ по полочкам" } },
+      sendPhoto: { ok: true, result: { message_id: 88, chat: { id: -1004392473566 } } },
+    });
+    const social = createSocialService(prisma, { telegram: transport });
+    await social.connectTelegram(owner.userId, owner.workspaceId, {
+      token: BOT_TOKEN,
+      chatId: "https://t.me/dom_po_polochkam",
+      projectId: owner.projectId,
+    });
+    const media = createMediaService(prisma, createLocalStorage(storageDir));
+    const asset = await media.upload(owner.userId, owner.workspaceId, {
+      filename: "cover.png",
+      declaredType: "image/png",
+      bytes: png,
+    });
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Полки");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Полки",
+      body: "Разложили специи.",
+      platforms: ["telegram"],
+      mediaIds: [asset.id],
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: {
+        get: () => createTelegramAdapter({ db: prisma, transport, storage: createLocalStorage(storageDir) }),
+      },
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-tg-photo");
+    const stored = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, include: { targets: true } });
+    expect(stored.status).toBe("published");
+    expect(stored.targets[0]?.externalId).toBe("88");
+    const photo = transport.calls.find((item) => item.method === "sendPhoto");
+    expect(photo?.body).toMatchObject({ chat_id: "-1004392473566" });
+    expect(String(photo?.body?.caption)).toContain("Разложили специи.");
+    expect(photo?.fileName).toBe("photo.png");
+    expect(transport.calls.some((item) => item.method === "sendMessage")).toBe(false);
   });
 
   it("does not fake a VK publish while the community token is missing", async () => {

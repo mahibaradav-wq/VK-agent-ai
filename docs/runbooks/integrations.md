@@ -11,6 +11,8 @@
 ## Telegram Bot API
 
 - Токен только от @BotFather, в кабинете `/app/social-accounts`.
+- Канал «Дом по полочкам»: `t.me/dom_po_polochkam`. Бот `@dom_po_polochkam_bot` должен быть администратором. Привязка канала не требует повторного токена.
+- Публикация: `sendMessage` или `sendPhoto` в chat_id канала. Медиа без картинки не имитируется.
 - Пароль аккаунта отклоняется.
 - 401 → `token_expired`, 429 → `rate_limit`. Успех только после ответа Bot API.
 
