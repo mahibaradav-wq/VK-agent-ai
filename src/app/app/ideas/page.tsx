@@ -7,6 +7,7 @@ import { createPageMetadata } from "@/lib/metadata";
 import { getAppContext } from "@/modules/access/app-context";
 import { hasPermission } from "@/modules/access/permissions";
 import { createAiService } from "@/modules/ai/ai-service";
+import { createPostService } from "@/modules/posts/post-service";
 import { createWatchService } from "@/modules/watch/watch-service";
 import { prisma } from "@/server/db/prisma";
 
@@ -28,23 +29,14 @@ export default async function IdeasPage() {
   }
 
   const watch = createWatchService(prisma);
-  const [credential, communities, ideas, aiStatus, studioCard] = await Promise.all([
+  const [credential, communities, ideas, aiStatus, studioCards] = await Promise.all([
     watch.credential(session.user.id, activeMembership.workspaceId),
     watch.listCommunities(session.user.id, activeMembership.workspaceId),
     watch.listIdeas(session.user.id, activeMembership.workspaceId),
     createAiService(prisma).workspaceStatus(session.user.id, activeMembership.workspaceId),
-    activeProject
-      ? prisma.post.findFirst({
-          where: {
-            workspaceId: activeMembership.workspaceId,
-            projectId: activeProject.id,
-            status: { in: ["draft", "pending_approval", "approved"] },
-          },
-          select: { id: true },
-        })
-      : Promise.resolve(null),
+    createPostService(prisma).listStudioCards(session.user.id, activeMembership.workspaceId, activeProject?.id),
   ]);
-  const studioBusy = Boolean(studioCard);
+  const studioBusy = studioCards.length > 0;
 
   return (
     <>

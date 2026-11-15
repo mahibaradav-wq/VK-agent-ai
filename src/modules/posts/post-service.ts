@@ -31,6 +31,7 @@ function fingerprint(input: { title: string; body: string; platforms: string[]; 
 }
 
 const approvalStatuses: Array<PostStatus | PostTargetStatus> = ["pending_approval", "approved"];
+const studioCardStatuses: PostStatus[] = ["draft", "pending_approval", "approved", "failed"];
 
 export function createPostService(db: PrismaClient) {
   const access = createAccessService(db);
@@ -59,6 +60,49 @@ export function createPostService(db: PrismaClient) {
     async get(userId: string, workspaceId: string, postId: string) {
       await access.requirePermission(userId, workspaceId, "post.view");
       return loadBoundPost(workspaceId, postId);
+    },
+
+    async listStudioCards(userId: string, workspaceId: string, projectId?: string) {
+      await access.requirePermission(userId, workspaceId, "post.view");
+      if (!projectId) {
+        return [];
+      }
+      return db.post.findMany({
+        where: {
+          workspaceId,
+          projectId,
+          status: { in: studioCardStatuses },
+          schedule: null,
+        },
+        include: postInclude,
+        orderBy: { updatedAt: "desc" },
+      });
+    },
+
+    async discardStudioCard(userId: string, workspaceId: string, postId: string) {
+      await access.requirePermission(userId, workspaceId, "post.update");
+      const post = await loadBoundPost(workspaceId, postId);
+      if (post.schedule) {
+        throw new AccessError(400, "Этот пост уже в календаре.");
+      }
+      if (!studioCardStatuses.includes(post.status)) {
+        throw new AccessError(403, "Нельзя убрать публикацию в текущем статусе.");
+      }
+      await db.$transaction(async (tx) => {
+        await tx.post.update({
+          where: { id: post.id },
+          data: { status: "cancelled" },
+        });
+        await tx.auditLog.create({
+          data: {
+            action: "DISCARD_STUDIO_CARD",
+            entityType: "post",
+            entityId: post.id,
+            actorId: userId,
+            details: post.status,
+          },
+        });
+      });
     },
 
     async create(userId: string, workspaceId: string, projectId: string, title?: string) {

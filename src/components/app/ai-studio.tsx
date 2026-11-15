@@ -116,7 +116,7 @@ export function AiStudio({
 
   useEffect(() => {
     if (agentState.status === "success" && agentState.postId) {
-      router.push(`/app/posts/${agentState.postId}`);
+      router.refresh();
     }
   }, [agentState.postId, agentState.status, router]);
 

@@ -60,6 +60,9 @@ export async function reschedulePost(_prev: CalendarFormState, formData: FormDat
     );
     revalidatePath("/app/calendar");
     revalidatePath("/app/posts");
+    revalidatePath("/app/studio");
+    revalidatePath("/app/ideas");
+    revalidatePath("/app/products");
     return { status: "success", message: "Расписание обновлено. Время сохранено в UTC." };
   } catch (error) {
     const message = error instanceof AccessError ? error.message : "Не удалось изменить расписание.";

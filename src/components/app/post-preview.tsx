@@ -34,12 +34,17 @@ export function PostPreview({
           <p className={`text-xs font-bold uppercase tracking-[0.16em] ${platform.id === "telegram" ? "text-sky-300" : "text-brand-dark"}`}>
             {platform.label}
           </p>
-          {mediaUrls[0] ? (
-            <div
-              className="mt-3 overflow-hidden rounded-2xl bg-[#F3EEE5]"
-              style={{ aspectRatio: aspectRatioCss(mediaAspect) }}
-            >
-              <img src={mediaUrls[0]} alt="" className="h-full w-full object-contain" />
+          {mediaUrls.length ? (
+            <div className="mt-3 grid gap-2">
+              {mediaUrls.map((url) => (
+                <div
+                  key={url}
+                  className="overflow-hidden rounded-2xl bg-[#F3EEE5]"
+                  style={{ aspectRatio: aspectRatioCss(mediaAspect) }}
+                >
+                  <img src={url} alt="" className="h-full w-full object-contain" />
+                </div>
+              ))}
             </div>
           ) : null}
           <h3 className="mt-3 text-lg font-black">{title || "Без названия"}</h3>

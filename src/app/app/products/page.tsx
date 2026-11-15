@@ -6,6 +6,7 @@ import { StatusBanner } from "@/components/ui/status-banner";
 import { createPageMetadata } from "@/lib/metadata";
 import { getAppContext } from "@/modules/access/app-context";
 import { hasPermission } from "@/modules/access/permissions";
+import { createPostService } from "@/modules/posts/post-service";
 import { createProductService } from "@/modules/products/product-service";
 import { prisma } from "@/server/db/prisma";
 
@@ -29,22 +30,12 @@ export default async function ProductsPage() {
     return <StatusBanner tone="warning">Сначала выберите проект.</StatusBanner>;
   }
 
-  const products = await createProductService(prisma).list(
-    session.user.id,
-    activeMembership.workspaceId,
-    activeProject.id,
-  );
-  const studioBusy = Boolean(
-    await prisma.post.findFirst({
-      where: {
-        workspaceId: activeMembership.workspaceId,
-        projectId: activeProject.id,
-        status: { in: ["draft", "pending_approval", "approved"] },
-        shopProduct: { isNot: null },
-      },
-      select: { id: true },
-    }),
-  );
+  const productService = createProductService(prisma);
+  const [products, studioCards] = await Promise.all([
+    productService.list(session.user.id, activeMembership.workspaceId, activeProject.id),
+    createPostService(prisma).listStudioCards(session.user.id, activeMembership.workspaceId, activeProject.id),
+  ]);
+  const studioBusy = studioCards.length > 0;
 
   return (
     <>

@@ -29,6 +29,9 @@ function revalidatePublish(postId?: string) {
   revalidatePath("/app/queue");
   revalidatePath("/app/posts");
   revalidatePath("/app/calendar");
+  revalidatePath("/app/studio");
+  revalidatePath("/app/ideas");
+  revalidatePath("/app/products");
   if (postId) {
     revalidatePath(`/app/posts/${postId}`);
   }

@@ -64,3 +64,24 @@ export async function savePostDraft(_prev: PostFormState, formData: FormData): P
     return { status: "invalid", message };
   }
 }
+
+function revalidateStudio(postId?: string) {
+  revalidatePath("/app/studio");
+  revalidatePath("/app/ideas");
+  revalidatePath("/app/products");
+  revalidatePath("/app/calendar");
+  revalidatePath("/app/posts");
+  if (postId) {
+    revalidatePath(`/app/posts/${postId}`);
+  }
+}
+
+export async function discardStudioCard(formData: FormData) {
+  const postId = readField(formData, "postId");
+  await createPostService(prisma).discardStudioCard(
+    await requireUserId(),
+    readField(formData, "workspaceId"),
+    postId,
+  );
+  revalidateStudio(postId);
+}

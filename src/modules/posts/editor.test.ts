@@ -93,6 +93,28 @@ describe("post editor and media library", () => {
     expect(second.post.versions.filter((version) => version.supersededAt).length).toBe(2);
   });
 
+  it("keeps an unscheduled draft as the Studio card until it is discarded or scheduled", async () => {
+    const owner = await registerOwner("studio-card");
+    const created = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Карусель без слотов");
+    expect(await posts.listStudioCards(owner.userId, owner.workspaceId, owner.projectId)).toHaveLength(1);
+
+    await prisma.schedule.create({
+      data: {
+        postId: created.id,
+        workspaceId: owner.workspaceId,
+        startsAt: new Date("2026-12-01T09:00:00.000Z"),
+        timezone: "Europe/Moscow",
+      },
+    });
+    await prisma.post.update({ where: { id: created.id }, data: { status: "scheduled" } });
+    expect(await posts.listStudioCards(owner.userId, owner.workspaceId, owner.projectId)).toHaveLength(0);
+
+    const leftover = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Недоделанный");
+    await posts.discardStudioCard(owner.userId, owner.workspaceId, leftover.id);
+    expect(await posts.listStudioCards(owner.userId, owner.workspaceId, owner.projectId)).toHaveLength(0);
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: leftover.id } })).status).toBe("cancelled");
+  });
+
   it("uploads a valid image and rejects a spoofed mediaId", async () => {
     const ownerA = await registerOwner("media-a");
     const ownerB = await registerOwner("media-b");

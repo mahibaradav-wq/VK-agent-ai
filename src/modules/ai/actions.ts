@@ -145,12 +145,13 @@ export async function composeAgentPost(_prev: AiFormState, formData: FormData): 
     );
     revalidatePath("/app/ai");
     revalidatePath("/app/studio");
+    revalidatePath("/app/ideas");
     revalidatePath("/app/products");
     revalidatePath("/app/posts");
     revalidatePath(`/app/posts/${result.post.id}`);
     return {
       status: "success",
-      message: "Черновик создан. Агент приложил визуал — откройте редактор, чтобы проверить и опубликовать.",
+      message: "Черновик лежит в Студии. Опубликуйте сейчас, поставьте в календарь или уберите.",
       requestId: result.request.id,
       title: result.request.title,
       body: result.request.body,

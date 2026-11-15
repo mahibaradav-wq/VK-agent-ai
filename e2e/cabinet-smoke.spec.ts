@@ -22,6 +22,7 @@ test("cabinet pages follow the approved menu", async ({ page }) => {
   await page.goto("/app/studio");
   await expect(page.getByRole("heading", { name: "Пост + визуал" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Сгенерировать текст" })).toHaveCount(0);
+  await expect(page.getByText("Здесь лежит неопубликованный пост")).toHaveCount(0);
   await page.getByRole("button", { name: "Карусель" }).click();
   await expect(page.getByText("Карточек в посте")).toBeVisible();
 
