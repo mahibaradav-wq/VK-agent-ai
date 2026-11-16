@@ -115,6 +115,22 @@ describe("post editor and media library", () => {
     expect((await prisma.post.findUniqueOrThrow({ where: { id: leftover.id } })).status).toBe("cancelled");
   });
 
+  it("clears a pile of leftover Studio drafts and keeps only a brand-new card", async () => {
+    const owner = await registerOwner("studio-pile");
+    await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Старый 1");
+    await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Старый 2");
+    await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Старый 3");
+    expect((await posts.collapseStudioPile(owner.userId, owner.workspaceId, owner.projectId)).cleared).toBe(3);
+    expect(await posts.listStudioCards(owner.userId, owner.workspaceId, owner.projectId)).toHaveLength(0);
+
+    const current = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Текущая");
+    await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Ещё одна");
+    await posts.clearUnscheduledStudioCards(owner.userId, owner.workspaceId, owner.projectId, current.id);
+    const remaining = await posts.listStudioCards(owner.userId, owner.workspaceId, owner.projectId);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.id).toBe(current.id);
+  });
+
   it("uploads a valid image and rejects a spoofed mediaId", async () => {
     const ownerA = await registerOwner("media-a");
     const ownerB = await registerOwner("media-b");

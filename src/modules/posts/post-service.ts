@@ -62,21 +62,67 @@ export function createPostService(db: PrismaClient) {
       return loadBoundPost(workspaceId, postId);
     },
 
+    studioCardWhere(workspaceId: string, projectId: string, exceptPostId?: string) {
+      return {
+        workspaceId,
+        projectId,
+        status: { in: studioCardStatuses },
+        schedule: null,
+        ...(exceptPostId ? { id: { not: exceptPostId } } : {}),
+      };
+    },
+
     async listStudioCards(userId: string, workspaceId: string, projectId?: string) {
       await access.requirePermission(userId, workspaceId, "post.view");
       if (!projectId) {
         return [];
       }
       return db.post.findMany({
-        where: {
-          workspaceId,
-          projectId,
-          status: { in: studioCardStatuses },
-          schedule: null,
-        },
+        where: this.studioCardWhere(workspaceId, projectId),
         include: postInclude,
         orderBy: { updatedAt: "desc" },
+        take: 1,
       });
+    },
+
+    async clearUnscheduledStudioCards(userId: string, workspaceId: string, projectId: string, exceptPostId?: string) {
+      await access.requirePermission(userId, workspaceId, "post.update");
+      const where = this.studioCardWhere(workspaceId, projectId, exceptPostId);
+      const leftover = await db.post.findMany({ where, select: { id: true } });
+      if (leftover.length === 0) {
+        return 0;
+      }
+      await db.$transaction(async (tx) => {
+        await tx.post.updateMany({
+          where: { id: { in: leftover.map((item) => item.id) } },
+          data: { status: "cancelled" },
+        });
+        await tx.auditLog.create({
+          data: {
+            action: "CLEAR_STUDIO_CARDS",
+            entityType: "project",
+            entityId: projectId,
+            actorId: userId,
+            details: leftover.map((item) => item.id).join(","),
+          },
+        });
+      });
+      return leftover.length;
+    },
+
+    async collapseStudioPile(userId: string, workspaceId: string, projectId?: string) {
+      if (!projectId) {
+        return { cleared: 0 };
+      }
+      await access.requirePermission(userId, workspaceId, "post.update");
+      const leftover = await db.post.findMany({
+        where: this.studioCardWhere(workspaceId, projectId),
+        select: { id: true },
+      });
+      if (leftover.length <= 1) {
+        return { cleared: 0 };
+      }
+      return { cleared: await this.clearUnscheduledStudioCards(userId, workspaceId, projectId) };
     },
 
     async discardStudioCard(userId: string, workspaceId: string, postId: string) {

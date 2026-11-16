@@ -29,12 +29,16 @@ export default async function IdeasPage() {
   }
 
   const watch = createWatchService(prisma);
+  const posts = createPostService(prisma);
+  if (activeProject && hasPermission(activeMembership.role, "post.update")) {
+    await posts.collapseStudioPile(session.user.id, activeMembership.workspaceId, activeProject.id);
+  }
   const [credential, communities, ideas, aiStatus, studioCards] = await Promise.all([
     watch.credential(session.user.id, activeMembership.workspaceId),
     watch.listCommunities(session.user.id, activeMembership.workspaceId),
     watch.listIdeas(session.user.id, activeMembership.workspaceId),
     createAiService(prisma).workspaceStatus(session.user.id, activeMembership.workspaceId),
-    createPostService(prisma).listStudioCards(session.user.id, activeMembership.workspaceId, activeProject?.id),
+    posts.listStudioCards(session.user.id, activeMembership.workspaceId, activeProject?.id),
   ]);
   const studioBusy = studioCards.length > 0;
 

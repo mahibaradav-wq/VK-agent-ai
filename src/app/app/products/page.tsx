@@ -31,9 +31,13 @@ export default async function ProductsPage() {
   }
 
   const productService = createProductService(prisma);
+  const posts = createPostService(prisma);
+  if (hasPermission(activeMembership.role, "post.update")) {
+    await posts.collapseStudioPile(session.user.id, activeMembership.workspaceId, activeProject.id);
+  }
   const [products, studioCards] = await Promise.all([
     productService.list(session.user.id, activeMembership.workspaceId, activeProject.id),
-    createPostService(prisma).listStudioCards(session.user.id, activeMembership.workspaceId, activeProject.id),
+    posts.listStudioCards(session.user.id, activeMembership.workspaceId, activeProject.id),
   ]);
   const studioBusy = studioCards.length > 0;
 

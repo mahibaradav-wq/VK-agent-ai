@@ -544,6 +544,7 @@ export function createAiService(
           platforms: platform ? [platform] : [],
           mediaIds,
         });
+        await posts.clearUnscheduledStudioCards(userId, workspaceId, input.projectId, created.id);
         const row = await db.aIRequest.create({
           data: {
             workspaceId,

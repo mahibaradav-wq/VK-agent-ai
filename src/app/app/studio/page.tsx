@@ -37,6 +37,9 @@ export default async function StudioPage({
 
   const ai = createAiService(prisma);
   const posts = createPostService(prisma);
+  if (activeProject && hasPermission(activeMembership.role, "post.update")) {
+    await posts.collapseStudioPile(session.user.id, activeMembership.workspaceId, activeProject.id);
+  }
   const [status, usage, studioPosts] = await Promise.all([
     ai.workspaceStatus(session.user.id, activeMembership.workspaceId),
     ai.usage(session.user.id, activeMembership.workspaceId),
