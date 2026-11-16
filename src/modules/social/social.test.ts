@@ -888,7 +888,7 @@ describe("social accounts", () => {
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
   });
 
-  it("does not post a carousel as one photo.png document when the community key cannot upload photos", async () => {
+  it("posts VK text without a fake document carousel when the community key cannot upload photos", async () => {
     const owner = await registerOwner("soc-vk-docs");
     const transport = scriptedVk({
       "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
@@ -903,10 +903,13 @@ describe("social accounts", () => {
         error_msg: "Group authorization failed: method is unavailable with group auth.",
       },
       "wall.post": (params) => {
+        if (String(params.attachments ?? "").trim()) {
+          throw new Error("wall.post must not attach a fake document carousel");
+        }
         if (!String(params.message ?? "").trim()) {
           return { ok: false, error_code: 100, error_msg: "message is empty" };
         }
-        throw new Error("wall.post must not run with a fake document carousel");
+        return { ok: true, response: { post_id: 99 } };
       },
     });
     const social = createSocialService(prisma, { vk: transport });
@@ -938,10 +941,12 @@ describe("social accounts", () => {
       adapters: { get: () => createVkAdapter({ db: prisma, transport, storage: createLocalStorage(storageDir) }) },
     });
     const job = await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
-    expect(job.status).toBe("failed");
+    expect(job.status).toBe("completed");
     const attempt = await prisma.publishAttempt.findFirstOrThrow({ where: { jobId: job.id } });
-    expect(attempt.errorCode).toBe("vk_photo_user_token");
-    expect(attempt.errorMessage).toMatch(/пользовательский ключ этого админа/);
+    expect(attempt.kind).toBe("success");
+    expect(attempt.externalId).toBe("99");
+    expect(transport.methods).toContain("wall.post");
+    expect(transport.methods).not.toContain("docs.getWallUploadServer");
   });
 
   it("attaches a single image as a titled wall document when photo upload is blocked", async () => {

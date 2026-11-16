@@ -111,7 +111,7 @@ export function StudioWorkingCard({
       />
       {inFlight ? (
         <StatusBanner tone="warning">
-          Пост ещё не на стене сообщества — идёт отправка в ВКонтакте.
+          Пост ещё не на стене — идёт отправка в отмеченные Telegram и ВКонтакте.
           {card.lastError ? ` ${card.lastError}` : ""}
         </StatusBanner>
       ) : null}
@@ -120,8 +120,8 @@ export function StudioWorkingCard({
       ) : null}
       {platforms.includes("vk") && card.mediaIds.length > 1 && !vkCarouselReady ? (
         <StatusBanner tone="warning">
-          Ключ клуба не загружает новые фото в альбом стены (в браузере карусель получается от вашего входа админом).
-          В Подключениях добавьте пользовательский ключ админа с правом «Фотографии», затем опубликуйте снова.
+          Ключ клуба не загружает новые фото в альбом стены. Текст в ВК и пост в Telegram уйдут, карусели на стене не
+          будет. В Подключениях добавьте пользовательский ключ админа с правом «Фотографии».
         </StatusBanner>
       ) : null}
       {message ? <StatusBanner tone={tone}>{message}</StatusBanner> : null}

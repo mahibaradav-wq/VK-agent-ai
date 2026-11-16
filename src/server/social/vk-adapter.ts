@@ -494,15 +494,9 @@ async function attachWallPhotos(options: {
     });
   }
 
-  return {
-    attachments: [],
-    failure: {
-      kind: "permanent_failure",
-      code: "vk_photo_user_token",
-      message:
-        "Ключ сообщества умеет повесить на стену уже существующие фото, но не загрузить новые: photos.getWallUploadServer отвечает 27. Ручная карусель в ВК идёт от входа админа. В Подключениях добавьте пользовательский ключ этого админа с правом «Фотографии».",
-    },
-  };
+  // Community token cannot upload new wall photos (error 27). Do not fake a
+  // carousel as one photo.png document, and do not block the text post.
+  return { attachments: [] };
 }
 
 export function createVkAdapter(options: {

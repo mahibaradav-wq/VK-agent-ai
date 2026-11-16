@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { AccessError } from "@/modules/access/permissions";
 import { persistStudioDraftFromForm } from "@/modules/posts/studio-draft";
 import { createPublishService } from "@/modules/publishing/publish-service";
+import { publishNowMessage } from "@/modules/publishing/summary";
 import { prisma } from "@/server/db/prisma";
 
 export type PublishFormState = {
@@ -36,38 +37,6 @@ function revalidatePublish(postId?: string) {
   if (postId) {
     revalidatePath(`/app/posts/${postId}`);
   }
-}
-
-const platformLabels: Record<string, string> = {
-  telegram: "Telegram",
-  vk: "ВКонтакте",
-};
-
-function publishNowMessage(job: {
-  status: string;
-  lastError: string | null;
-  post?: { targets: Array<{ platform: string; status: string; lastError: string | null }> };
-  attempts: Array<{ kind: string; errorCode: string | null; errorMessage: string | null }>;
-}) {
-  if (job.status === "completed") {
-    const sent = (job.post?.targets ?? [])
-      .filter((target) => target.status === "published")
-      .map((target) => platformLabels[target.platform] ?? target.platform);
-    return {
-      status: "success" as const,
-      message: sent.length ? `Пост ушёл: ${sent.join(" и ")}.` : "Пост опубликован.",
-    };
-  }
-  const targetError = job.post?.targets.find((target) => target.lastError)?.lastError;
-  const attempt = job.attempts.find((item) => item.kind !== "success");
-  return {
-    status: "invalid" as const,
-    message:
-      job.lastError ||
-      targetError ||
-      attempt?.errorMessage ||
-      "Пост не вышел. VK или Telegram отклонили публикацию.",
-  };
 }
 
 export async function publishNowPost(_prev: PublishFormState, formData: FormData): Promise<PublishFormState> {
