@@ -9,6 +9,11 @@ test("cabinet pages follow the approved menu", async ({ page }) => {
   await expect(page.getByRole("navigation", { name: "Кабинет" }).getByRole("link", { name: "Проекты" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Кабинет" }).getByRole("link", { name: "Студия" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Кабинет" }).getByRole("link", { name: "Товары" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Кабинет" }).getByRole("link", { name: /API/ })).toBeVisible();
+  await page.getByRole("navigation", { name: "Кабинет" }).getByRole("link", { name: /API/ }).click();
+  await expect(page).toHaveURL(/\/app\/balance/);
+  await expect(page.getByText("ChatGPT")).toBeVisible();
+  await page.goto("/app");
   await expect(page.getByRole("link", { name: "Публикации" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Подписка" })).toHaveCount(0);
 

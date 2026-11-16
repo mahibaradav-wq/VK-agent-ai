@@ -7,6 +7,8 @@ export const cabinetNav = [
   { href: "/app/connections", label: "Подключения" },
 ] as const;
 
+export const cabinetBalanceHref = "/app/balance";
+
 export const cabinetRedirects: Record<string, string> = {
   "/app/projects": "/app",
   "/app/ai": "/app/studio",
@@ -21,7 +23,14 @@ export const cabinetRedirects: Record<string, string> = {
   "/app/notifications": "/app",
 };
 
-export const cabinetEnterPaths = ["/app/calendar", "/app/studio", "/app/ideas", "/app/products", "/app/connections"] as const;
+export const cabinetEnterPaths = [
+  "/app/calendar",
+  "/app/studio",
+  "/app/ideas",
+  "/app/products",
+  "/app/connections",
+  "/app/balance",
+] as const;
 
 export function isCabinetEnterPath(path: string) {
   return (cabinetEnterPaths as readonly string[]).includes(path);
