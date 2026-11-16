@@ -6,7 +6,9 @@ import { decryptToken } from "@/server/crypto/token-cipher";
 import {
   createVkTransport,
   describeVkApiError,
+  extractSavedDoc,
   extractSavedWallPhoto,
+  isGroupAuthUnavailable,
   type VkApiFailure,
   type VkTransport,
 } from "@/server/social/vk-api";
@@ -97,18 +99,47 @@ function mapVkFailure(error: VkApiFailure): PublishOutcome {
   return { kind: "permanent_failure", code: `vk_${error.error_code}`, message: describeVkApiError(error) };
 }
 
-async function attachWallPhotos(options: {
-  transport: VkTransport;
+async function readImageFiles(options: {
   storage: StorageDriver;
+  mediaKeys: string[];
+}): Promise<{ files: Array<{ bytes: Uint8Array; mimeType: string }>; failure?: PublishOutcome }> {
+  const files: Array<{ bytes: Uint8Array; mimeType: string }> = [];
+  for (const key of options.mediaKeys) {
+    let bytes: Uint8Array;
+    try {
+      bytes = await options.storage.get(key);
+    } catch {
+      return {
+        files: [],
+        failure: {
+          kind: "temporary_failure",
+          code: "media_missing",
+          message: "Файл публикации не найден в хранилище. Повторите после загрузки медиа.",
+        },
+      };
+    }
+    const mimeType = detectMediaType(bytes);
+    if (!mimeType) {
+      return {
+        files: [],
+        failure: {
+          kind: "permanent_failure",
+          code: "media_type",
+          message: "Во ВК можно прикрепить только изображение JPEG, PNG, GIF или WebP.",
+        },
+      };
+    }
+    files.push({ bytes, mimeType });
+  }
+  return { files };
+}
+
+async function attachFromWallAlbum(options: {
+  transport: VkTransport;
   token: string;
   groupId: number;
-  mediaKeys: string[];
-}): Promise<{ attachments: string[]; failure?: PublishOutcome }> {
-  const keys = options.mediaKeys.slice(0, MAX_VK_WALL_PHOTOS);
-  if (keys.length === 0) {
-    return { attachments: [] };
-  }
-
+  files: Array<{ bytes: Uint8Array; mimeType: string }>;
+}): Promise<{ attachments: string[]; blocked?: boolean; failure?: PublishOutcome }> {
   const uploadWallPhoto = options.transport.uploadWallPhoto;
   if (!uploadWallPhoto) {
     return {
@@ -122,38 +153,14 @@ async function attachWallPhotos(options: {
   }
 
   const attachments: string[] = [];
-  for (const key of keys) {
-    let bytes: Uint8Array;
-    try {
-      bytes = await options.storage.get(key);
-    } catch {
-      return {
-        attachments: [],
-        failure: {
-          kind: "temporary_failure",
-          code: "media_missing",
-          message: "Файл публикации не найден в хранилище. Повторите после загрузки медиа.",
-        },
-      };
-    }
-    const mimeType = detectMediaType(bytes);
-    if (!mimeType) {
-      return {
-        attachments: [],
-        failure: {
-          kind: "permanent_failure",
-          code: "media_type",
-          message: "Во ВК можно прикрепить только изображение JPEG, PNG, GIF или WebP.",
-        },
-      };
-    }
-
-    // VK issues a one-time upload URL. Reusing it for a carousel makes later
-    // photos fail with group authorization error 27.
+  for (const [index, file] of options.files.entries()) {
     const uploadServer = await options.transport.call(options.token, "photos.getWallUploadServer", {
       group_id: options.groupId,
     });
     if (!uploadServer.ok) {
+      if (index === 0 && isGroupAuthUnavailable(uploadServer)) {
+        return { attachments: [], blocked: true };
+      }
       return { attachments: [], failure: mapVkFailure(uploadServer) };
     }
     const uploadUrl = extractUploadUrl(uploadServer.response);
@@ -169,9 +176,9 @@ async function attachWallPhotos(options: {
     }
 
     const uploaded = await uploadWallPhoto(uploadUrl, {
-      filename: filenameForMime(mimeType),
-      bytes,
-      mimeType,
+      filename: filenameForMime(file.mimeType),
+      bytes: file.bytes,
+      mimeType: file.mimeType,
     });
     if (!uploaded.ok) {
       return { attachments: [], failure: mapVkFailure(uploaded) };
@@ -201,6 +208,127 @@ async function attachWallPhotos(options: {
   }
 
   return { attachments };
+}
+
+async function attachAsWallDocuments(options: {
+  transport: VkTransport;
+  token: string;
+  groupId: number;
+  files: Array<{ bytes: Uint8Array; mimeType: string }>;
+}): Promise<{ attachments: string[]; failure?: PublishOutcome }> {
+  const uploadDocument = options.transport.uploadDocument;
+  if (!uploadDocument) {
+    return {
+      attachments: [],
+      failure: {
+        kind: "permanent_failure",
+        code: "vk_upload_unavailable",
+        message: "Загрузка файлов на стену VK недоступна на этом сервере.",
+      },
+    };
+  }
+
+  await options.transport.call(options.token, "groups.edit", {
+    group_id: options.groupId,
+    docs: 1,
+  });
+
+  const attachments: string[] = [];
+  for (const file of options.files) {
+    const uploadServer = await options.transport.call(options.token, "docs.getWallUploadServer", {
+      group_id: options.groupId,
+    });
+    if (!uploadServer.ok) {
+      return {
+        attachments: [],
+        failure: {
+          kind: "permanent_failure",
+          code: `vk_${uploadServer.error_code}`,
+          message:
+            "Ключ сообщества пишет текст на стену, но VK не даёт ему класть фото в альбом стены. В ключе нужны права «Стена» и «Документы».",
+        },
+      };
+    }
+    const uploadUrl = extractUploadUrl(uploadServer.response);
+    if (!uploadUrl) {
+      return {
+        attachments: [],
+        failure: {
+          kind: "permanent_failure",
+          code: "vk_upload_url",
+          message: "VK не выдал адрес загрузки файла на стену. В ключе сообщества нужно право «Документы».",
+        },
+      };
+    }
+
+    const uploaded = await uploadDocument(uploadUrl, {
+      filename: filenameForMime(file.mimeType),
+      bytes: file.bytes,
+      mimeType: file.mimeType,
+    });
+    if (!uploaded.ok) {
+      return { attachments: [], failure: mapVkFailure(uploaded) };
+    }
+
+    const saved = await options.transport.call(options.token, "docs.save", {
+      file: uploaded.response.file,
+      title: filenameForMime(file.mimeType),
+    });
+    if (!saved.ok) {
+      return { attachments: [], failure: mapVkFailure(saved) };
+    }
+    const doc = extractSavedDoc(saved.response);
+    if (!doc) {
+      return {
+        attachments: [],
+        failure: {
+          kind: "permanent_failure",
+          code: "vk_doc_save",
+          message: "VK принял файл, но не вернул вложение для стены.",
+        },
+      };
+    }
+    attachments.push(`doc${doc.owner_id}_${doc.id}`);
+  }
+
+  return { attachments };
+}
+
+async function attachWallPhotos(options: {
+  transport: VkTransport;
+  storage: StorageDriver;
+  token: string;
+  groupId: number;
+  mediaKeys: string[];
+}): Promise<{ attachments: string[]; failure?: PublishOutcome }> {
+  const keys = options.mediaKeys.slice(0, MAX_VK_WALL_PHOTOS);
+  if (keys.length === 0) {
+    return { attachments: [] };
+  }
+
+  const images = await readImageFiles({ storage: options.storage, mediaKeys: keys });
+  if (images.failure) {
+    return { attachments: [], failure: images.failure };
+  }
+
+  const wall = await attachFromWallAlbum({
+    transport: options.transport,
+    token: options.token,
+    groupId: options.groupId,
+    files: images.files,
+  });
+  if (!wall.blocked) {
+    return wall;
+  }
+
+  // Community tokens cannot call photos.getWallUploadServer (VK error 27).
+  // Documents on the wall are the official method that group keys can attach.
+  return attachAsWallDocuments({
+    transport: options.transport,
+    token: options.token,
+    groupId: options.groupId,
+    files: images.files,
+  });
 }
 
 export function createVkAdapter(options: {

@@ -63,9 +63,19 @@ export type VkSavedWallPhoto = {
   owner_id: number;
 };
 
+export type VkDocUploadResult = {
+  file: string;
+};
+
+export type VkSavedDoc = {
+  id: number;
+  owner_id: number;
+};
+
 export type VkTransport = {
   call: (token: string, method: string, params?: Record<string, string | number>) => Promise<VkApiResult<unknown>>;
   uploadWallPhoto?: (uploadUrl: string, file: VkWallUploadFile) => Promise<VkApiResult<VkWallUploadResult>>;
+  uploadDocument?: (uploadUrl: string, file: VkWallUploadFile) => Promise<VkApiResult<VkDocUploadResult>>;
 };
 
 type VkJson = {
@@ -125,6 +135,14 @@ function parseWallUploadPayload(payload: unknown): VkWallUploadResult | null {
   return { server, photo: body.photo, hash: body.hash };
 }
 
+function parseDocUploadPayload(payload: unknown): VkDocUploadResult | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  const file = (payload as { file?: unknown }).file;
+  return typeof file === "string" && file ? { file } : null;
+}
+
 export function extractSavedWallPhoto(response: unknown): VkSavedWallPhoto | null {
   const list = Array.isArray(response)
     ? response
@@ -144,6 +162,30 @@ export function extractSavedWallPhoto(response: unknown): VkSavedWallPhoto | nul
   return { id, owner_id: ownerId };
 }
 
+export function extractSavedDoc(response: unknown): VkSavedDoc | null {
+  const body = response && typeof response === "object" ? (response as { doc?: unknown; type?: unknown }) : null;
+  const raw =
+    body && body.doc && typeof body.doc === "object"
+      ? body.doc
+      : Array.isArray(response)
+        ? response[0]
+        : response;
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const doc = raw as { id?: unknown; owner_id?: unknown };
+  const id = typeof doc.id === "number" ? doc.id : Number(doc.id);
+  const ownerId = typeof doc.owner_id === "number" ? doc.owner_id : Number(doc.owner_id);
+  if (!Number.isFinite(id) || !Number.isFinite(ownerId) || id === 0 || ownerId === 0) {
+    return null;
+  }
+  return { id, owner_id: ownerId };
+}
+
+export function isGroupAuthUnavailable(error: VkApiFailure) {
+  return error.error_code === 27;
+}
+
 export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport {
   return {
     async call(token, method, params = {}) {
@@ -159,7 +201,6 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
           method: "POST",
           headers: {
             "content-type": "application/x-www-form-urlencoded",
-            authorization: `Bearer ${token}`,
           },
           body,
           signal: AbortSignal.timeout(12_000),
@@ -201,6 +242,29 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
           ok: false,
           error_code: 0,
           error_msg: "Сеть до загрузчика VK недоступна, фото на стену не отправлено.",
+        };
+      }
+    },
+    async uploadDocument(uploadUrl, file) {
+      try {
+        const form = new FormData();
+        form.append("file", new Blob([new Uint8Array(file.bytes)], { type: file.mimeType }), file.filename);
+        const response = await fetchImpl(uploadUrl, {
+          method: "POST",
+          body: form,
+          signal: AbortSignal.timeout(60_000),
+        });
+        const json = (await response.json()) as unknown;
+        const uploaded = parseDocUploadPayload(json);
+        if (!uploaded) {
+          return { ok: false, error_code: 0, error_msg: "VK не принял файл-документ на стену." };
+        }
+        return { ok: true, response: uploaded };
+      } catch {
+        return {
+          ok: false,
+          error_code: 0,
+          error_msg: "Сеть до загрузчика документов VK недоступна.",
         };
       }
     },

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { AccessError } from "@/modules/access/permissions";
 import { parseVkCommunitySource } from "@/modules/watch/parse";
-import { extractVkGroup, isVkAccessToken } from "@/server/social/vk-api";
+import { extractSavedDoc, extractVkGroup, isVkAccessToken } from "@/server/social/vk-api";
 
 describe("VK watch parse", () => {
   it("accepts community URLs and short names, and rejects personal pages", () => {
@@ -29,5 +29,12 @@ describe("VK watch parse", () => {
       name: "ДОМ по полочкам",
     });
     expect(extractVkGroup([{ id: 1, name: "VK" }])).toMatchObject({ id: 1, name: "VK" });
+  });
+
+  it("reads a saved wall document", () => {
+    expect(extractSavedDoc({ type: "doc", doc: { id: 701, owner_id: -242155421 } })).toEqual({
+      id: 701,
+      owner_id: -242155421,
+    });
   });
 });
