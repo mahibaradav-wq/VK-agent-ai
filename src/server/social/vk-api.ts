@@ -287,7 +287,7 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
       return fetchImpl(uploadUrl, {
         method: "POST",
         headers: encoded.headers,
-        body: encoded.body,
+        body: encoded.body as BodyInit,
         signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
       });
     }

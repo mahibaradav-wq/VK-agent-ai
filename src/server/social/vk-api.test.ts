@@ -12,7 +12,7 @@ describe("VK multipart upload", () => {
       mimeType: "image/png",
       bytes: new Uint8Array([1, 2, 3, 4]),
     });
-    expect(encoded.headers["content-length"]).toBeUndefined();
+    expect("content-length" in encoded.headers).toBe(false);
     expect(encoded.headers["content-type"]).toMatch(/^multipart\/form-data; boundary=/);
     expect(encoded.body).toBeInstanceOf(Uint8Array);
     expect(Buffer.isBuffer(encoded.body)).toBe(false);
