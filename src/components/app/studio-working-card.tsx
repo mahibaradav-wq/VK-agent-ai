@@ -18,6 +18,7 @@ export type StudioCardView = {
   title: string;
   body: string;
   status: string;
+  lastError: string;
   platforms: string[];
   mediaIds: string[];
 };
@@ -54,6 +55,9 @@ export function StudioWorkingCard({
         platforms={card.platforms}
         mediaUrls={card.mediaIds.map((id) => `/api/media/${id}`)}
       />
+      {card.status === "failed" && card.lastError ? (
+        <StatusBanner tone="warning">{card.lastError}</StatusBanner>
+      ) : null}
       {message ? <StatusBanner tone={tone}>{message}</StatusBanner> : null}
       {canPublishNow ? (
         <form action={publishAction}>

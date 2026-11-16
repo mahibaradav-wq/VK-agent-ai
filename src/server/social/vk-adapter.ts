@@ -121,24 +121,6 @@ async function attachWallPhotos(options: {
     };
   }
 
-  const uploadServer = await options.transport.call(options.token, "photos.getWallUploadServer", {
-    group_id: options.groupId,
-  });
-  if (!uploadServer.ok) {
-    return { attachments: [], failure: mapVkFailure(uploadServer) };
-  }
-  const uploadUrl = extractUploadUrl(uploadServer.response);
-  if (!uploadUrl) {
-    return {
-      attachments: [],
-      failure: {
-        kind: "permanent_failure",
-        code: "vk_upload_url",
-        message: "VK не выдал адрес загрузки фото на стену. Проверьте право «Фотографии» у ключа сообщества.",
-      },
-    };
-  }
-
   const attachments: string[] = [];
   for (const key of keys) {
     let bytes: Uint8Array;
@@ -162,6 +144,26 @@ async function attachWallPhotos(options: {
           kind: "permanent_failure",
           code: "media_type",
           message: "Во ВК можно прикрепить только изображение JPEG, PNG, GIF или WebP.",
+        },
+      };
+    }
+
+    // VK issues a one-time upload URL. Reusing it for a carousel makes later
+    // photos fail with group authorization error 27.
+    const uploadServer = await options.transport.call(options.token, "photos.getWallUploadServer", {
+      group_id: options.groupId,
+    });
+    if (!uploadServer.ok) {
+      return { attachments: [], failure: mapVkFailure(uploadServer) };
+    }
+    const uploadUrl = extractUploadUrl(uploadServer.response);
+    if (!uploadUrl) {
+      return {
+        attachments: [],
+        failure: {
+          kind: "permanent_failure",
+          code: "vk_upload_url",
+          message: "VK не выдал адрес загрузки фото на стену. Проверьте право «Фотографии» у ключа сообщества.",
         },
       };
     }

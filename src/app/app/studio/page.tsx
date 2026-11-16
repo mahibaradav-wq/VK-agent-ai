@@ -77,6 +77,7 @@ export default async function StudioPage({
                     title: version?.title ?? "Черновик",
                     body: version?.body ?? "",
                     status: post.status,
+                    lastError: post.targets.find((target) => target.lastError)?.lastError ?? "",
                     platforms: post.targets.map((target) => target.platform),
                     mediaIds: post.media.map((item) => item.mediaId),
                   }}

@@ -701,6 +701,62 @@ describe("social accounts", () => {
     ]);
   });
 
+  it("asks VK for a fresh wall upload URL for every carousel photo", async () => {
+    const owner = await registerOwner("soc-vk-carousel");
+    let saved = 0;
+    const transport = scriptedVk({
+      "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
+      "photos.getWallUploadServer": () => ({
+        ok: true,
+        response: { upload_url: `https://upload.vk.test/wall-${saved + 1}` },
+      }),
+      "photos.saveWallPhoto": () => {
+        saved += 1;
+        return { ok: true, response: [{ id: 600 + saved, owner_id: -242155421 }] };
+      },
+      "wall.post": (params) => {
+        if (!String(params.message ?? "").trim()) {
+          return { ok: false, error_code: 100, error_msg: "message is empty" };
+        }
+        expect(String(params.attachments)).toBe("photo-242155421_601,photo-242155421_602,photo-242155421_603");
+        return { ok: true, response: { post_id: 91 } };
+      },
+    });
+    const social = createSocialService(prisma, { vk: transport });
+    await social.connectVk(owner.userId, owner.workspaceId, {
+      token: VK_COMMUNITY_TOKEN,
+      source: "https://vk.com/club242155421",
+    });
+    const media = createMediaService(prisma, createLocalStorage(storageDir));
+    const assets = [];
+    for (let index = 0; index < 3; index += 1) {
+      assets.push(
+        await media.upload(owner.userId, owner.workspaceId, {
+          filename: `slide-${index + 1}.png`,
+          declaredType: "image/png",
+          bytes: png,
+        }),
+      );
+    }
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Карусель");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Карусель",
+      body: "Семь карточек в посте.",
+      platforms: ["vk"],
+      mediaIds: assets.map((asset) => asset.id),
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createVkAdapter({ db: prisma, transport, storage: createLocalStorage(storageDir) }) },
+    });
+    const job = await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
+    expect(job.status).toBe("completed");
+    expect(transport.methods.filter((method) => method === "photos.getWallUploadServer")).toHaveLength(3);
+    expect(transport.uploads).toHaveLength(3);
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
+  });
+
   it("fails a media publish when the community key cannot upload photos", async () => {
     const owner = await registerOwner("soc-vk-nophoto");
     const transport = scriptedVk({

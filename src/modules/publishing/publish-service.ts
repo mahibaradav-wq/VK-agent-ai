@@ -299,7 +299,16 @@ export function createPublishService(
       }
 
       const job = await this.enqueue(userId, workspaceId, post.id);
-      const processed = await this.processJob(job.id, `publish-now:${userId}`);
+      let processed = await this.processJob(job.id, `publish-now:${userId}`);
+      if (processed.skipped && processed.job && isActiveJob(processed.job.status)) {
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          const current = await db.publishJob.findUnique({ where: { id: job.id }, include: jobInclude });
+          if (current && !isActiveJob(current.status)) {
+            return current;
+          }
+        }
+      }
       return processed.job ?? job;
     },
 
