@@ -941,7 +941,7 @@ describe("social accounts", () => {
     expect(job.status).toBe("failed");
     const attempt = await prisma.publishAttempt.findFirstOrThrow({ where: { jobId: job.id } });
     expect(attempt.errorCode).toBe("vk_photo_user_token");
-    expect(attempt.errorMessage).toMatch(/пользовательский ключ админа/);
+    expect(attempt.errorMessage).toMatch(/пользовательский ключ этого админа/);
   });
 
   it("attaches a single image as a titled wall document when photo upload is blocked", async () => {
