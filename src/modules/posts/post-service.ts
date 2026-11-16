@@ -31,7 +31,9 @@ function fingerprint(input: { title: string; body: string; platforms: string[]; 
 }
 
 const approvalStatuses: Array<PostStatus | PostTargetStatus> = ["pending_approval", "approved"];
-const studioCardStatuses: PostStatus[] = ["draft", "pending_approval", "approved", "failed"];
+const studioClearableStatuses: PostStatus[] = ["draft", "pending_approval", "approved", "failed"];
+const studioWorkingStatuses: PostStatus[] = [...studioClearableStatuses, "queued", "publishing"];
+const studioInFlightStatuses: PostStatus[] = ["queued", "publishing"];
 
 export function createPostService(db: PrismaClient) {
   const access = createAccessService(db);
@@ -66,7 +68,7 @@ export function createPostService(db: PrismaClient) {
       return {
         workspaceId,
         projectId,
-        status: { in: studioCardStatuses },
+        status: { in: studioClearableStatuses },
         schedule: null,
         ...(exceptPostId ? { id: { not: exceptPostId } } : {}),
       };
@@ -76,6 +78,20 @@ export function createPostService(db: PrismaClient) {
       await access.requirePermission(userId, workspaceId, "post.view");
       if (!projectId) {
         return [];
+      }
+      const inflight = await db.post.findMany({
+        where: {
+          workspaceId,
+          projectId,
+          status: { in: studioInFlightStatuses },
+          schedule: null,
+        },
+        include: postInclude,
+        orderBy: { updatedAt: "desc" },
+        take: 1,
+      });
+      if (inflight.length) {
+        return inflight;
       }
       return db.post.findMany({
         where: this.studioCardWhere(workspaceId, projectId),
@@ -131,7 +147,7 @@ export function createPostService(db: PrismaClient) {
       if (post.schedule) {
         throw new AccessError(400, "Этот пост уже в календаре.");
       }
-      if (!studioCardStatuses.includes(post.status)) {
+      if (!studioWorkingStatuses.includes(post.status)) {
         throw new AccessError(403, "Нельзя убрать публикацию в текущем статусе.");
       }
       await db.$transaction(async (tx) => {

@@ -40,6 +40,7 @@ export function StudioWorkingCard({
   const [publishState, publishAction, publishPending] = useActionState(publishNowPost, publishIdle);
   const message = publishState.message || calendarState.message;
   const tone = publishState.status === "invalid" || calendarState.status === "invalid" ? "warning" : "success";
+  const inFlight = card.status === "queued" || card.status === "publishing";
 
   return (
     <Card className="grid gap-4">
@@ -55,6 +56,12 @@ export function StudioWorkingCard({
         platforms={card.platforms}
         mediaUrls={card.mediaIds.map((id) => `/api/media/${id}`)}
       />
+      {inFlight ? (
+        <StatusBanner tone="warning">
+          Пост ещё не на стене сообщества — идёт отправка в ВКонтакте.
+          {card.lastError ? ` ${card.lastError}` : ""}
+        </StatusBanner>
+      ) : null}
       {card.status === "failed" && card.lastError ? (
         <StatusBanner tone="warning">{card.lastError}</StatusBanner>
       ) : null}
@@ -66,7 +73,7 @@ export function StudioWorkingCard({
           <Button disabled={publishPending}>{publishPending ? "Публикуем..." : "Опубликовать сейчас"}</Button>
         </form>
       ) : null}
-      {canSchedule ? (
+      {canSchedule && !inFlight ? (
         <form action={calendarAction} className="grid gap-3 sm:grid-cols-[1fr_auto]">
           <input type="hidden" name="workspaceId" value={workspaceId} />
           <input type="hidden" name="postId" value={card.id} />

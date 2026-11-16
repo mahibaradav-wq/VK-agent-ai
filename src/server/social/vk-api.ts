@@ -1,8 +1,12 @@
 import dns from "node:dns";
+import http from "node:http";
+import https from "node:https";
 
 // VK API is reachable directly from the host. Do not send it through the
 // Telegram/OpenAI CONNECT proxy: that tunnel fails with api.vk.ru.
 dns.setDefaultResultOrder("ipv4first");
+
+const UPLOAD_TIMEOUT_MS = 60_000;
 
 export const VK_API_VERSION = "5.199";
 
@@ -134,14 +138,65 @@ export function encodeMultipartFile(field: string, file: VkWallUploadFile) {
     `--${boundary}\r\nContent-Disposition: form-data; name="${field}"; filename="${filename}"\r\nContent-Type: ${mime}\r\n\r\n`,
   );
   const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
-  const body = Buffer.concat([head, Buffer.from(file.bytes), tail]);
+  const packed = Buffer.concat([head, Buffer.from(file.bytes), tail]);
+  // Plain Uint8Array, not Node Buffer: fetch forbids Content-Length as a
+  // request header (UND_ERR_INVALID_ARG). A known-length typed array still
+  // goes out with Content-Length set by undici, not chunked Transfer-Encoding.
   return {
-    body,
+    body: Uint8Array.from(packed),
     headers: {
       "content-type": `multipart/form-data; boundary=${boundary}`,
-      "content-length": String(body.length),
     },
   };
+}
+
+export function postKnownLength(
+  uploadUrl: string,
+  contentType: string,
+  body: Uint8Array,
+  timeoutMs = UPLOAD_TIMEOUT_MS,
+): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(uploadUrl);
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      reject(new Error("VK upload URL must be http or https."));
+      return;
+    }
+    const lib = parsed.protocol === "http:" ? http : https;
+    const req = lib.request(
+      {
+        protocol: parsed.protocol,
+        hostname: parsed.hostname,
+        port: parsed.port || undefined,
+        path: `${parsed.pathname}${parsed.search}`,
+        method: "POST",
+        family: 4,
+        headers: {
+          "content-type": contentType,
+          "content-length": String(body.byteLength),
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+        res.on("end", () => {
+          const status = res.statusCode && res.statusCode > 0 ? res.statusCode : 502;
+          resolve(new Response(Buffer.concat(chunks), { status }));
+        });
+      },
+    );
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`VK upload timeout after ${timeoutMs}ms`));
+    });
+    req.on("error", reject);
+    req.end(Buffer.from(body));
+  });
 }
 
 function networkErrorMessage(prefix: string, error: unknown) {
@@ -227,6 +282,22 @@ export function isGroupAuthUnavailable(error: VkApiFailure) {
 }
 
 export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport {
+  async function postUpload(uploadUrl: string, encoded: { body: Uint8Array; headers: Record<string, string> }) {
+    if (fetchImpl !== fetch) {
+      return fetchImpl(uploadUrl, {
+        method: "POST",
+        headers: encoded.headers,
+        body: encoded.body,
+        signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+      });
+    }
+    return postKnownLength(
+      uploadUrl,
+      encoded.headers["content-type"] ?? "application/octet-stream",
+      encoded.body,
+    );
+  }
+
   return {
     async call(token, method, params = {}) {
       try {
@@ -265,12 +336,7 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
     async uploadWallPhoto(uploadUrl, file) {
       try {
         const encoded = encodeMultipartFile("photo", file);
-        const response = await fetchImpl(uploadUrl, {
-          method: "POST",
-          headers: encoded.headers,
-          body: encoded.body,
-          signal: AbortSignal.timeout(60_000),
-        });
+        const response = await postUpload(uploadUrl, encoded);
         const { json, text } = await readUploadJson(response);
         const uploaded = parseWallUploadPayload(json);
         if (!uploaded) {
@@ -292,12 +358,7 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
     async uploadDocument(uploadUrl, file) {
       try {
         const encoded = encodeMultipartFile("file", file);
-        const response = await fetchImpl(uploadUrl, {
-          method: "POST",
-          headers: encoded.headers,
-          body: encoded.body,
-          signal: AbortSignal.timeout(60_000),
-        });
+        const response = await postUpload(uploadUrl, encoded);
         const { json, text } = await readUploadJson(response);
         const uploaded = parseDocUploadPayload(json);
         if (!uploaded) {

@@ -115,6 +115,22 @@ describe("post editor and media library", () => {
     expect((await prisma.post.findUniqueOrThrow({ where: { id: leftover.id } })).status).toBe("cancelled");
   });
 
+  it("keeps a queued unpublished post as the Studio card until it hits the wall", async () => {
+    const owner = await registerOwner("studio-queued");
+    const created = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Ещё не на стене");
+    await prisma.post.update({ where: { id: created.id }, data: { status: "queued" } });
+
+    const cards = await posts.listStudioCards(owner.userId, owner.workspaceId, owner.projectId);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.id).toBe(created.id);
+    expect(cards[0]?.status).toBe("queued");
+    expect((await posts.collapseStudioPile(owner.userId, owner.workspaceId, owner.projectId)).cleared).toBe(0);
+
+    await posts.discardStudioCard(owner.userId, owner.workspaceId, created.id);
+    expect(await posts.listStudioCards(owner.userId, owner.workspaceId, owner.projectId)).toHaveLength(0);
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: created.id } })).status).toBe("cancelled");
+  });
+
   it("clears a pile of leftover Studio drafts and keeps only a brand-new card", async () => {
     const owner = await registerOwner("studio-pile");
     await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Старый 1");

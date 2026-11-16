@@ -1,25 +1,30 @@
+import http from "node:http";
+import type { AddressInfo } from "node:net";
+
 import { describe, expect, it } from "vitest";
 
 import { createVkTransport, encodeMultipartFile } from "@/server/social/vk-api";
 
 describe("VK multipart upload", () => {
-  it("sends a known content-length instead of chunked FormData", async () => {
+  it("posts a known-length typed array and does not set the forbidden Content-Length header", async () => {
     const encoded = encodeMultipartFile("file", {
       filename: "slide.png",
       mimeType: "image/png",
       bytes: new Uint8Array([1, 2, 3, 4]),
     });
-    expect(encoded.headers["content-length"]).toBe(String(encoded.body.length));
+    expect(encoded.headers["content-length"]).toBeUndefined();
     expect(encoded.headers["content-type"]).toMatch(/^multipart\/form-data; boundary=/);
-    expect(encoded.body.includes(Buffer.from("slide.png"))).toBe(true);
-    expect(encoded.body.includes(Buffer.from([1, 2, 3, 4]))).toBe(true);
+    expect(encoded.body).toBeInstanceOf(Uint8Array);
+    expect(Buffer.isBuffer(encoded.body)).toBe(false);
+    expect(Buffer.from(encoded.body).includes(Buffer.from("slide.png"))).toBe(true);
+    expect(Buffer.from(encoded.body).includes(Buffer.from([1, 2, 3, 4]))).toBe(true);
 
-    let length = "";
-    let bodyIsBuffer = false;
+    let lengthHeader = "";
+    let body: unknown;
     const transport = createVkTransport(async (_url, init) => {
       const headers = new Headers(init?.headers);
-      length = headers.get("content-length") ?? "";
-      bodyIsBuffer = Buffer.isBuffer(init?.body) || init?.body instanceof Uint8Array;
+      lengthHeader = headers.get("content-length") ?? "";
+      body = init?.body;
       return new Response(JSON.stringify({ file: "doc-payload" }), { status: 200 });
     });
     const uploaded = await transport.uploadDocument!("https://upload.vk.test/doc", {
@@ -31,7 +36,45 @@ describe("VK multipart upload", () => {
     if (uploaded.ok) {
       expect(uploaded.response.file).toBe("doc-payload");
     }
-    expect(Number(length)).toBeGreaterThan(20);
-    expect(bodyIsBuffer).toBe(true);
+    expect(lengthHeader).toBe("");
+    expect(body).toBeInstanceOf(Uint8Array);
+    expect(Buffer.isBuffer(body)).toBe(false);
+    expect((body as Uint8Array).byteLength).toBeGreaterThan(20);
+  });
+
+  it("uploads through node http with Content-Length so VK does not see chunked FormData", async () => {
+    let lengthHeader = "";
+    let received = 0;
+    const server = http.createServer((req, res) => {
+      lengthHeader = String(req.headers["content-length"] ?? "");
+      req.on("data", (chunk) => {
+        received += chunk.length;
+      });
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ file: "from-http" }));
+      });
+    });
+    const port = await new Promise<number>((resolve) => {
+      server.listen(0, "127.0.0.1", () => resolve((server.address() as AddressInfo).port));
+    });
+    try {
+      const transport = createVkTransport();
+      const uploaded = await transport.uploadDocument!(`http://127.0.0.1:${port}/doc`, {
+        filename: "slide.png",
+        mimeType: "image/png",
+        bytes: new Uint8Array([1, 2, 3, 4]),
+      });
+      expect(uploaded.ok).toBe(true);
+      if (uploaded.ok) {
+        expect(uploaded.response.file).toBe("from-http");
+      }
+      expect(Number(lengthHeader)).toBe(received);
+      expect(received).toBeGreaterThan(20);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 });
