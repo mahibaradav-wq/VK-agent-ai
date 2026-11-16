@@ -208,6 +208,29 @@ describe("publishing queue", () => {
     expect(vk.calls).toBe(1);
   });
 
+  it("lets an Owner republish from Studio after a requires_manual_check result", async () => {
+    const owner = await registerOwner("pub-now-retry");
+    const post = await draftWithTargets(owner, ["vk"], "Повтор");
+    const vk = scripted("vk", (n) =>
+      n === 1
+        ? { kind: "unknown", code: "network_unknown", message: "Сеть до загрузчика документов VK недоступна." }
+        : { kind: "success", externalId: "77" },
+    );
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: createAdapterRegistry([vk]),
+    });
+    await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
+    expect((await prisma.postTarget.findFirstOrThrow({ where: { postId: post.id } })).status).toBe(
+      "requires_manual_check",
+    );
+
+    const retried = await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
+    expect(vk.calls).toBe(2);
+    expect(retried.status).toBe("completed");
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
+  });
+
   it("claims a job atomically so only one worker processes it", async () => {
     const owner = await registerOwner("pub-claim");
     const post = await draftWithTargets(owner, ["vk"]);

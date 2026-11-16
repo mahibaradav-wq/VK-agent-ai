@@ -1,5 +1,8 @@
+import dns from "node:dns";
+
 // VK API is reachable directly from the host. Do not send it through the
 // Telegram/OpenAI CONNECT proxy: that tunnel fails with api.vk.ru.
+dns.setDefaultResultOrder("ipv4first");
 
 export const VK_API_VERSION = "5.199";
 
@@ -123,6 +126,43 @@ export function isVkAccessToken(value: string) {
   return /^(vk1\.|vk2\.)/i.test(token) || /^[A-Za-z0-9._\-/=+]{40,}$/.test(token);
 }
 
+export function encodeMultipartFile(field: string, file: VkWallUploadFile) {
+  const boundary = `----PolkaForm${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+  const filename = file.filename.replace(/["\r\n]/g, "_") || "file.bin";
+  const mime = file.mimeType || "application/octet-stream";
+  const head = Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="${field}"; filename="${filename}"\r\nContent-Type: ${mime}\r\n\r\n`,
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+  const body = Buffer.concat([head, Buffer.from(file.bytes), tail]);
+  return {
+    body,
+    headers: {
+      "content-type": `multipart/form-data; boundary=${boundary}`,
+      "content-length": String(body.length),
+    },
+  };
+}
+
+function networkErrorMessage(prefix: string, error: unknown) {
+  const detail =
+    error instanceof Error
+      ? [error.name, error.message, (error as { cause?: { code?: string; message?: string } }).cause?.code]
+          .filter(Boolean)
+          .join(": ")
+      : "unknown";
+  return `${prefix} (${detail})`;
+}
+
+async function readUploadJson(response: Response) {
+  const text = await response.text();
+  try {
+    return { json: JSON.parse(text) as unknown, text };
+  } catch {
+    return { json: null, text };
+  }
+}
+
 function parseWallUploadPayload(payload: unknown): VkWallUploadResult | null {
   if (!payload || typeof payload !== "object") {
     return null;
@@ -214,57 +254,65 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
           };
         }
         return { ok: true, response: json.response };
-      } catch {
+      } catch (error) {
         return {
           ok: false,
           error_code: 0,
-          error_msg: "Сеть до api.vk.ru недоступна, лента сообщества не прочитана.",
+          error_msg: networkErrorMessage("Сеть до api.vk.ru недоступна, лента сообщества не прочитана.", error),
         };
       }
     },
     async uploadWallPhoto(uploadUrl, file) {
       try {
-        const form = new FormData();
-        form.append("photo", new Blob([new Uint8Array(file.bytes)], { type: file.mimeType }), file.filename);
+        const encoded = encodeMultipartFile("photo", file);
         const response = await fetchImpl(uploadUrl, {
           method: "POST",
-          body: form,
+          headers: encoded.headers,
+          body: encoded.body,
           signal: AbortSignal.timeout(60_000),
         });
-        const json = (await response.json()) as unknown;
+        const { json, text } = await readUploadJson(response);
         const uploaded = parseWallUploadPayload(json);
         if (!uploaded) {
-          return { ok: false, error_code: 0, error_msg: "VK не принял файл на загрузку стены." };
+          return {
+            ok: false,
+            error_code: 0,
+            error_msg: `VK не принял файл на загрузку стены.${text ? ` Ответ: ${text.slice(0, 160)}` : ""}`,
+          };
         }
         return { ok: true, response: uploaded };
-      } catch {
+      } catch (error) {
         return {
           ok: false,
           error_code: 0,
-          error_msg: "Сеть до загрузчика VK недоступна, фото на стену не отправлено.",
+          error_msg: networkErrorMessage("Сеть до загрузчика VK недоступна, фото на стену не отправлено.", error),
         };
       }
     },
     async uploadDocument(uploadUrl, file) {
       try {
-        const form = new FormData();
-        form.append("file", new Blob([new Uint8Array(file.bytes)], { type: file.mimeType }), file.filename);
+        const encoded = encodeMultipartFile("file", file);
         const response = await fetchImpl(uploadUrl, {
           method: "POST",
-          body: form,
+          headers: encoded.headers,
+          body: encoded.body,
           signal: AbortSignal.timeout(60_000),
         });
-        const json = (await response.json()) as unknown;
+        const { json, text } = await readUploadJson(response);
         const uploaded = parseDocUploadPayload(json);
         if (!uploaded) {
-          return { ok: false, error_code: 0, error_msg: "VK не принял файл-документ на стену." };
+          return {
+            ok: false,
+            error_code: 0,
+            error_msg: `VK не принял файл-документ на стену.${text ? ` Ответ: ${text.slice(0, 160)}` : ""}`,
+          };
         }
         return { ok: true, response: uploaded };
-      } catch {
+      } catch (error) {
         return {
           ok: false,
           error_code: 0,
-          error_msg: "Сеть до загрузчика документов VK недоступна.",
+          error_msg: networkErrorMessage("Сеть до загрузчика документов VK недоступна.", error),
         };
       }
     },

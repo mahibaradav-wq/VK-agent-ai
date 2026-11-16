@@ -83,9 +83,13 @@ function extractUploadUrl(response: unknown) {
   return "";
 }
 
-function mapVkFailure(error: VkApiFailure): PublishOutcome {
+function mapVkFailure(error: VkApiFailure, stage: "upload" | "publish" = "publish"): PublishOutcome {
   if (error.error_code === 0) {
-    return { kind: "unknown", code: "network_unknown", message: describeVkApiError(error) };
+    return {
+      kind: stage === "upload" ? "temporary_failure" : "unknown",
+      code: stage === "upload" ? "network_error" : "network_unknown",
+      message: describeVkApiError(error),
+    };
   }
   if (error.error_code === 6 || error.error_code === 9 || error.error_code === 10) {
     return { kind: "temporary_failure", code: `vk_${error.error_code}`, message: describeVkApiError(error) };
@@ -181,7 +185,7 @@ async function attachFromWallAlbum(options: {
       mimeType: file.mimeType,
     });
     if (!uploaded.ok) {
-      return { attachments: [], failure: mapVkFailure(uploaded) };
+      return { attachments: [], failure: mapVkFailure(uploaded, "upload") };
     }
 
     const saved = await options.transport.call(options.token, "photos.saveWallPhoto", {
@@ -191,7 +195,7 @@ async function attachFromWallAlbum(options: {
       hash: uploaded.response.hash,
     });
     if (!saved.ok) {
-      return { attachments: [], failure: mapVkFailure(saved) };
+      return { attachments: [], failure: mapVkFailure(saved, "upload") };
     }
     const photo = extractSavedWallPhoto(saved.response);
     if (!photo) {
@@ -228,16 +232,22 @@ async function attachAsWallDocuments(options: {
     };
   }
 
-  await options.transport.call(options.token, "groups.edit", {
-    group_id: options.groupId,
-    docs: 1,
-  });
-
   const attachments: string[] = [];
+  let enabledDocs = false;
   for (const file of options.files) {
-    const uploadServer = await options.transport.call(options.token, "docs.getWallUploadServer", {
+    let uploadServer = await options.transport.call(options.token, "docs.getWallUploadServer", {
       group_id: options.groupId,
     });
+    if (!uploadServer.ok && !enabledDocs) {
+      await options.transport.call(options.token, "groups.edit", {
+        group_id: options.groupId,
+        docs: 1,
+      });
+      enabledDocs = true;
+      uploadServer = await options.transport.call(options.token, "docs.getWallUploadServer", {
+        group_id: options.groupId,
+      });
+    }
     if (!uploadServer.ok) {
       return {
         attachments: [],
@@ -267,7 +277,7 @@ async function attachAsWallDocuments(options: {
       mimeType: file.mimeType,
     });
     if (!uploaded.ok) {
-      return { attachments: [], failure: mapVkFailure(uploaded) };
+      return { attachments: [], failure: mapVkFailure(uploaded, "upload") };
     }
 
     const saved = await options.transport.call(options.token, "docs.save", {
@@ -275,7 +285,7 @@ async function attachAsWallDocuments(options: {
       title: filenameForMime(file.mimeType),
     });
     if (!saved.ok) {
-      return { attachments: [], failure: mapVkFailure(saved) };
+      return { attachments: [], failure: mapVkFailure(saved, "upload") };
     }
     const doc = extractSavedDoc(saved.response);
     if (!doc) {

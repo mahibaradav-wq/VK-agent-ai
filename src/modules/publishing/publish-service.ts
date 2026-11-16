@@ -278,7 +278,12 @@ export function createPublishService(
       }
       await access.requirePermission(userId, workspaceId, "post.approve");
 
-      const post = await releaseStalePublish(await loadBoundPost(workspaceId, postId));
+      let post = await releaseStalePublish(await loadBoundPost(workspaceId, postId));
+      await db.postTarget.updateMany({
+        where: { postId: post.id, status: "requires_manual_check" },
+        data: { status: "failed", lastError: "Повтор после неопределённого результата по кнопке «Опубликовать сейчас»." },
+      });
+      post = await loadBoundPost(workspaceId, postId);
       const version = currentVersion(post);
       if (!version?.title.trim() || !version.body.trim()) {
         throw new AccessError(400, "Сохраните заголовок и текст, прежде чем публиковать.");
