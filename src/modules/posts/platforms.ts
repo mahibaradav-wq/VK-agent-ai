@@ -12,7 +12,7 @@ export const previewPlatforms = [
     id: "vk",
     label: "ВКонтакте",
     live: true,
-    hint: "Стена сообщества через wall.post. Нужен ключ сообщества с правами «Стена» и «Фотографии», не сервисный ключ приложения.",
+    hint: "Стена сообщества через wall.post. Текст — ключ клуба. Карусель фото — пользовательский ключ админа в Подключениях.",
   },
 ] as const;
 
@@ -25,4 +25,13 @@ export function isLivePublishPlatform(platform: string) {
 export function parsePlatforms(values: string[]) {
   const allowed = new Set(previewPlatforms.map((item) => item.id));
   return [...new Set(values.filter((value) => allowed.has(value as PreviewPlatformId)))] as PreviewPlatformId[];
+}
+
+export function parseStoredPlatforms(value: string) {
+  return parsePlatforms(value.split(/[,\s]+/).map((item) => item.trim()).filter(Boolean));
+}
+
+export function defaultPublishPlatforms(selected?: string[]) {
+  const parsed = parsePlatforms(selected ?? []);
+  return parsed.length ? parsed : (["telegram", "vk"] as PreviewPlatformId[]);
 }

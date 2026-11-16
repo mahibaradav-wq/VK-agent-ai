@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
 import { AccessError } from "@/modules/access/permissions";
+import { persistStudioDraftFromForm } from "@/modules/posts/studio-draft";
 import { createPublishService } from "@/modules/publishing/publish-service";
 import { prisma } from "@/server/db/prisma";
 
@@ -72,8 +73,10 @@ function publishNowMessage(job: {
 export async function publishNowPost(_prev: PublishFormState, formData: FormData): Promise<PublishFormState> {
   const postId = readField(formData, "postId");
   try {
+    const userId = await requireUserId();
+    await persistStudioDraftFromForm(userId, formData);
     const job = await createPublishService(prisma).publishNow(
-      await requireUserId(),
+      userId,
       readField(formData, "workspaceId"),
       postId,
     );

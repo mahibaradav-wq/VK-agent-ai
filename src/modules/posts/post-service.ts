@@ -232,6 +232,9 @@ export function createPostService(db: PrismaClient) {
       }
 
       const platforms = parsePlatforms(input.platforms);
+      if (!platforms.length) {
+        throw new AccessError(400, "Отметьте хотя бы одну сеть: Telegram или ВКонтакте.");
+      }
       const requestedMediaIds = [...new Set(input.mediaIds.filter(Boolean))];
       const media = requestedMediaIds.length
         ? await db.mediaAsset.findMany({ where: { id: { in: requestedMediaIds } } })

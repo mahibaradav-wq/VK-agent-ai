@@ -8,6 +8,7 @@ import { auth } from "@/auth";
 import { AccessError } from "@/modules/access/permissions";
 import { createCalendarService } from "@/modules/calendar/calendar-service";
 import { parseTimezone, TIMEZONE_COOKIE } from "@/modules/calendar/timezone";
+import { persistStudioDraftFromForm } from "@/modules/posts/studio-draft";
 import { prisma } from "@/server/db/prisma";
 
 export type CalendarFormState = {
@@ -49,8 +50,10 @@ export async function createOnDate(formData: FormData) {
 
 export async function reschedulePost(_prev: CalendarFormState, formData: FormData): Promise<CalendarFormState> {
   try {
+    const userId = await requireUserId();
+    await persistStudioDraftFromForm(userId, formData);
     await createCalendarService(prisma).schedule(
-      await requireUserId(),
+      userId,
       readField(formData, "workspaceId"),
       readField(formData, "postId"),
       {

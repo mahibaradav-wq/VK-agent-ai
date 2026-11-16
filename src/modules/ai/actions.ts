@@ -135,6 +135,7 @@ export async function composeAgentPost(_prev: AiFormState, formData: FormData): 
         tone: readField(formData, "tone"),
         length: readField(formData, "length"),
         platform: readField(formData, "platform"),
+        platforms: formData.getAll("platform").filter((value): value is string => typeof value === "string"),
         projectId: readField(formData, "projectId"),
         visualKind: readField(formData, "visualKind"),
         visualAspect: readField(formData, "visualAspect"),
@@ -151,7 +152,7 @@ export async function composeAgentPost(_prev: AiFormState, formData: FormData): 
     revalidatePath(`/app/posts/${result.post.id}`);
     return {
       status: "success",
-      message: "Черновик лежит в Студии. Опубликуйте сейчас, поставьте в календарь или уберите.",
+      message: "Черновик лежит в Студии. Отмеченные сети получат этот пост. Можно поправить текст, визуал и галочки.",
       requestId: result.request.id,
       title: result.request.title,
       body: result.request.body,
@@ -160,6 +161,42 @@ export async function composeAgentPost(_prev: AiFormState, formData: FormData): 
     };
   } catch (error) {
     const message = error instanceof AccessError ? error.message : "Не удалось создать пост с визуалом.";
+    return { status: "invalid", message };
+  }
+}
+
+export async function reviseStudioCard(_prev: AiFormState, formData: FormData): Promise<AiFormState> {
+  try {
+    const rewriteRaw = readField(formData, "rewrite");
+    const rewrite = rewriteRaw === "text" || rewriteRaw === "visual" ? rewriteRaw : "both";
+    const post = await createAiService(prisma).reviseStudioCard(
+      await requireUserId(),
+      readField(formData, "workspaceId"),
+      {
+        postId: readField(formData, "postId"),
+        comment: readField(formData, "comment"),
+        rewrite,
+      },
+    );
+    revalidatePath("/app/studio");
+    revalidatePath("/app/ideas");
+    revalidatePath("/app/posts");
+    revalidatePath(`/app/posts/${post.id}`);
+    const version = post.versions.find((item) => !item.supersededAt) ?? post.versions[0];
+    return {
+      status: "success",
+      message:
+        rewrite === "text"
+          ? "Текст переписан по комментарию."
+          : rewrite === "visual"
+            ? "Визуал перерисован по комментарию."
+            : "Текст и визуал обновлены по комментарию.",
+      postId: post.id,
+      title: version?.title,
+      body: version?.body,
+    };
+  } catch (error) {
+    const message = error instanceof AccessError ? error.message : "Не удалось поправить карточку.";
     return { status: "invalid", message };
   }
 }

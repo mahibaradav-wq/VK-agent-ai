@@ -52,6 +52,7 @@ export async function savePostDraft(_prev: PostFormState, formData: FormData): P
     );
     revalidatePath("/app/posts");
     revalidatePath("/app/calendar");
+    revalidatePath("/app/studio");
     revalidatePath(`/app/posts/${readField(formData, "postId")}`);
     return {
       status: "success",

@@ -64,6 +64,7 @@ export async function connectVk(_prev: SocialFormState, formData: FormData): Pro
       readField(formData, "workspaceId"),
       {
         token: readField(formData, "communityToken"),
+        photoToken: readField(formData, "photoToken"),
         source: readField(formData, "source"),
         displayName: readField(formData, "displayName"),
         projectId: readField(formData, "projectId") || undefined,
@@ -74,7 +75,7 @@ export async function connectVk(_prev: SocialFormState, formData: FormData): Pro
     revalidateSocial();
     return {
       status: "success",
-      message: `ВКонтакте подключено как ${account.displayName}. Ключ сохранён в зашифрованном виде. Текст и фото уходят wall.post на стену этого сообщества.`,
+      message: `ВКонтакте подключено как ${account.displayName}. Ключ сохранён в зашифрованном виде. Текст — wall.post ключом сообщества; карусель фото — пользовательским ключом админа, если он задан.`,
     };
   } catch (error) {
     const message = error instanceof AccessError ? error.message : "Не удалось подключить ВКонтакте.";

@@ -1,5 +1,5 @@
 import { aspectRatioCss } from "@/modules/brand/visual-standard";
-import { previewPlatforms, type PreviewPlatformId } from "@/modules/posts/platforms";
+import { previewPlatforms } from "@/modules/posts/platforms";
 
 export function PostPreview({
   title,
@@ -15,9 +15,7 @@ export function PostPreview({
   aspect?: string;
 }) {
   const selected = previewPlatforms.filter((item) => platforms.includes(item.id));
-  const cards = selected.length
-    ? selected
-    : [{ id: "telegram" as PreviewPlatformId, label: "Черновик", hint: "Платформа ещё не выбрана. Живая публикация — Telegram." }];
+  const cards = selected.length ? selected : previewPlatforms.filter((item) => item.live);
   const mediaAspect = platforms.includes("vk") && aspect === "1:1" ? "4:5" : aspect;
 
   return (

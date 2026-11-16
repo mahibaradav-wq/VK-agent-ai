@@ -76,6 +76,17 @@ describe("post editor and media library", () => {
     expect(first.post.status).toBe("draft");
     expect(first.post.targets.map((target) => target.platform)).toEqual(["vk"]);
 
+    await expectAccess(
+      posts.saveDraft(owner.userId, owner.workspaceId, created.id, {
+        title: "Кухня весной",
+        body: "Текст для VK",
+        platforms: [],
+        mediaIds: [],
+      }),
+      400,
+      /хотя бы одну сеть/,
+    );
+
     await prisma.post.update({ where: { id: created.id }, data: { status: "approved" } });
     await prisma.postTarget.updateMany({ where: { postId: created.id }, data: { status: "approved" } });
 

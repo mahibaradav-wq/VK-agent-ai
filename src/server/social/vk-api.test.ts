@@ -3,7 +3,16 @@ import type { AddressInfo } from "node:net";
 
 import { describe, expect, it } from "vitest";
 
-import { createVkTransport, encodeMultipartFile } from "@/server/social/vk-api";
+import { createVkTransport, encodeMultipartFile, packVkTokens, unpackVkTokens } from "@/server/social/vk-api";
+
+describe("VK token pack", () => {
+  it("keeps a community key as-is and unpacks a photo user key", () => {
+    expect(unpackVkTokens("vk1.a.community-only")).toEqual({ community: "vk1.a.community-only", photo: "" });
+    const packed = packVkTokens("vk1.a.club", "vk1.a.admin");
+    expect(packed.startsWith("polka-vk-v2:")).toBe(true);
+    expect(unpackVkTokens(packed)).toEqual({ community: "vk1.a.club", photo: "vk1.a.admin" });
+  });
+});
 
 describe("VK multipart upload", () => {
   it("posts a known-length typed array and does not set the forbidden Content-Length header", async () => {

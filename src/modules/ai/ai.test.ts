@@ -420,10 +420,40 @@ describe("AI assistant", () => {
       carouselCount: 3,
     });
     expect(composed.post.media).toHaveLength(3);
+    expect(composed.post.targets.map((target) => target.platform).sort()).toEqual(["telegram", "vk"]);
     expect(provider.imagePrompts).toHaveLength(3);
     expect(provider.imagePrompts[0]).toContain("Slide 1 of 3");
     expect(provider.imagePrompts[2]).toContain("Slide 3 of 3");
     expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(4);
+  });
+
+  it("rewrites studio copy from an author comment without creating a new card", async () => {
+    const owner = await registerOwner("agent-revise");
+    const provider = scriptedProvider([
+      sample,
+      { ...sample, title: "Короче про кухню", body: "Без звёздочек.", items: [] },
+    ]);
+    const ai = createAiService(prisma, {
+      provider,
+      storage: createLocalStorage(storageDir),
+      monthlyLimit: 10,
+    });
+    const composed = await ai.composeAgentPost(owner.userId, owner.workspaceId, {
+      prompt: "кухня",
+      projectId: owner.projectId,
+      platforms: ["vk"],
+    });
+    const revised = await ai.reviseStudioCard(owner.userId, owner.workspaceId, {
+      postId: composed.post.id,
+      comment: "убери markdown, короче",
+      rewrite: "text",
+    });
+    const version = revised.versions.find((item) => !item.supersededAt);
+    expect(revised.id).toBe(composed.post.id);
+    expect(version?.title).toBe("Короче про кухню");
+    expect(version?.body).toBe("Без звёздочек.");
+    expect(provider.prompts[1]).toMatch(/Правка от автора/);
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(3);
   });
 
   it("draws a 9:16 video cover still, not an MP4", async () => {

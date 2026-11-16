@@ -40,15 +40,29 @@ export default async function StudioPage({
   if (activeProject && hasPermission(activeMembership.role, "post.update")) {
     await posts.collapseStudioPile(session.user.id, activeMembership.workspaceId, activeProject.id);
   }
-  const [status, usage, studioPosts] = await Promise.all([
+  const [status, usage, studioPosts, vkAccount] = await Promise.all([
     ai.workspaceStatus(session.user.id, activeMembership.workspaceId),
     ai.usage(session.user.id, activeMembership.workspaceId),
     posts.listStudioCards(session.user.id, activeMembership.workspaceId, activeProject?.id),
+    prisma.socialAccount.findFirst({
+      where: {
+        workspaceId: activeMembership.workspaceId,
+        platform: "vk",
+        status: "connected",
+        ...(activeProject ? { OR: [{ projectId: activeProject.id }, { projectId: null }] } : {}),
+      },
+      include: { capabilities: true },
+      orderBy: { updatedAt: "desc" },
+    }),
   ]);
+  const vkCarouselReady = Boolean(
+    vkAccount?.capabilities.some((item) => item.name === "publish_carousel" && item.enabled),
+  );
   const defaultSlot = DateTime.now().setZone("Europe/Moscow").plus({ hours: 1 }).toFormat("yyyy-MM-dd'T'HH:mm");
   const canPublishNow =
     hasPermission(activeMembership.role, "post.approve") && hasPermission(activeMembership.role, "post.update");
   const canSchedule = hasPermission(activeMembership.role, "post.update");
+  const canEdit = hasPermission(activeMembership.role, "post.update");
 
   return (
     <>
@@ -71,6 +85,8 @@ export default async function StudioPage({
                   workspaceId={activeMembership.workspaceId}
                   canPublishNow={canPublishNow}
                   canSchedule={canSchedule}
+                  canEdit={canEdit}
+                  vkCarouselReady={vkCarouselReady}
                   defaultSlot={defaultSlot}
                   card={{
                     id: post.id,
@@ -100,11 +116,7 @@ export default async function StudioPage({
             limit={usage.limit}
             defaultPrompt={typeof params.prompt === "string" ? params.prompt : ""}
             defaultPlatform={
-              params.platform === "vk" || params.platform === "telegram"
-                ? params.platform
-                : params.prompt
-                  ? "vk"
-                  : "telegram"
+              params.platform === "vk" || params.platform === "telegram" ? params.platform : ""
             }
             shopProductId={typeof params.shopProductId === "string" ? params.shopProductId : ""}
           />

@@ -17,7 +17,7 @@ import { createAiConnectionService } from "@/modules/ai/provider-service";
 import { getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { getUsage, releaseUsage, reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
 import { createMediaService } from "@/modules/media/media-service";
-import { parsePlatforms } from "@/modules/posts/platforms";
+import { defaultPublishPlatforms, parsePlatforms, parseStoredPlatforms } from "@/modules/posts/platforms";
 import { createPostService } from "@/modules/posts/post-service";
 import { getAiProvider, type AiProvider } from "@/server/ai";
 import { storage as defaultStorage } from "@/server/storage";
@@ -370,7 +370,7 @@ export function createAiService(
           // Черновик удалили — ниже создадим новый из той же генерации.
         }
       }
-      const platforms = request.platform ? [request.platform] : [];
+      const platforms = defaultPublishPlatforms(parseStoredPlatforms(request.platform));
       const created = await posts.create(userId, workspaceId, projectId, publicRequest.title);
       const body =
         publicRequest.body.trim() ||
@@ -428,6 +428,7 @@ export function createAiService(
         tone?: string;
         length?: string;
         platform?: string;
+        platforms?: string[];
         projectId: string;
         visualKind?: string;
         visualAspect?: string;
@@ -449,7 +450,11 @@ export function createAiService(
 
       const tone = parseTone(input.tone ?? "");
       const length = parseLength(input.length ?? "");
-      const platform = input.platform ? parsePlatforms([input.platform])[0] ?? "" : "";
+      const publishPlatforms = defaultPublishPlatforms(
+        input.platforms ?? (input.platform ? [input.platform] : []),
+      );
+      const platform =
+        publishPlatforms.length === 1 ? publishPlatforms[0] : "telegram and vkontakte";
       const visualKind = parseVisualKind(input.visualKind ?? "image");
       const visualAspect = parseVisualAspect(input.visualAspect ?? "", visualKind);
       const slideCount = parseCarouselCount(input.carouselCount, visualKind);
@@ -541,7 +546,7 @@ export function createAiService(
         await posts.saveDraft(userId, workspaceId, created.id, {
           title: title.slice(0, 180),
           body,
-          platforms: platform ? [platform] : [],
+          platforms: publishPlatforms,
           mediaIds,
         });
         await posts.clearUnscheduledStudioCards(userId, workspaceId, input.projectId, created.id);
@@ -554,7 +559,7 @@ export function createAiService(
             prompt,
             tone,
             length,
-            platform,
+            platform: publishPlatforms.join(","),
             title,
             body,
             itemsJson: JSON.stringify([...mediaIds.map(visualItem), postItem(created.id)]),
@@ -589,6 +594,119 @@ export function createAiService(
           post: await posts.get(userId, workspaceId, created.id),
           mediaId: coverId,
         };
+      } catch (error) {
+        await releaseUsage(db, workspaceId, USAGE_METRICS.ai, periodStart, usageUnits);
+        throw error;
+      }
+    },
+
+    async reviseStudioCard(
+      userId: string,
+      workspaceId: string,
+      input: { postId: string; comment: string; rewrite: "text" | "visual" | "both" },
+    ) {
+      await access.requirePermission(userId, workspaceId, "ai.generate");
+      await access.requirePermission(userId, workspaceId, "post.update");
+      const comment = input.comment.trim();
+      if (comment.length < 3) {
+        throw new AccessError(400, "Напишите, что поправить, минимум тремя символами.");
+      }
+      const post = await posts.get(userId, workspaceId, input.postId);
+      if (["queued", "publishing", "published", "cancelled"].includes(post.status)) {
+        throw new AccessError(403, "Нельзя править публикацию в текущем статусе.");
+      }
+      const version = posts.currentVersion(post);
+      if (!version) {
+        throw new AccessError(400, "У карточки нет текста для правки.");
+      }
+      const rewriteText = input.rewrite !== "visual";
+      const rewriteVisual = input.rewrite !== "text";
+      const slideCount = Math.max(1, post.media.length);
+      const usageUnits = (rewriteText ? 1 : 0) + (rewriteVisual ? slideCount : 0);
+      const at = now();
+      const limit = await resolveLimit(workspaceId);
+      const periodStart = await reserveUsage(
+        db,
+        workspaceId,
+        USAGE_METRICS.ai,
+        limit,
+        at,
+        `Лимит AI на месяц исчерпан (${limit}).`,
+        usageUnits,
+      );
+      try {
+        let title = version.title;
+        let body = version.body;
+        const platforms = defaultPublishPlatforms(post.targets.map((target) => target.platform));
+        const platform = platforms.length === 1 ? platforms[0] : "telegram and vkontakte";
+        if (rewriteText) {
+          const copy = await providerFor(workspaceId, "copy");
+          if (!copy.ready) {
+            throw new AccessError(400, "Правка текста недоступна: подключите ChatGPT.");
+          }
+          const generated = await callWithFallback(workspaceId, "copy", (item) =>
+            item.generate({
+              kind: "post",
+              prompt: `Текущий заголовок: ${version.title}\nТекущий текст:\n${version.body}\n\nПравка от автора: ${comment}`,
+              tone: "friendly",
+              length: "medium",
+              platform,
+            }),
+          );
+          title = generated.title.trim() || title;
+          body = generated.body.trim() || body;
+        }
+        const mediaIds = post.media.map((item) => item.mediaId);
+        if (rewriteVisual) {
+          const imageProvider = await providerFor(workspaceId, "image");
+          if (!imageProvider.imageReady) {
+            throw new AccessError(400, "Правка визуала недоступна: подключите ChatGPT с картинками.");
+          }
+          if (!storageDriver.ready) {
+            throw new AccessError(400, storageDriver.setupMessage ?? "Хранилище не настроено.");
+          }
+          const visualKind = slideCount > 1 ? "carousel" : "image";
+          const baseVisualPrompt = prepareVisualPrompt({
+            brief: comment,
+            kind: visualKind,
+            aspect: "4:5",
+            title,
+            body,
+          });
+          const assets = [];
+          for (let index = 0; index < slideCount; index += 1) {
+            const image = await callWithFallback(workspaceId, "image", (item) =>
+              item.generateImage({
+                prompt: slideVisualPrompt(baseVisualPrompt, index, slideCount),
+                size: imageSizeForAspect("4:5"),
+              }),
+            );
+            assets.push(
+              await media.upload(userId, workspaceId, {
+                filename: `studio-visual-${index + 1}.${extensionForMime(image.mimeType)}`,
+                declaredType: image.mimeType,
+                bytes: image.bytes,
+              }),
+            );
+          }
+          mediaIds.splice(0, mediaIds.length, ...assets.map((asset) => asset.id));
+        }
+        await posts.saveDraft(userId, workspaceId, post.id, {
+          title: title.slice(0, 180),
+          body,
+          platforms,
+          mediaIds,
+        });
+        await db.auditLog.create({
+          data: {
+            action: "REVISE_STUDIO_CARD",
+            entityType: "post",
+            entityId: post.id,
+            actorId: userId,
+            details: input.rewrite,
+          },
+        });
+        return posts.get(userId, workspaceId, post.id);
       } catch (error) {
         await releaseUsage(db, workspaceId, USAGE_METRICS.ai, periodStart, usageUnits);
         throw error;

@@ -123,6 +123,31 @@ export function extractVkGroup(response: unknown): VkGroup | null {
   return null;
 }
 
+const VK_TOKEN_PACK_PREFIX = "polka-vk-v2:";
+
+export function packVkTokens(community: string, photoUser = "") {
+  const photo = photoUser.trim();
+  if (!photo) {
+    return community;
+  }
+  return `${VK_TOKEN_PACK_PREFIX}${JSON.stringify({ community, photo })}`;
+}
+
+export function unpackVkTokens(raw: string) {
+  if (raw.startsWith(VK_TOKEN_PACK_PREFIX)) {
+    try {
+      const parsed = JSON.parse(raw.slice(VK_TOKEN_PACK_PREFIX.length)) as { community?: unknown; photo?: unknown };
+      return {
+        community: typeof parsed.community === "string" ? parsed.community : "",
+        photo: typeof parsed.photo === "string" ? parsed.photo : "",
+      };
+    } catch {
+      return { community: raw, photo: "" };
+    }
+  }
+  return { community: raw, photo: "" };
+}
+
 export function isVkAccessToken(value: string) {
   const token = value.trim();
   if (!token || /\s/.test(token) || token.includes("@")) {

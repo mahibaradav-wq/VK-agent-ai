@@ -9,6 +9,7 @@ import {
   extractSavedDoc,
   extractSavedWallPhoto,
   isGroupAuthUnavailable,
+  unpackVkTokens,
   type VkApiFailure,
   type VkTransport,
 } from "@/server/social/vk-api";
@@ -19,8 +20,19 @@ const MAX_VK_WALL_PHOTOS = 10;
 const MAX_VK_WALL_DOCS = 1;
 const POLKA_ALBUM_TITLE = "Polka Social";
 
+export function toVkWallText(text: string) {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/\*(.+?)\*/g, "$1")
+    .replace(/`(.+?)`/g, "$1")
+    .replace(/\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g, "$1 $2")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
+}
+
 function composeText(input: PublishInput, includeLink: boolean) {
-  const parts = [input.title.trim(), input.body.trim()].filter(Boolean);
+  const parts = [toVkWallText(input.title), toVkWallText(input.body)].filter(Boolean);
   const text = parts.join("\n\n").slice(0, 15000) || "Публикация Polka Social";
   return includeLink ? withProductLink(text, input.market?.url).slice(0, 15000) : text;
 }
@@ -49,17 +61,10 @@ function groupIdFromOwner(ownerId: number) {
   return Math.abs(ownerId);
 }
 
-function filenameForMime(mimeType: string) {
-  if (mimeType === "image/png") {
-    return "photo.png";
-  }
-  if (mimeType === "image/gif") {
-    return "photo.gif";
-  }
-  if (mimeType === "image/webp") {
-    return "photo.webp";
-  }
-  return "photo.jpg";
+function filenameForMime(mimeType: string, index = 0) {
+  const ext =
+    mimeType === "image/png" ? "png" : mimeType === "image/gif" ? "gif" : mimeType === "image/webp" ? "webp" : "jpg";
+  return `slide-${index + 1}.${ext}`;
 }
 
 function extractPostId(response: unknown) {
@@ -206,7 +211,7 @@ async function attachFromWallAlbum(options: {
     }
 
     const uploaded = await uploadWallPhoto(uploadUrl, {
-      filename: filenameForMime(file.mimeType),
+      filename: filenameForMime(file.mimeType, index),
       bytes: file.bytes,
       mimeType: file.mimeType,
     });
@@ -293,7 +298,7 @@ async function attachFromCommunityAlbum(options: {
   }
 
   const attachments: string[] = [];
-  for (const file of options.files) {
+  for (const [index, file] of options.files.entries()) {
     const uploadServer = await options.transport.call(options.token, "photos.getUploadServer", {
       album_id: album.albumId,
       group_id: options.groupId,
@@ -309,7 +314,7 @@ async function attachFromCommunityAlbum(options: {
     }
 
     const uploaded = await uploadAlbumPhoto(uploadUrl, {
-      filename: filenameForMime(file.mimeType),
+      filename: filenameForMime(file.mimeType, index),
       bytes: file.bytes,
       mimeType: file.mimeType,
     });
@@ -350,6 +355,7 @@ async function attachAsWallDocuments(options: {
   transport: VkTransport;
   token: string;
   groupId: number;
+  title?: string;
   files: Array<{ bytes: Uint8Array; mimeType: string }>;
 }): Promise<{ attachments: string[]; failure?: PublishOutcome }> {
   const uploadDocument = options.transport.uploadDocument;
@@ -367,7 +373,7 @@ async function attachAsWallDocuments(options: {
   const attachments: string[] = [];
   let enabledDocs = false;
   // wall.post accepts at most one document; extra slides go through the album path.
-  for (const file of options.files.slice(0, MAX_VK_WALL_DOCS)) {
+  for (const [index, file] of options.files.slice(0, MAX_VK_WALL_DOCS).entries()) {
     let uploadServer = await options.transport.call(options.token, "docs.getWallUploadServer", {
       group_id: options.groupId,
     });
@@ -405,7 +411,7 @@ async function attachAsWallDocuments(options: {
     }
 
     const uploaded = await uploadDocument(uploadUrl, {
-      filename: filenameForMime(file.mimeType),
+      filename: filenameForMime(file.mimeType, index),
       bytes: file.bytes,
       mimeType: file.mimeType,
     });
@@ -415,7 +421,7 @@ async function attachAsWallDocuments(options: {
 
     const saved = await options.transport.call(options.token, "docs.save", {
       file: uploaded.response.file,
-      title: filenameForMime(file.mimeType),
+      title: options.title?.trim() || `Карточка ${index + 1}`,
     });
     if (!saved.ok) {
       return { attachments: [], failure: mapVkFailure(saved, "upload") };
@@ -441,7 +447,9 @@ async function attachWallPhotos(options: {
   transport: VkTransport;
   storage: StorageDriver;
   token: string;
+  photoToken?: string;
   groupId: number;
+  title?: string;
   mediaKeys: string[];
 }): Promise<{ attachments: string[]; failure?: PublishOutcome }> {
   const keys = options.mediaKeys.slice(0, MAX_VK_WALL_PHOTOS);
@@ -454,34 +462,47 @@ async function attachWallPhotos(options: {
     return { attachments: [], failure: images.failure };
   }
 
-  const wall = await attachFromWallAlbum({
-    transport: options.transport,
-    token: options.token,
-    groupId: options.groupId,
-    files: images.files,
-  });
-  if (!wall.blocked) {
-    return wall;
+  const tokens = [options.photoToken?.trim(), options.token].filter((item): item is string => Boolean(item));
+  for (const token of tokens) {
+    const wall = await attachFromWallAlbum({
+      transport: options.transport,
+      token,
+      groupId: options.groupId,
+      files: images.files,
+    });
+    if (!wall.blocked) {
+      return wall;
+    }
+    const album = await attachFromCommunityAlbum({
+      transport: options.transport,
+      token,
+      groupId: options.groupId,
+      files: images.files,
+    });
+    if (!album.blocked) {
+      return album;
+    }
   }
 
-  const album = await attachFromCommunityAlbum({
-    transport: options.transport,
-    token: options.token,
-    groupId: options.groupId,
-    files: images.files,
-  });
-  if (!album.blocked) {
-    return album;
+  if (images.files.length === 1) {
+    return attachAsWallDocuments({
+      transport: options.transport,
+      token: options.token,
+      groupId: options.groupId,
+      title: options.title,
+      files: images.files,
+    });
   }
 
-  // Community tokens cannot call photos.getWallUploadServer (VK error 27).
-  // Album photos are the carousel path; one wall document is the last resort.
-  return attachAsWallDocuments({
-    transport: options.transport,
-    token: options.token,
-    groupId: options.groupId,
-    files: images.files,
-  });
+  return {
+    attachments: [],
+    failure: {
+      kind: "permanent_failure",
+      code: "vk_photo_user_token",
+      message:
+        "Ключ сообщества не умеет карусель фото на стене (photos.* недоступен с ключом клуба). В Подключениях добавьте пользовательский ключ админа этого клуба с правом «Фотографии».",
+    },
+  };
 }
 
 export function createVkAdapter(options: {
@@ -534,9 +555,9 @@ export function createVkAdapter(options: {
         };
       }
 
-      let token: string;
+      let packed: string;
       try {
-        token = decryptToken(account.encryptedToken);
+        packed = decryptToken(account.encryptedToken);
       } catch {
         return {
           kind: "permanent_failure",
@@ -544,13 +565,17 @@ export function createVkAdapter(options: {
           message: "Ключ сообщества не удалось расшифровать. Подключите аккаунт заново.",
         };
       }
+      const tokens = unpackVkTokens(packed);
+      const token = tokens.community || packed;
 
       const groupId = groupIdFromOwner(ownerId);
       const attached = await attachWallPhotos({
         transport,
         storage,
         token,
+        photoToken: tokens.photo,
         groupId,
+        title: input.title,
         mediaKeys: input.mediaKeys,
       });
       if (attached.failure) {
