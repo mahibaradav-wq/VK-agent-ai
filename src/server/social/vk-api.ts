@@ -74,6 +74,12 @@ export type VkDocUploadResult = {
   file: string;
 };
 
+export type VkAlbumUploadResult = {
+  server: number;
+  photos_list: string;
+  hash: string;
+};
+
 export type VkSavedDoc = {
   id: number;
   owner_id: number;
@@ -82,6 +88,7 @@ export type VkSavedDoc = {
 export type VkTransport = {
   call: (token: string, method: string, params?: Record<string, string | number>) => Promise<VkApiResult<unknown>>;
   uploadWallPhoto?: (uploadUrl: string, file: VkWallUploadFile) => Promise<VkApiResult<VkWallUploadResult>>;
+  uploadAlbumPhoto?: (uploadUrl: string, file: VkWallUploadFile) => Promise<VkApiResult<VkAlbumUploadResult>>;
   uploadDocument?: (uploadUrl: string, file: VkWallUploadFile) => Promise<VkApiResult<VkDocUploadResult>>;
 };
 
@@ -230,6 +237,24 @@ function parseWallUploadPayload(payload: unknown): VkWallUploadResult | null {
   return { server, photo: body.photo, hash: body.hash };
 }
 
+function parseAlbumUploadPayload(payload: unknown): VkAlbumUploadResult | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  const body = payload as { server?: unknown; photos_list?: unknown; hash?: unknown };
+  const server = typeof body.server === "number" ? body.server : Number(body.server);
+  if (
+    !Number.isFinite(server) ||
+    typeof body.photos_list !== "string" ||
+    !body.photos_list ||
+    typeof body.hash !== "string" ||
+    !body.hash
+  ) {
+    return null;
+  }
+  return { server, photos_list: body.photos_list, hash: body.hash };
+}
+
 function parseDocUploadPayload(payload: unknown): VkDocUploadResult | null {
   if (!payload || typeof payload !== "object") {
     return null;
@@ -352,6 +377,28 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
           ok: false,
           error_code: 0,
           error_msg: networkErrorMessage("Сеть до загрузчика VK недоступна, фото на стену не отправлено.", error),
+        };
+      }
+    },
+    async uploadAlbumPhoto(uploadUrl, file) {
+      try {
+        const encoded = encodeMultipartFile("file", file);
+        const response = await postUpload(uploadUrl, encoded);
+        const { json, text } = await readUploadJson(response);
+        const uploaded = parseAlbumUploadPayload(json);
+        if (!uploaded) {
+          return {
+            ok: false,
+            error_code: 0,
+            error_msg: `VK не принял файл в альбом сообщества.${text ? ` Ответ: ${text.slice(0, 160)}` : ""}`,
+          };
+        }
+        return { ok: true, response: uploaded };
+      } catch (error) {
+        return {
+          ok: false,
+          error_code: 0,
+          error_msg: networkErrorMessage("Сеть до загрузчика альбома VK недоступна.", error),
         };
       }
     },

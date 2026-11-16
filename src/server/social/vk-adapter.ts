@@ -16,6 +16,8 @@ import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/socia
 import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
 
 const MAX_VK_WALL_PHOTOS = 10;
+const MAX_VK_WALL_DOCS = 1;
+const POLKA_ALBUM_TITLE = "Polka Social";
 
 function composeText(input: PublishInput, includeLink: boolean) {
   const parts = [input.title.trim(), input.body.trim()].filter(Boolean);
@@ -71,6 +73,30 @@ function extractPostId(response: unknown) {
     }
   }
   return "";
+}
+
+function extractAlbumId(response: unknown) {
+  if (!response || typeof response !== "object") {
+    return 0;
+  }
+  const body = response as { id?: unknown; items?: unknown[] };
+  const direct = typeof body.id === "number" ? body.id : Number(body.id);
+  if (Number.isFinite(direct) && direct > 0) {
+    return direct;
+  }
+  if (!Array.isArray(body.items)) {
+    return 0;
+  }
+  for (const item of body.items) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const id = typeof (item as { id?: unknown }).id === "number" ? (item as { id: number }).id : Number((item as { id?: unknown }).id);
+    if (Number.isFinite(id) && id > 0) {
+      return id;
+    }
+  }
+  return 0;
 }
 
 function extractUploadUrl(response: unknown) {
@@ -214,6 +240,112 @@ async function attachFromWallAlbum(options: {
   return { attachments };
 }
 
+async function resolveCommunityAlbum(options: {
+  transport: VkTransport;
+  token: string;
+  groupId: number;
+}): Promise<{ albumId: number } | { blocked: true }> {
+  const listed = await options.transport.call(options.token, "photos.getAlbums", {
+    owner_id: -options.groupId,
+  });
+  if (listed.ok) {
+    const albumId = extractAlbumId(listed.response);
+    if (albumId) {
+      return { albumId };
+    }
+  } else if (isGroupAuthUnavailable(listed)) {
+    return { blocked: true };
+  }
+
+  const created = await options.transport.call(options.token, "photos.createAlbum", {
+    title: POLKA_ALBUM_TITLE,
+    group_id: options.groupId,
+    description: "Карточки из Студии Polka Social",
+    upload_by_admins_only: 1,
+  });
+  if (created.ok) {
+    const albumId = extractAlbumId(created.response);
+    if (albumId) {
+      return { albumId };
+    }
+  }
+  return { blocked: true };
+}
+
+async function attachFromCommunityAlbum(options: {
+  transport: VkTransport;
+  token: string;
+  groupId: number;
+  files: Array<{ bytes: Uint8Array; mimeType: string }>;
+}): Promise<{ attachments: string[]; blocked?: boolean; failure?: PublishOutcome }> {
+  const uploadAlbumPhoto = options.transport.uploadAlbumPhoto;
+  if (!uploadAlbumPhoto) {
+    return { attachments: [], blocked: true };
+  }
+
+  const album = await resolveCommunityAlbum({
+    transport: options.transport,
+    token: options.token,
+    groupId: options.groupId,
+  });
+  if ("blocked" in album) {
+    return { attachments: [], blocked: true };
+  }
+
+  const attachments: string[] = [];
+  for (const file of options.files) {
+    const uploadServer = await options.transport.call(options.token, "photos.getUploadServer", {
+      album_id: album.albumId,
+      group_id: options.groupId,
+    });
+    if (!uploadServer.ok) {
+      return isGroupAuthUnavailable(uploadServer)
+        ? { attachments: [], blocked: true }
+        : { attachments: [], failure: mapVkFailure(uploadServer, "upload") };
+    }
+    const uploadUrl = extractUploadUrl(uploadServer.response);
+    if (!uploadUrl) {
+      return { attachments: [], blocked: true };
+    }
+
+    const uploaded = await uploadAlbumPhoto(uploadUrl, {
+      filename: filenameForMime(file.mimeType),
+      bytes: file.bytes,
+      mimeType: file.mimeType,
+    });
+    if (!uploaded.ok) {
+      return { attachments: [], failure: mapVkFailure(uploaded, "upload") };
+    }
+
+    const saved = await options.transport.call(options.token, "photos.save", {
+      album_id: album.albumId,
+      group_id: options.groupId,
+      server: uploaded.response.server,
+      photos_list: uploaded.response.photos_list,
+      hash: uploaded.response.hash,
+    });
+    if (!saved.ok) {
+      return isGroupAuthUnavailable(saved)
+        ? { attachments: [], blocked: true }
+        : { attachments: [], failure: mapVkFailure(saved, "upload") };
+    }
+    const photo = extractSavedWallPhoto(saved.response);
+    if (!photo) {
+      return {
+        attachments: [],
+        failure: {
+          kind: "permanent_failure",
+          code: "vk_photo_save",
+          message: "VK принял файл в альбом, но не вернул вложение для стены.",
+        },
+      };
+    }
+    attachments.push(`photo${photo.owner_id}_${photo.id}`);
+  }
+
+  return { attachments };
+}
+
 async function attachAsWallDocuments(options: {
   transport: VkTransport;
   token: string;
@@ -234,7 +366,8 @@ async function attachAsWallDocuments(options: {
 
   const attachments: string[] = [];
   let enabledDocs = false;
-  for (const file of options.files) {
+  // wall.post accepts at most one document; extra slides go through the album path.
+  for (const file of options.files.slice(0, MAX_VK_WALL_DOCS)) {
     let uploadServer = await options.transport.call(options.token, "docs.getWallUploadServer", {
       group_id: options.groupId,
     });
@@ -331,8 +464,18 @@ async function attachWallPhotos(options: {
     return wall;
   }
 
+  const album = await attachFromCommunityAlbum({
+    transport: options.transport,
+    token: options.token,
+    groupId: options.groupId,
+    files: images.files,
+  });
+  if (!album.blocked) {
+    return album;
+  }
+
   // Community tokens cannot call photos.getWallUploadServer (VK error 27).
-  // Documents on the wall are the official method that group keys can attach.
+  // Album photos are the carousel path; one wall document is the last resort.
   return attachAsWallDocuments({
     transport: options.transport,
     token: options.token,
@@ -445,7 +588,20 @@ export function createVkAdapter(options: {
         params.attachments = attachments.join(",");
       }
 
-      const posted = await transport.call(token, "wall.post", params);
+      let posted = await transport.call(token, "wall.post", params);
+      if (
+        !posted.ok &&
+        posted.error_code === 100 &&
+        /doc attachments/i.test(posted.error_msg) &&
+        attachments.filter((item) => item.startsWith("doc")).length > MAX_VK_WALL_DOCS
+      ) {
+        const reduced = [
+          ...attachments.filter((item) => !item.startsWith("doc")),
+          ...attachments.filter((item) => item.startsWith("doc")).slice(0, MAX_VK_WALL_DOCS),
+        ];
+        params.attachments = reduced.join(",");
+        posted = await transport.call(token, "wall.post", params);
+      }
 
       if (!posted.ok) {
         if (posted.error_code === 5) {

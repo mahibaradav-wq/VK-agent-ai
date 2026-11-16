@@ -90,6 +90,11 @@ function scriptedVk(
       uploads.push(file);
       return { ok: true, response: { server: 9, photo: "[uploaded-photo]", hash: "wall-hash" } };
     },
+    async uploadAlbumPhoto(_uploadUrl, file) {
+      methods.push("uploadAlbumPhoto");
+      uploads.push(file);
+      return { ok: true, response: { server: 11, photos_list: "[album-photos]", hash: "album-hash" } };
+    },
     async uploadDocument(_uploadUrl, file) {
       methods.push("uploadDocument");
       uploads.push(file);
@@ -762,12 +767,79 @@ describe("social accounts", () => {
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
   });
 
-  it("attaches carousel images as wall documents when the community key cannot use the photo album", async () => {
+  it("attaches carousel images from a community album when wall photo upload is blocked", async () => {
+    const owner = await registerOwner("soc-vk-album");
+    let saved = 0;
+    const transport = scriptedVk({
+      "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
+      "photos.getWallUploadServer": {
+        ok: false,
+        error_code: 27,
+        error_msg: "Group authorization failed: method is unavailable with group auth.",
+      },
+      "photos.getAlbums": { ok: true, response: { count: 1, items: [{ id: 77, title: "Polka Social" }] } },
+      "photos.getUploadServer": () => ({
+        ok: true,
+        response: { upload_url: `https://upload.vk.test/album-${saved + 1}` },
+      }),
+      "photos.save": () => {
+        saved += 1;
+        return { ok: true, response: [{ id: 800 + saved, owner_id: -242155421 }] };
+      },
+      "wall.post": (params) => {
+        if (!String(params.message ?? "").trim()) {
+          return { ok: false, error_code: 100, error_msg: "message is empty" };
+        }
+        expect(String(params.attachments)).toBe("photo-242155421_801,photo-242155421_802");
+        return { ok: true, response: { post_id: 93 } };
+      },
+    });
+    const social = createSocialService(prisma, { vk: transport });
+    await social.connectVk(owner.userId, owner.workspaceId, {
+      token: VK_COMMUNITY_TOKEN,
+      source: "https://vk.com/club242155421",
+    });
+    const media = createMediaService(prisma, createLocalStorage(storageDir));
+    const assets = [];
+    for (let index = 0; index < 2; index += 1) {
+      assets.push(
+        await media.upload(owner.userId, owner.workspaceId, {
+          filename: `slide-${index + 1}.png`,
+          declaredType: "image/png",
+          bytes: png,
+        }),
+      );
+    }
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Карусель");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Карусель",
+      body: "Картинки через альбом сообщества.",
+      platforms: ["vk"],
+      mediaIds: assets.map((asset) => asset.id),
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createVkAdapter({ db: prisma, transport, storage: createLocalStorage(storageDir) }) },
+    });
+    const job = await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
+    expect(job.status).toBe("completed");
+    expect(transport.methods.filter((method) => method === "photos.getUploadServer")).toHaveLength(2);
+    expect(transport.methods.filter((method) => method === "uploadAlbumPhoto")).toHaveLength(2);
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
+  });
+
+  it("attaches a single wall document when neither photo album path is available", async () => {
     const owner = await registerOwner("soc-vk-docs");
     let saved = 0;
     const transport = scriptedVk({
       "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
       "photos.getWallUploadServer": {
+        ok: false,
+        error_code: 27,
+        error_msg: "Group authorization failed: method is unavailable with group auth.",
+      },
+      "photos.getAlbums": {
         ok: false,
         error_code: 27,
         error_msg: "Group authorization failed: method is unavailable with group auth.",
@@ -785,7 +857,7 @@ describe("social accounts", () => {
         if (!String(params.message ?? "").trim()) {
           return { ok: false, error_code: 100, error_msg: "message is empty" };
         }
-        expect(String(params.attachments)).toBe("doc-242155421_701,doc-242155421_702");
+        expect(String(params.attachments)).toBe("doc-242155421_701");
         return { ok: true, response: { post_id: 92 } };
       },
     });
@@ -819,7 +891,7 @@ describe("social accounts", () => {
     });
     const job = await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
     expect(job.status).toBe("completed");
-    expect(transport.methods.filter((method) => method === "docs.getWallUploadServer")).toHaveLength(2);
+    expect(transport.methods.filter((method) => method === "docs.getWallUploadServer")).toHaveLength(1);
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
   });
 
