@@ -9,6 +9,7 @@ import { aggregatePostStatus } from "@/modules/publishing/aggregate";
 import { nextBackoffMs } from "@/modules/publishing/backoff";
 import { createCollaborationService } from "@/modules/collaboration/collaboration-service";
 import { createPublishService } from "@/modules/publishing/publish-service";
+import { publishNowMessage } from "@/modules/publishing/summary";
 import { createWorkspaceService } from "@/modules/workspaces/workspace-service";
 import { prisma } from "@/server/db/prisma";
 import { createInlineQueue } from "@/server/queue";
@@ -95,6 +96,23 @@ describe("publish aggregation helpers", () => {
     expect(nextBackoffMs(1, [10, 20, 40])).toBe(10);
     expect(nextBackoffMs(3, [10, 20, 40])).toBe(40);
     expect(nextBackoffMs(9, [10, 20, 40])).toBe(40);
+  });
+
+  it("says which network already went out when the other failed", () => {
+    const mixed = publishNowMessage({
+      status: "failed",
+      lastError: "vk: vk_photo_user_token: нет карусели",
+      post: {
+        targets: [
+          { platform: "telegram", status: "published", lastError: null },
+          { platform: "vk", status: "failed", lastError: "vk_photo_user_token: нет карусели" },
+        ],
+      },
+      attempts: [{ kind: "success", errorCode: null, errorMessage: null }],
+    });
+    expect(mixed.status).toBe("invalid");
+    expect(mixed.message).toMatch(/Telegram уже вышли/);
+    expect(mixed.message).toMatch(/Не ушло: ВКонтакте/);
   });
 });
 
@@ -206,6 +224,29 @@ describe("publishing queue", () => {
       /неопределённые цели повторно не отправляются/,
     );
     expect(vk.calls).toBe(1);
+  });
+
+  it("lets an Owner republish from Studio after a requires_manual_check result", async () => {
+    const owner = await registerOwner("pub-now-retry");
+    const post = await draftWithTargets(owner, ["vk"], "Повтор");
+    const vk = scripted("vk", (n) =>
+      n === 1
+        ? { kind: "unknown", code: "network_unknown", message: "Сеть до загрузчика документов VK недоступна." }
+        : { kind: "success", externalId: "77" },
+    );
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: createAdapterRegistry([vk]),
+    });
+    await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
+    expect((await prisma.postTarget.findFirstOrThrow({ where: { postId: post.id } })).status).toBe(
+      "requires_manual_check",
+    );
+
+    const retried = await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
+    expect(vk.calls).toBe(2);
+    expect(retried.status).toBe("completed");
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
   });
 
   it("claims a job atomically so only one worker processes it", async () => {

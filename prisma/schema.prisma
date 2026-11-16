@@ -43,7 +43,8 @@ model User {
   projectAccesses     ProjectAccess[]
   platformAdmin       PlatformAdmin?
   aiConnections       WorkspaceAiConnection[]
-  vkWatchCredentials  VkWatchCredential[]
+  vkWatchCredentials     VkWatchCredential[]
+  shopPartnerCredentials ShopPartnerCredential[]
 }
 
 model Account {
@@ -117,6 +118,8 @@ model Workspace {
   aiConnections       WorkspaceAiConnection[]
   vkWatchCommunities  VkWatchCommunity[]
   vkWatchCredential   VkWatchCredential?
+  shopProducts            ShopProduct[]
+  shopPartnerCredentials  ShopPartnerCredential[]
 }
 
 model WorkspaceMember {
@@ -145,6 +148,8 @@ model Project {
   socialAccounts      SocialAccount[]
   analyticsSnapshots  AnalyticsSnapshot[]
   projectAccesses     ProjectAccess[]
+  shopProducts            ShopProduct[]
+  shopPartnerCredentials  ShopPartnerCredential[]
 
   @@index([workspaceId, archivedAt])
 }
@@ -192,6 +197,7 @@ model Post {
   publishJobs PublishJob[]
   comments    Comment[]
   approvals   Approval[]
+  shopProduct ShopProduct?
 
   @@index([workspaceId, projectId, status])
 }
@@ -708,4 +714,52 @@ model VkWatchSnapshot {
   community   VkWatchCommunity @relation(fields: [communityId], references: [id], onDelete: Cascade)
 
   @@index([communityId, fetchedAt])
+}
+
+enum ShopKind {
+  ozon
+  wildberries
+  market
+  magnit
+}
+
+model ShopProduct {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  projectId    String
+  shop         ShopKind
+  sourceUrl    String
+  canonicalUrl String
+  title        String
+  priceText    String?
+  imageUrl     String?
+  consumedAt   DateTime?
+  postId       String?   @unique
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  post         Post?     @relation(fields: [postId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, canonicalUrl])
+  @@index([workspaceId, projectId, consumedAt])
+}
+
+model ShopPartnerCredential {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  projectId      String
+  shop           ShopKind
+  encryptedToken String   @db.Text
+  status         String   @default("connected")
+  lastError      String?  @db.Text
+  connectedById  String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connectedBy    User      @relation(fields: [connectedById], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, shop])
+  @@index([workspaceId, projectId])
 }

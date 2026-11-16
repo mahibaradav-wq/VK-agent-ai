@@ -20,6 +20,7 @@ import {
   describeVkApiError,
   extractVkGroup,
   isVkAccessToken,
+  packVkTokens,
   type VkTransport,
 } from "@/server/social/vk-api";
 
@@ -408,7 +409,15 @@ export function createSocialService(
     async connectVk(
       userId: string,
       workspaceId: string,
-      input: { token: string; source: string; displayName?: string; projectId?: string; accountId?: string; password?: string },
+      input: {
+        token: string;
+        photoToken?: string;
+        source: string;
+        displayName?: string;
+        projectId?: string;
+        accountId?: string;
+        password?: string;
+      },
     ) {
       await access.requirePermission(userId, workspaceId, "social.connect");
       rejectPassword(input);
@@ -467,7 +476,26 @@ export function createSocialService(
         );
       }
 
-      const encryptedToken = encryptToken(token);
+      const photoToken = input.photoToken?.trim() ?? "";
+      if (photoToken) {
+        if (!isVkAccessToken(photoToken)) {
+          throw new AccessError(
+            400,
+            "Пользовательский ключ для фото — это ключ VK API админа клуба, не пароль и не ключ сообщества.",
+          );
+        }
+        const photoProbe = await vk.call(photoToken, "photos.getWallUploadServer", { group_id: group.id });
+        if (!photoProbe.ok && photoProbe.error_code !== 0) {
+          throw new AccessError(
+            400,
+            photoProbe.error_code === 27 || photoProbe.error_code === 15 || photoProbe.error_code === 200
+              ? "Этот пользовательский ключ не умеет грузить фото на стену клуба. Нужен ключ админа с правом «Фотографии»."
+              : describeVkApiError(photoProbe),
+          );
+        }
+      }
+
+      const encryptedToken = encryptToken(packVkTokens(token, photoToken));
       const displayName = input.displayName?.trim() || group.name?.trim() || parsed.screenName;
       const externalId = String(group.id);
 
@@ -524,6 +552,11 @@ export function createSocialService(
           where: { socialAccountId_name: { socialAccountId: saved.id, name: "publish_media" } },
           update: { enabled: true },
           create: { socialAccountId: saved.id, name: "publish_media", enabled: true },
+        });
+        await tx.socialAccountCapability.upsert({
+          where: { socialAccountId_name: { socialAccountId: saved.id, name: "publish_carousel" } },
+          update: { enabled: Boolean(photoToken) },
+          create: { socialAccountId: saved.id, name: "publish_carousel", enabled: Boolean(photoToken) },
         });
         await tx.postTarget.updateMany({
           where: { workspaceId, platform: "vk", socialAccountId: null },

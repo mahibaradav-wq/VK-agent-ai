@@ -45,6 +45,7 @@ export function SocialAccountsBoard({
   const [bindState, bindAction, bindPending] = useActionState(bindTelegramChannel, idle);
   const [vkState, vkAction, vkPending] = useActionState(connectVk, idle);
   const [disconnectState, disconnectAction, disconnectPending] = useActionState(disconnectSocial, idle);
+  const existingVk = accounts.find((item) => item.platform === "vk" && item.status !== "disconnected");
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_0.9fr]">
@@ -75,6 +76,13 @@ export function SocialAccountsBoard({
             {account.platform === "telegram" && account.externalId ? (
               <p className="text-sm text-ink/70">
                 Канал привязан. Публикация идёт туда от имени бота, который уже администратор.
+              </p>
+            ) : null}
+            {account.platform === "vk" ? (
+              <p className="text-sm text-ink/70">
+                {account.capabilities.some((item) => item.name === "publish_carousel" && item.enabled)
+                  ? "Карусель фото: пользовательский ключ админа сохранён. Новые слайды из Студии уйдут как фото на стене."
+                  : "Карусель фото: ключ клуба умеет повесить уже лежащие на стене фото, но не загрузить новые. Ручная карусель в ВК идёт от вашего входа, не от ключа клуба. Для Студии нужен пользовательский ключ админа с правом «Фотографии»."}
               </p>
             ) : null}
             {account.lastError ? <p className="text-sm text-ink/60">{account.lastError}</p> : null}
@@ -178,14 +186,19 @@ export function SocialAccountsBoard({
             </Card>
 
             <Card>
-              <h2 className="text-xl font-black text-ink">Подключить ВКонтакте</h2>
+              <h2 className="text-xl font-black text-ink">
+                {existingVk ? "Обновить ключи ВКонтакте" : "Подключить ВКонтакте"}
+              </h2>
               <p className="mt-2 text-sm text-ink/70">
-                Нужен ключ доступа сообщества: Управление → Настройки → Работа с API → Создать ключ, права «Стена» и
-                «Фотографии». Не сервисный ключ приложения VK ID и не пароль. Текст и картинки уходят на стену этого
-                клуба через wall.post.
+                Ключ сообщества (Управление → Настройки → Работа с API, права «Стена» и «Документы») пишет текст и
+                умеет прикрепить фото, которые уже есть в сообществе. Загрузить новые слайды в альбом стены он не может:
+                VK отвечает ошибкой 27 на photos.getWallUploadServer. В браузере карусель получается потому, что вы
+                вошли как админ. Для Студии вставьте пользовательский ключ этого админа с правом «Фотографии» — его
+                выдаёт поддержка VK:  devsupport@corp.vk.com. Не сервисный ключ приложения и не пароль.
               </p>
               <form action={vkAction} className="mt-4 grid gap-4">
                 <input type="hidden" name="workspaceId" value={workspaceId} />
+                {existingVk ? <input type="hidden" name="accountId" value={existingVk.id} /> : null}
                 {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
                 <label className="grid gap-2 text-sm font-medium text-ink">
                   Ключ сообщества
@@ -194,6 +207,16 @@ export function SocialAccountsBoard({
                     type="password"
                     autoComplete="off"
                     required
+                    className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-ink">
+                  Пользовательский ключ админа для карусели
+                  <input
+                    name="photoToken"
+                    type="password"
+                    autoComplete="off"
+                    placeholder="необязательно, без него карусель фото не выйдет"
                     className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
                   />
                 </label>
@@ -213,7 +236,9 @@ export function SocialAccountsBoard({
                 {vkState.message ? (
                   <StatusBanner tone={vkState.status === "success" ? "success" : "warning"}>{vkState.message}</StatusBanner>
                 ) : null}
-                <Button disabled={vkPending}>{vkPending ? "Проверяем у VK..." : "Подключить стену ВК"}</Button>
+                <Button disabled={vkPending}>
+                  {vkPending ? "Проверяем у VK..." : existingVk ? "Сохранить ключи ВК" : "Подключить стену ВК"}
+                </Button>
               </form>
             </Card>
 

@@ -8,12 +8,11 @@ import { Card } from "@/components/ui/card";
 import { StatusBanner } from "@/components/ui/status-banner";
 import {
   addWatchCommunity,
-  connectVkWatch,
-  disconnectVkWatch,
+  dismissWatchIdea,
   removeWatchCommunity,
+  sendWatchIdeaToStudio,
   type WatchFormState,
 } from "@/modules/watch/actions";
-import { watchIdeaAgentHref } from "@/modules/watch/prompt";
 
 const idle: WatchFormState = { status: "idle", message: "" };
 
@@ -57,7 +56,7 @@ export type WatchIdeaView = {
 export function WatchBoard({
   workspaceId,
   projectId,
-  canConnect,
+  canConnect: _canConnect,
   canGenerate,
   canApply,
   credential,
@@ -66,6 +65,7 @@ export function WatchBoard({
   aiProvider,
   copyReady,
   imageReady,
+  studioBusy = false,
 }: {
   workspaceId: string;
   projectId?: string;
@@ -78,27 +78,17 @@ export function WatchBoard({
   aiProvider: string;
   copyReady: boolean;
   imageReady: boolean;
+  studioBusy?: boolean;
 }) {
   const router = useRouter();
-  const [tokenState, tokenAction, tokenPending] = useActionState(connectVkWatch, idle);
-  const [disconnectState, disconnectAction, disconnectPending] = useActionState(disconnectVkWatch, idle);
   const [addState, addAction, addPending] = useActionState(addWatchCommunity, idle);
   const [removeState, removeAction, removePending] = useActionState(removeWatchCommunity, idle);
   const [collectPending, setCollectPending] = useState(false);
   const [collectState, setCollectState] = useState<WatchFormState>(idle);
   const agentReady = copyReady && imageReady;
-  const message =
-    collectState.message ||
-    addState.message ||
-    tokenState.message ||
-    disconnectState.message ||
-    removeState.message;
+  const message = collectState.message || addState.message || removeState.message;
   const tone =
-    collectState.status === "invalid" ||
-    addState.status === "invalid" ||
-    tokenState.status === "invalid" ||
-    disconnectState.status === "invalid" ||
-    removeState.status === "invalid"
+    collectState.status === "invalid" || addState.status === "invalid" || removeState.status === "invalid"
       ? "warning"
       : collectState.status === "success"
         ? "success"
@@ -153,8 +143,8 @@ export function WatchBoard({
             <StatusBanner tone="warning">
               Для новой картинки подключите ChatGPT. Кнопка на идее всё равно откроет бриф агента.
               <span className="mt-3 block">
-                <ButtonLink href="/app/ai" variant="secondary">
-                  Открыть агент AI
+                <ButtonLink href="/app/studio" variant="secondary">
+                  Открыть Студию
                 </ButtonLink>
               </span>
             </StatusBanner>
@@ -164,26 +154,50 @@ export function WatchBoard({
               Выберите проект в шапке кабинета — иначе агент не создаст черновик после брифа.
             </StatusBanner>
           ) : null}
+          {studioBusy ? (
+            <StatusBanner tone="warning">
+              В Студии лежит неопубликованный пост. Откройте Студию: опубликуйте, поставьте в календарь или нажмите
+              «Убрать».
+            </StatusBanner>
+          ) : null}
           <ul className="grid gap-3">
             {batch.items.map((item, index) => {
               const key = `${batch.id}-${index}`;
               return (
                 <li key={key} className="rounded-2xl ring-1 ring-ink/10 p-4">
                   <IdeaParts item={item} />
-                  {canApply ? (
-                    <div className="mt-3">
-                      <ButtonLink href={watchIdeaAgentHref(item)}>В бриф: пост + визуал</ButtonLink>
+                  {canApply || canGenerate ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {canApply && projectId && !studioBusy ? (
+                        <form action={sendWatchIdeaToStudio}>
+                          <input type="hidden" name="workspaceId" value={workspaceId} />
+                          <input type="hidden" name="projectId" value={projectId} />
+                          <input type="hidden" name="requestId" value={batch.id} />
+                          <input type="hidden" name="itemIndex" value={String(index)} />
+                          <Button>В Студию</Button>
+                        </form>
+                      ) : null}
+                      {canGenerate ? (
+                        <form action={dismissWatchIdea}>
+                          <input type="hidden" name="workspaceId" value={workspaceId} />
+                          <input type="hidden" name="requestId" value={batch.id} />
+                          <input type="hidden" name="itemIndex" value={String(index)} />
+                          <Button type="submit" variant="ghost">
+                            Убрать
+                          </Button>
+                        </form>
+                      ) : null}
                     </div>
                   ) : (
-                    <p className="mt-3 text-sm text-ink/60">Открыть идею в брифе агента могут Editor, Admin и Owner.</p>
+                    <p className="mt-3 text-sm text-ink/60">Открыть идею в Студии могут Editor, Admin и Owner.</p>
                   )}
                 </li>
               );
             })}
           </ul>
           <p className="text-xs text-ink/50">
-            Кнопка открывает раздел «Пост + визуал» с этой идеей в брифе. Тон, длину и площадку выбираете сами — пост и
-            картинка появятся только после «Создать пост с визуалом».
+            «В Студию» забирает идею в бриф и убирает её из списка. Не понравилась — «Убрать». Пост появится только после
+            «Создать пост с визуалом».
           </p>
         </Card>
       ))}
@@ -196,10 +210,10 @@ export function WatchBoard({
         </p>
         {aiProvider !== "openai" ? (
           <StatusBanner tone="warning">
-            Для идей нужен ChatGPT. Подключите ключ OpenAI в разделе AI.
+            Для идей нужен ChatGPT. Ключ задаётся в «Подключениях».
             <span className="mt-3 block">
-              <ButtonLink href="/app/ai" variant="secondary">
-                Подключить ChatGPT
+              <ButtonLink href="/app/connections" variant="secondary">
+                Подключения
               </ButtonLink>
             </span>
           </StatusBanner>
@@ -209,14 +223,6 @@ export function WatchBoard({
           <form action={submitCollect} className="grid gap-3">
             <input type="hidden" name="workspaceId" value={workspaceId} />
             {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
-            <label className="grid gap-2 text-sm font-medium text-ink">
-              Бриф бренда
-              <textarea
-                name="brief"
-                placeholder="Дом по полочкам: организация хранения, кухня, прихожая, без воды и без обещаний скидок."
-                className="min-h-28 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
-              />
-            </label>
             <Button disabled={collectPending}>{collectPending ? "Читаем стены..." : "Предложить идеи"}</Button>
           </form>
         ) : (
@@ -268,45 +274,9 @@ export function WatchBoard({
         ) : null}
       </Card>
 
-      <Card className="grid gap-3">
-        <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Ключ VK для чтения</p>
-        <p className="text-sm text-ink/70">
-          Сервисный ключ доступа из карточки приложения VK ID (не защищённый ключ и не код виджета входа). Пароль
-          аккаунта не принимается. Этот ключ только читает стены; публиковать во ВК он не умеет.
-        </p>
-        <p className="text-sm text-ink/70">
-          Статус: {credential.connected ? "ключ сохранён (зашифрован)" : "не подключён"}
-          {credential.lastError ? ` · ${credential.lastError}` : ""}
-        </p>
-        {canConnect ? (
-          <>
-            <form action={tokenAction} className="grid gap-3">
-              <input type="hidden" name="workspaceId" value={workspaceId} />
-              <label className="grid gap-2 text-sm font-medium text-ink">
-                Ключ доступа VK API
-                <input
-                  name="token"
-                  type="password"
-                  autoComplete="off"
-                  required
-                  className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
-                />
-              </label>
-              <Button disabled={tokenPending}>{tokenPending ? "Проверяем..." : "Сохранить ключ чтения"}</Button>
-            </form>
-            {credential.connected ? (
-              <form action={disconnectAction}>
-                <input type="hidden" name="workspaceId" value={workspaceId} />
-                <Button type="submit" variant="secondary" disabled={disconnectPending}>
-                  Отключить ключ
-                </Button>
-              </form>
-            ) : null}
-          </>
-        ) : (
-          <StatusBanner tone="info">Ключ чтения могут сохранить Owner и Admin.</StatusBanner>
-        )}
-      </Card>
+      {credential.connected ? null : (
+        <StatusBanner tone="warning">Ключ чтения стен VK задаётся в «Подключениях». Без него стены не прочитаются.</StatusBanner>
+      )}
     </div>
   );
 }

@@ -1,158 +1,111 @@
-import Link from "next/link";
-
 import { auth } from "@/auth";
 import { PageHeader } from "@/components/marketing/page-header";
-import { ButtonLink } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { StatusBanner } from "@/components/ui/status-banner";
 import { createPageMetadata } from "@/lib/metadata";
 import { getAppContext } from "@/modules/access/app-context";
 import { hasPermission } from "@/modules/access/permissions";
-import { createAiService } from "@/modules/ai/ai-service";
+import { createProject } from "@/modules/projects/actions";
 import { createStarterProjectIfMissing } from "@/modules/projects/project-service";
+import { selectProject } from "@/modules/workspaces/actions";
 import { prisma } from "@/server/db/prisma";
+import { SetupForm } from "@/components/forms/setup-form";
 
 export const metadata = createPageMetadata({
-  title: "Кабинет",
-  description: "Обзор рабочего пространства и следующие шаги после входа.",
+  title: "Проекты",
+  description: "Выберите клуб, в котором работаете. Каждый проект — свои ВК, Telegram, идеи и товары.",
   path: "/app",
 });
 
-export default async function AppHomePage() {
+export default async function ProjectsHomePage() {
   const session = await auth();
-
   if (!session?.user?.id) {
     return null;
   }
 
-  let { activeMembership, activeProject, projects } = await getAppContext(session.user.id);
+  let { activeMembership, projects } = await getAppContext(session.user.id);
   if (activeMembership && projects.length === 0) {
     await createStarterProjectIfMissing(prisma, activeMembership.workspaceId, session.user.id);
-    ({ activeMembership, activeProject, projects } = await getAppContext(session.user.id));
+    ({ activeMembership, projects } = await getAppContext(session.user.id));
   }
 
-  const [accounts, posts, ai] = activeMembership
+  const projectIds = projects.map((project) => project.id);
+  const [postStats, accounts] = activeMembership
     ? await Promise.all([
-        prisma.socialAccount.count({ where: { workspaceId: activeMembership.workspaceId } }),
-        activeProject
-          ? prisma.post.count({ where: { workspaceId: activeMembership.workspaceId, projectId: activeProject.id } })
-          : Promise.resolve(0),
-        createAiService(prisma).workspaceStatus(session.user.id, activeMembership.workspaceId),
+        prisma.post.groupBy({
+          by: ["projectId"],
+          where: { workspaceId: activeMembership.workspaceId, projectId: { in: projectIds } },
+          _count: { _all: true },
+          _max: { updatedAt: true },
+        }),
+        prisma.socialAccount.findMany({
+          where: { workspaceId: activeMembership.workspaceId, projectId: { in: projectIds } },
+          orderBy: { createdAt: "asc" },
+        }),
       ])
-    : [0, 0, null];
+    : [[], []];
 
-  const steps = [
-    {
-      done: true,
-      title: "Вход выполнен",
-      detail: session.user.email ?? "Email подтверждён",
-    },
-    {
-      done: projects.length > 0,
-      title: "Проект готов",
-      detail: activeProject ? activeProject.name : "Создайте проект, чтобы писать черновики.",
-    },
-    {
-      done: posts > 0,
-      title: "Первый черновик",
-      detail: posts > 0 ? `В проекте ${posts} публикаций.` : "Напишите пост через ChatGPT: пост + визуал.",
-    },
-    {
-      done: accounts > 0,
-      title: "Соцсеть",
-      detail:
-        accounts > 0
-          ? `Подключено аккаунтов: ${accounts}.`
-          : "Telegram-канал t.me/dom_po_polochkam и стена ВК. Без ключа публикация не имитируется.",
-    },
-    {
-      done: Boolean(ai?.ready),
-      title: "AI-ассистент",
-      detail: ai?.ready
-        ? `Идеи: ${ai.ideasProvider}. Тексты: ${ai.copyProvider}${ai.imageReady ? `, визуал: ${ai.imageProvider}` : ""}.`
-        : "ChatGPT — идеи, тексты и визуал. Без ключа генерация не имитируется.",
-    },
-  ];
-  const nextStep = steps.find((step) => !step.done);
+  const canCreate = activeMembership ? hasPermission(activeMembership.role, "project.create") : false;
 
   return (
     <>
       <PageHeader
-        eyebrow="Обзор"
-        title={activeMembership?.workspace.name ?? "Нет рабочего пространства"}
-        description="Дальше — черновик и кнопка «Опубликовать сейчас». Оплата пока не нужна."
+        eyebrow="Проекты"
+        title="Какой клуб ведёте"
+        description="Клик по карточке открывает календарь этого проекта. Ключи потом меняете в Подключениях."
       />
-      <Container className="grid gap-5 pb-20">
-        <StatusBanner tone="info">
-          {session.user.email} · роль {activeMembership?.role ?? "нет"} · проектов {projects.length}
-        </StatusBanner>
-        {nextStep ? (
-          <StatusBanner tone="warning">Следующий шаг: {nextStep.title}. {nextStep.detail}</StatusBanner>
-        ) : (
-          <StatusBanner tone="success">Базовая настройка есть. Можно вести календарь и очередь.</StatusBanner>
-        )}
-        <Card>
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Первые шаги</p>
-          <ol className="mt-4 grid gap-3">
-            {steps.map((step) => (
-              <li key={step.title} className="flex gap-3">
-                <span
-                  className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                    step.done ? "bg-success/15 text-success" : "bg-ink/5 text-ink/50"
-                  }`}
-                >
-                  {step.done ? "✓" : ""}
-                </span>
-                <div>
-                  <p className="font-semibold text-ink">{step.title}</p>
-                  <p className="mt-1 text-sm text-ink/70">{step.detail}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </Card>
-        {activeProject ? (
+      <Container className="grid gap-6 pb-20 lg:grid-cols-[1fr_0.8fr]">
+        <div className="grid gap-4">
+          {projects.length === 0 ? <StatusBanner tone="info">Проектов пока нет.</StatusBanner> : null}
+          {projects.map((project) => {
+            const stats = postStats.find((item) => item.projectId === project.id);
+            const vk = accounts.find((item) => item.projectId === project.id && item.platform === "vk");
+            const telegram = accounts.find((item) => item.projectId === project.id && item.platform === "telegram");
+            const lastAt = stats?._max.updatedAt;
+            return (
+              <Card key={project.id} className="grid gap-3">
+                <p className="text-xs font-bold uppercase tracking-[0.16em]" style={{ color: project.color }}>
+                  {project.name}
+                </p>
+                <h2 className="text-2xl font-black text-ink">{project.name}</h2>
+                <p className="text-sm text-ink/70">ВК: {vk?.displayName || "не задан"}</p>
+                <p className="text-sm text-ink/70">Telegram: {telegram?.displayName || "не задан"}</p>
+                <p className="text-sm text-ink/60">
+                  Постов: {stats?._count._all ?? 0}
+                  {lastAt ? ` · последний ${lastAt.toLocaleString("ru-RU")}` : ""}
+                </p>
+                {activeMembership ? (
+                  <form action={selectProject}>
+                    <input type="hidden" name="workspaceId" value={activeMembership.workspaceId} />
+                    <input type="hidden" name="projectId" value={project.id} />
+                    <input type="hidden" name="next" value="/app/calendar" />
+                    <Button>Открыть календарь</Button>
+                  </form>
+                ) : null}
+              </Card>
+            );
+          })}
+        </div>
+        {canCreate && activeMembership ? (
           <Card>
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Активный проект</p>
-            <h2 className="mt-2 text-2xl font-black text-ink">{activeProject.name}</h2>
-            <p className="mt-2 text-ink/70">{activeProject.description || "Описание не задано"}</p>
-            <div className="mt-5 flex flex-wrap gap-3">
-              <ButtonLink href="/app/ai">Написать через AI</ButtonLink>
-              <ButtonLink href="/app/social-accounts" variant="secondary">
-                Подключить Telegram
-              </ButtonLink>
-            </div>
-            <div className="mt-5 flex flex-wrap gap-4 text-sm font-semibold">
-              <Link href="/app/calendar" className="text-brand-dark">
-                Календарь
-              </Link>
-              <Link href="/app/posts" className="text-brand-dark">
-                Публикации
-              </Link>
-              <Link href="/app/queue" className="text-brand-dark">
-                Очередь
-              </Link>
-              <Link href="/app/media" className="text-brand-dark">
-                Медиатека
-              </Link>
-              <Link href="/app/analytics" className="text-brand-dark">
-                Аналитика
-              </Link>
-              <Link href="/app/projects" className="text-brand-dark">
-                Проекты
-              </Link>
-              <Link href="/app/subscription" className="text-brand-dark">
-                Подписка
-              </Link>
+            <h2 className="text-xl font-black text-ink">Новый проект</h2>
+            <p className="mt-2 text-sm text-ink/70">Название и цвет. Клуб и канал подключите сразу после создания, в Подключениях.</p>
+            <div className="mt-4">
+              <SetupForm
+                action={createProject}
+                submitLabel="Создать проект"
+                fields={[
+                  { name: "workspaceId", label: "Workspace", type: "hidden", defaultValue: activeMembership.workspaceId },
+                  { name: "name", label: "Название", required: true },
+                  { name: "color", label: "Цвет", defaultValue: "#cc7a2b" },
+                ]}
+              />
             </div>
           </Card>
         ) : (
-          <StatusBanner tone="warning">
-            {activeMembership && hasPermission(activeMembership.role, "project.create")
-              ? "Создайте первый проект в разделе «Проекты»."
-              : "Проектов пока нет. Создать проект может Editor, Admin или Owner."}
-          </StatusBanner>
+          <StatusBanner tone="info">Создать проект могут Editor, Admin и Owner.</StatusBanner>
         )}
       </Container>
     </>

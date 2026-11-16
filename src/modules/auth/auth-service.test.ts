@@ -38,7 +38,7 @@ describe("auth service", () => {
     expect(second.ok).toBe(false);
     expect(second.message).toContain("занят");
     expect(user?.memberships[0]?.role).toBe("Owner");
-    expect(starter?.name).toBe("Первый проект");
+    expect(starter?.name).toBe("Дом по полочкам");
   });
 
   it("rejects login before email verification", async () => {

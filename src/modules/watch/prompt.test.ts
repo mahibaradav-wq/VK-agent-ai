@@ -14,9 +14,9 @@ describe("watch idea brief", () => {
   it("opens the agent brief with VK as the platform", () => {
     const item = "Специи на вид || why || hook";
     const href = watchIdeaAgentHref(item);
-    expect(href.startsWith("/app/ai?")).toBe(true);
+    expect(href.startsWith("/app/studio?")).toBe(true);
     expect(href.endsWith("#agent-brief")).toBe(true);
-    const query = href.slice("/app/ai?".length, href.indexOf("#"));
+    const query = href.slice("/app/studio?".length, href.indexOf("#"));
     const params = new URLSearchParams(query);
     expect(params.get("platform")).toBe("vk");
     expect(params.get("prompt")).toBe(ideaToAgentPrompt(item));

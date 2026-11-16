@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 
 import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
+import { clearAiBalanceCache } from "@/modules/ai/balance-service";
 import { aiProviderCatalog, getAiProviderSpec, parseAiProviderId, type AiProviderId } from "@/server/ai/catalog";
 import { createOpenAiCompatibleProvider } from "@/server/ai/openai-compatible";
 import { probeAiApiKey } from "@/server/ai/probe";
@@ -305,6 +306,7 @@ export function createAiConnectionService(
       if (!connected) {
         throw new AccessError(400, "Неизвестный AI-провайдер.");
       }
+      clearAiBalanceCache(workspaceId);
       return connected;
     },
 
@@ -385,6 +387,7 @@ export function createAiConnectionService(
       await db.workspaceAiConnection.delete({
         where: { workspaceId_provider: { workspaceId, provider } },
       });
+      clearAiBalanceCache(workspaceId);
       await db.auditLog.create({
         data: {
           action: "DISCONNECT_AI_PROVIDER",

@@ -35,10 +35,16 @@ const aspectSizes: Record<VisualAspect, AiImageSize> = {
   "9:16": "1024x1536",
 };
 
+export const carouselCounts = [2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+export type CarouselCount = (typeof carouselCounts)[number];
+export const defaultCarouselCount: CarouselCount = 3;
+export const minCarouselCount = 2;
+export const maxCarouselCount = 10;
+
 const kindHints: Record<VisualKind, string> = {
   image: "Create one realistic photograph of a small kitchen or home storage scene.",
   video: "Create a still opening frame for a short vertical video of a real organizing action. This is a cover still, not an MP4.",
-  carousel: "Create the cover slide of a carousel: one problem or useful result, empty space for later layout, identical frame to the rest of the set.",
+  carousel: "Create one slide of a carousel series: one problem or useful result, empty space for later layout, identical frame to the rest of the set.",
   infographic: "Create one infographic card: one idea, large shapes, at most three short labels. Types allowed: steps, placement scheme, before/after, size table, checklist, storage zones, mistakes vs fixes.",
 };
 
@@ -56,6 +62,28 @@ export function parseVisualAspect(value: string, kind?: VisualKind): VisualAspec
 
 export function isVisualKindLive(kind: VisualKind) {
   return visualKindLive[kind];
+}
+
+export function parseCarouselCount(value: string | number | undefined, kind?: VisualKind): number {
+  if (kind && kind !== "carousel") {
+    return 1;
+  }
+  const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? "").trim(), 10);
+  if (!Number.isFinite(parsed)) {
+    return kind === "carousel" ? defaultCarouselCount : 1;
+  }
+  return Math.min(maxCarouselCount, Math.max(minCarouselCount, Math.round(parsed)));
+}
+
+export function agentUsageUnits(kind: VisualKind, carouselCount?: string | number) {
+  return 1 + parseCarouselCount(carouselCount, kind);
+}
+
+export function slideVisualPrompt(base: string, index: number, total: number) {
+  if (total <= 1) {
+    return base;
+  }
+  return `${base} Slide ${index + 1} of ${total}: this card must be visually distinct from the other slides, same frame, palette and style, new composition.`;
 }
 
 export function imageSizeForAspect(aspect: VisualAspect): AiImageSize {

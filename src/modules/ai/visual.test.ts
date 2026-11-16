@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  agentUsageUnits,
   aspectLabel,
+  defaultCarouselCount,
   defaultVisualAspect,
   imageSizeForAspect,
   isVisualKindLive,
+  parseCarouselCount,
   parseVisualAspect,
   parseVisualKind,
   prepareVisualPrompt,
+  slideVisualPrompt,
   visualAspectsByKind,
 } from "@/modules/ai/visual";
 
@@ -36,6 +40,17 @@ describe("visual studio helpers", () => {
     expect(prompt).toContain("#F3EEE5");
     expect(prompt).toContain("Дом по полочкам");
     expect(prompt).not.toMatch(/watermarks.*required/i);
+  });
+
+  it("keeps a carousel card count between 2 and 10", () => {
+    expect(parseCarouselCount(undefined, "image")).toBe(1);
+    expect(parseCarouselCount("", "carousel")).toBe(defaultCarouselCount);
+    expect(parseCarouselCount(1, "carousel")).toBe(2);
+    expect(parseCarouselCount(4, "carousel")).toBe(4);
+    expect(parseCarouselCount(15, "carousel")).toBe(10);
+    expect(agentUsageUnits("image")).toBe(2);
+    expect(agentUsageUnits("carousel", 4)).toBe(5);
+    expect(slideVisualPrompt("base", 1, 3)).toContain("Slide 2 of 3");
   });
 
   it("keeps video as a live cover-still kind with 9:16", () => {

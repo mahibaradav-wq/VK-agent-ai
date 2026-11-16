@@ -52,6 +52,7 @@ export async function savePostDraft(_prev: PostFormState, formData: FormData): P
     );
     revalidatePath("/app/posts");
     revalidatePath("/app/calendar");
+    revalidatePath("/app/studio");
     revalidatePath(`/app/posts/${readField(formData, "postId")}`);
     return {
       status: "success",
@@ -63,4 +64,25 @@ export async function savePostDraft(_prev: PostFormState, formData: FormData): P
     const message = error instanceof AccessError ? error.message : "Не удалось сохранить черновик.";
     return { status: "invalid", message };
   }
+}
+
+function revalidateStudio(postId?: string) {
+  revalidatePath("/app/studio");
+  revalidatePath("/app/ideas");
+  revalidatePath("/app/products");
+  revalidatePath("/app/calendar");
+  revalidatePath("/app/posts");
+  if (postId) {
+    revalidatePath(`/app/posts/${postId}`);
+  }
+}
+
+export async function discardStudioCard(formData: FormData) {
+  const postId = readField(formData, "postId");
+  await createPostService(prisma).discardStudioCard(
+    await requireUserId(),
+    readField(formData, "workspaceId"),
+    postId,
+  );
+  revalidateStudio(postId);
 }

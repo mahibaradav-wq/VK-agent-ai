@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
 import { AccessError } from "@/modules/access/permissions";
+import { persistStudioDraftFromForm } from "@/modules/posts/studio-draft";
 import { createPublishService } from "@/modules/publishing/publish-service";
+import { publishNowMessage } from "@/modules/publishing/summary";
 import { prisma } from "@/server/db/prisma";
 
 export type PublishFormState = {
@@ -29,6 +31,9 @@ function revalidatePublish(postId?: string) {
   revalidatePath("/app/queue");
   revalidatePath("/app/posts");
   revalidatePath("/app/calendar");
+  revalidatePath("/app/studio");
+  revalidatePath("/app/ideas");
+  revalidatePath("/app/products");
   if (postId) {
     revalidatePath(`/app/posts/${postId}`);
   }
@@ -37,20 +42,15 @@ function revalidatePublish(postId?: string) {
 export async function publishNowPost(_prev: PublishFormState, formData: FormData): Promise<PublishFormState> {
   const postId = readField(formData, "postId");
   try {
+    const userId = await requireUserId();
+    await persistStudioDraftFromForm(userId, formData);
     const job = await createPublishService(prisma).publishNow(
-      await requireUserId(),
+      userId,
       readField(formData, "workspaceId"),
       postId,
     );
     revalidatePublish(postId);
-    const attempt = job?.attempts[0];
-    const outcome =
-      attempt?.kind === "success"
-        ? "Пост ушёл в Telegram."
-        : attempt?.errorCode
-          ? `Очередь обработана: ${attempt.kind} (${attempt.errorCode}).`
-          : `Задача ${job?.status ?? "обработана"}.`;
-    return { status: "success", message: outcome };
+    return publishNowMessage(job);
   } catch (error) {
     const message = error instanceof AccessError ? error.message : "Не удалось опубликовать сейчас.";
     return { status: "invalid", message };

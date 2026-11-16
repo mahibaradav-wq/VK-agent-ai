@@ -45,7 +45,7 @@ export type TelegramTransport = {
     token: string,
     method: string,
     body?: Record<string, unknown>,
-    file?: TelegramFilePart,
+    file?: TelegramFilePart | TelegramFilePart[],
   ) => Promise<TelegramApiResult<unknown>>;
 };
 
@@ -70,7 +70,8 @@ export function createTelegramTransport(fetchImpl: typeof fetch = createTelegram
     async request(token, method, body, file) {
       try {
         const url = `${telegramApiRoot()}/bot${token}/${method}`;
-        const response = file
+        const files = file ? (Array.isArray(file) ? file : [file]) : [];
+        const response = files.length
           ? await fetchImpl(url, {
               method: "POST",
               body: (() => {
@@ -80,7 +81,9 @@ export function createTelegramTransport(fetchImpl: typeof fetch = createTelegram
                     form.set(key, String(value));
                   }
                 }
-                form.set(file.field, new Blob([Buffer.from(file.bytes)], { type: file.mimeType }), file.filename);
+                for (const part of files) {
+                  form.set(part.field, new Blob([Buffer.from(part.bytes)], { type: part.mimeType }), part.filename);
+                }
                 return form;
               })(),
               signal: AbortSignal.timeout(20_000),

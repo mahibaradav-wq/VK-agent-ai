@@ -18,12 +18,25 @@ type ChatResponse = {
   choices?: Array<{ message?: { content?: string } }>;
 };
 
+function platformRule(platform: string) {
+  if (!platform || (platform.includes("telegram") && platform.includes("vk"))) {
+    return "Write one Russian text for both Telegram and the VKontakte community wall. No Markdown: no **bold**, no [links](url), no backticks. Numbered lists as 1. 2. 3.";
+  }
+  if (platform === "vk") {
+    return "Adapt the copy to the VKontakte community wall. No Markdown asterisks. Plain Russian text and numbered lists.";
+  }
+  if (platform === "telegram") {
+    return "Adapt the copy to Telegram. Short paragraphs. Light Markdown is allowed.";
+  }
+  return `Adapt the copy to platform: ${platform}.`;
+}
+
 function systemPrompt(input: AiGenerateInput) {
   return [
     copySystemRules(input.kind),
     `Tone: ${input.tone}.`,
     `Length: ${input.length}.`,
-    input.platform ? `Adapt the copy to platform: ${input.platform}.` : "No specific platform.",
+    platformRule(input.platform),
     'Return JSON only: {"title": string, "body": string, "items": string[]}.',
     "ideas/headline/cta/hashtags: fill items. post: fill title and body.",
   ].join(" ");

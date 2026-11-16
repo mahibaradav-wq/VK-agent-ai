@@ -31,6 +31,9 @@ function fingerprint(input: { title: string; body: string; platforms: string[]; 
 }
 
 const approvalStatuses: Array<PostStatus | PostTargetStatus> = ["pending_approval", "approved"];
+const studioClearableStatuses: PostStatus[] = ["draft", "pending_approval", "approved", "failed"];
+const studioWorkingStatuses: PostStatus[] = [...studioClearableStatuses, "queued", "publishing"];
+const studioInFlightStatuses: PostStatus[] = ["queued", "publishing"];
 
 export function createPostService(db: PrismaClient) {
   const access = createAccessService(db);
@@ -59,6 +62,109 @@ export function createPostService(db: PrismaClient) {
     async get(userId: string, workspaceId: string, postId: string) {
       await access.requirePermission(userId, workspaceId, "post.view");
       return loadBoundPost(workspaceId, postId);
+    },
+
+    studioCardWhere(workspaceId: string, projectId: string, exceptPostId?: string) {
+      return {
+        workspaceId,
+        projectId,
+        status: { in: studioClearableStatuses },
+        schedule: null,
+        ...(exceptPostId ? { id: { not: exceptPostId } } : {}),
+      };
+    },
+
+    async listStudioCards(userId: string, workspaceId: string, projectId?: string) {
+      await access.requirePermission(userId, workspaceId, "post.view");
+      if (!projectId) {
+        return [];
+      }
+      const inflight = await db.post.findMany({
+        where: {
+          workspaceId,
+          projectId,
+          status: { in: studioInFlightStatuses },
+          schedule: null,
+        },
+        include: postInclude,
+        orderBy: { updatedAt: "desc" },
+        take: 1,
+      });
+      if (inflight.length) {
+        return inflight;
+      }
+      return db.post.findMany({
+        where: this.studioCardWhere(workspaceId, projectId),
+        include: postInclude,
+        orderBy: { updatedAt: "desc" },
+        take: 1,
+      });
+    },
+
+    async clearUnscheduledStudioCards(userId: string, workspaceId: string, projectId: string, exceptPostId?: string) {
+      await access.requirePermission(userId, workspaceId, "post.update");
+      const where = this.studioCardWhere(workspaceId, projectId, exceptPostId);
+      const leftover = await db.post.findMany({ where, select: { id: true } });
+      if (leftover.length === 0) {
+        return 0;
+      }
+      await db.$transaction(async (tx) => {
+        await tx.post.updateMany({
+          where: { id: { in: leftover.map((item) => item.id) } },
+          data: { status: "cancelled" },
+        });
+        await tx.auditLog.create({
+          data: {
+            action: "CLEAR_STUDIO_CARDS",
+            entityType: "project",
+            entityId: projectId,
+            actorId: userId,
+            details: leftover.map((item) => item.id).join(","),
+          },
+        });
+      });
+      return leftover.length;
+    },
+
+    async collapseStudioPile(userId: string, workspaceId: string, projectId?: string) {
+      if (!projectId) {
+        return { cleared: 0 };
+      }
+      await access.requirePermission(userId, workspaceId, "post.update");
+      const leftover = await db.post.findMany({
+        where: this.studioCardWhere(workspaceId, projectId),
+        select: { id: true },
+      });
+      if (leftover.length <= 1) {
+        return { cleared: 0 };
+      }
+      return { cleared: await this.clearUnscheduledStudioCards(userId, workspaceId, projectId) };
+    },
+
+    async discardStudioCard(userId: string, workspaceId: string, postId: string) {
+      await access.requirePermission(userId, workspaceId, "post.update");
+      const post = await loadBoundPost(workspaceId, postId);
+      if (post.schedule) {
+        throw new AccessError(400, "Этот пост уже в календаре.");
+      }
+      if (!studioWorkingStatuses.includes(post.status)) {
+        throw new AccessError(403, "Нельзя убрать публикацию в текущем статусе.");
+      }
+      await db.$transaction(async (tx) => {
+        await tx.post.update({
+          where: { id: post.id },
+          data: { status: "cancelled" },
+        });
+        await tx.auditLog.create({
+          data: {
+            action: "DISCARD_STUDIO_CARD",
+            entityType: "post",
+            entityId: post.id,
+            actorId: userId,
+            details: post.status,
+          },
+        });
+      });
     },
 
     async create(userId: string, workspaceId: string, projectId: string, title?: string) {
@@ -126,6 +232,9 @@ export function createPostService(db: PrismaClient) {
       }
 
       const platforms = parsePlatforms(input.platforms);
+      if (!platforms.length) {
+        throw new AccessError(400, "Отметьте хотя бы одну сеть: Telegram или ВКонтакте.");
+      }
       const requestedMediaIds = [...new Set(input.mediaIds.filter(Boolean))];
       const media = requestedMediaIds.length
         ? await db.mediaAsset.findMany({ where: { id: { in: requestedMediaIds } } })

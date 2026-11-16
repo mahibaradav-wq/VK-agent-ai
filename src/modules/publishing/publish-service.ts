@@ -21,6 +21,7 @@ const jobInclude = {
       versions: { orderBy: { number: "desc" as const } },
       media: { include: { media: true }, orderBy: { sortOrder: "asc" as const } },
       schedule: true,
+      shopProduct: true,
     },
   },
   attempts: { orderBy: { startedAt: "desc" as const } },
@@ -277,7 +278,12 @@ export function createPublishService(
       }
       await access.requirePermission(userId, workspaceId, "post.approve");
 
-      const post = await releaseStalePublish(await loadBoundPost(workspaceId, postId));
+      let post = await releaseStalePublish(await loadBoundPost(workspaceId, postId));
+      await db.postTarget.updateMany({
+        where: { postId: post.id, status: "requires_manual_check" },
+        data: { status: "failed", lastError: "Повтор после неопределённого результата по кнопке «Опубликовать сейчас»." },
+      });
+      post = await loadBoundPost(workspaceId, postId);
       const version = currentVersion(post);
       if (!version?.title.trim() || !version.body.trim()) {
         throw new AccessError(400, "Сохраните заголовок и текст, прежде чем публиковать.");
@@ -298,7 +304,16 @@ export function createPublishService(
       }
 
       const job = await this.enqueue(userId, workspaceId, post.id);
-      const processed = await this.processJob(job.id, `publish-now:${userId}`);
+      let processed = await this.processJob(job.id, `publish-now:${userId}`);
+      if (processed.skipped && processed.job && isActiveJob(processed.job.status)) {
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          const current = await db.publishJob.findUnique({ where: { id: job.id }, include: jobInclude });
+          if (current && !isActiveJob(current.status)) {
+            return current;
+          }
+        }
+      }
       return processed.job ?? job;
     },
 
@@ -418,6 +433,14 @@ export function createPublishService(
             title: version.title,
             body: version.body,
             mediaKeys: claimed.post.media.map((item) => item.media.storageKey),
+            market: claimed.post.shopProduct
+              ? {
+                  title: claimed.post.shopProduct.title,
+                  priceText: claimed.post.shopProduct.priceText,
+                  url: claimed.post.shopProduct.sourceUrl,
+                  shop: claimed.post.shopProduct.shop,
+                }
+              : undefined,
           });
         } catch {
           outcome = {

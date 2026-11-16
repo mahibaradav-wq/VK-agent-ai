@@ -15,7 +15,7 @@ const idle: AiFormState = { status: "idle", message: "" };
 
 function BriefFields({
   defaultPrompt = "",
-  defaultPlatform = "telegram",
+  defaultPlatform = "",
   textareaId,
   highlight = false,
 }: {
@@ -41,7 +41,7 @@ function BriefFields({
           }`}
         />
       </label>
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <label className="grid gap-2 text-sm font-medium text-ink">
           Тон
           <select name="tone" defaultValue="friendly" className="min-h-11 rounded-2xl border border-ink/10 bg-white px-3">
@@ -62,19 +62,46 @@ function BriefFields({
             ))}
           </select>
         </label>
-        <label className="grid gap-2 text-sm font-medium text-ink">
-          Платформа
-          <select name="platform" defaultValue={defaultPlatform} className="min-h-11 rounded-2xl border border-ink/10 bg-white px-3">
-            <option value="">Без адаптации</option>
-            {previewPlatforms.map((item) => (
-              <option key={item.id} value={item.id} disabled={!item.live}>
-                {item.live ? item.label : `${item.label} (пока нельзя)`}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
+      <PlatformChecks defaultPlatform={defaultPlatform} />
     </>
+  );
+}
+
+function PlatformChecks({ defaultPlatform = "" }: { defaultPlatform?: string }) {
+  const [selected, setSelected] = useState<string[]>(
+    defaultPlatform === "vk" || defaultPlatform === "telegram" ? [defaultPlatform] : ["telegram", "vk"],
+  );
+
+  function toggle(id: string) {
+    setSelected((current) => {
+      if (current.includes(id)) {
+        return current.length === 1 ? current : current.filter((item) => item !== id);
+      }
+      return [...current, id];
+    });
+  }
+
+  return (
+    <fieldset className="grid gap-2">
+      <legend className="text-sm font-medium text-ink">Куда выложить</legend>
+      {previewPlatforms.map((item) => (
+        <label key={item.id} className="flex items-center gap-2 text-sm text-ink/80">
+          <input
+            type="checkbox"
+            name="platform"
+            value={item.id}
+            checked={selected.includes(item.id)}
+            disabled={!item.live}
+            onChange={() => toggle(item.id)}
+          />
+          {item.live ? item.label : `${item.label} (пока нельзя)`}
+        </label>
+      ))}
+      <p className="text-xs text-ink/60">
+        Галочки задают сети публикации. Две галочки — один общий текст и два предпросмотра, Telegram и ВКонтакте.
+      </p>
+    </fieldset>
   );
 }
 
@@ -91,7 +118,8 @@ export function AiStudio({
   used,
   limit,
   defaultPrompt = "",
-  defaultPlatform = "telegram",
+  defaultPlatform = "",
+  shopProductId = "",
 }: {
   workspaceId: string;
   projectId?: string;
@@ -106,6 +134,7 @@ export function AiStudio({
   limit: number;
   defaultPrompt?: string;
   defaultPlatform?: string;
+  shopProductId?: string;
 }) {
   const router = useRouter();
   const [agentState, agentAction, agentPending] = useActionState(composeAgentPost, idle);
@@ -114,7 +143,7 @@ export function AiStudio({
 
   useEffect(() => {
     if (agentState.status === "success" && agentState.postId) {
-      router.push(`/app/posts/${agentState.postId}`);
+      router.refresh();
     }
   }, [agentState.postId, agentState.status, router]);
 
@@ -170,6 +199,7 @@ export function AiStudio({
         <form action={agentAction} className="grid gap-4">
           <input type="hidden" name="workspaceId" value={workspaceId} />
           {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
+          {shopProductId ? <input type="hidden" name="shopProductId" value={shopProductId} /> : null}
           <BriefFields
             defaultPrompt={defaultPrompt}
             defaultPlatform={defaultPlatform}
