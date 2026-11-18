@@ -19,6 +19,7 @@ import { getUsage, releaseUsage, reserveUsage, USAGE_METRICS } from "@/modules/b
 import { createMediaService } from "@/modules/media/media-service";
 import { defaultPublishPlatforms, parsePlatforms, parseStoredPlatforms } from "@/modules/posts/platforms";
 import { createPostService } from "@/modules/posts/post-service";
+import { copyForPlatform, parseVariants, type PlatformVariants } from "@/modules/posts/variants";
 import { getAiProvider, type AiProvider } from "@/server/ai";
 import { storage as defaultStorage } from "@/server/storage";
 import type { StorageDriver } from "@/server/storage/types";
@@ -453,12 +454,10 @@ export function createAiService(
       const publishPlatforms = defaultPublishPlatforms(
         input.platforms ?? (input.platform ? [input.platform] : []),
       );
-      const platform =
-        publishPlatforms.length === 1 ? publishPlatforms[0] : "telegram and vkontakte";
       const visualKind = parseVisualKind(input.visualKind ?? "image");
       const visualAspect = parseVisualAspect(input.visualAspect ?? "", visualKind);
       const slideCount = parseCarouselCount(input.carouselCount, visualKind);
-      const usageUnits = agentUsageUnits(visualKind, slideCount);
+      const usageUnits = agentUsageUnits(visualKind, slideCount, publishPlatforms.length);
 
       const copy = await providerFor(workspaceId, "copy");
       const imageProvider = await providerFor(workspaceId, "image");
@@ -496,23 +495,52 @@ export function createAiService(
         limit,
         at,
         visualKind === "carousel"
-          ? `Агенту нужны ${usageUnits} генерации (текст и ${slideCount} карточек). Лимит AI на месяц исчерпан (${limit}).`
-          : `Агенту нужны две генерации (текст и визуал). Лимит AI на месяц исчерпан (${limit}).`,
+          ? `Агенту нужны ${usageUnits} генерации (${publishPlatforms.length > 1 ? "тексты Telegram и ВК" : "текст"} и ${slideCount} карточек). Лимит AI на месяц исчерпан (${limit}).`
+          : publishPlatforms.length > 1
+            ? `Агенту нужны ${usageUnits} генерации (текст Telegram, текст ВК и визуал). Лимит AI на месяц исчерпан (${limit}).`
+            : `Агенту нужны две генерации (текст и визуал). Лимит AI на месяц исчерпан (${limit}).`,
         usageUnits,
       );
 
       try {
-        const generated = await callWithFallback(workspaceId, "copy", (item) =>
-          item.generate({
-            kind: "post",
-            prompt,
-            tone,
-            length,
-            platform,
-          }),
-        );
-        const title = generated.title.trim() || "Черновик агента";
-        const body = generated.body.trim() || prompt;
+        const variants: PlatformVariants = {};
+        let generated = {
+          title: "Черновик агента",
+          body: prompt,
+          provider: copy.name,
+          model: copy.model,
+          inputTokens: 0,
+          outputTokens: 0,
+        };
+        for (const target of publishPlatforms) {
+          const next = await callWithFallback(workspaceId, "copy", (item) =>
+            item.generate({
+              kind: "post",
+              prompt,
+              tone,
+              length,
+              platform: target,
+            }),
+          );
+          variants[target] = {
+            title: next.title.trim() || "Черновик агента",
+            body: next.body.trim() || prompt,
+          };
+          generated = {
+            title: next.title,
+            body: next.body,
+            provider: next.provider,
+            model: next.model,
+            inputTokens: next.inputTokens ?? 0,
+            outputTokens: next.outputTokens ?? 0,
+          };
+        }
+        const primary = variants[publishPlatforms[0] ?? "telegram"] ?? {
+          title: generated.title.trim() || "Черновик агента",
+          body: generated.body.trim() || prompt,
+        };
+        const title = primary.title;
+        const body = primary.body;
         const baseVisualPrompt = visualPromptForCopy({
           brief: prompt,
           title,
@@ -547,6 +575,7 @@ export function createAiService(
           title: title.slice(0, 180),
           body,
           platforms: publishPlatforms,
+          variants,
           mediaIds,
         });
         await posts.clearUnscheduledStudioCards(userId, workspaceId, input.projectId, created.id);
@@ -622,7 +651,8 @@ export function createAiService(
       const rewriteText = input.rewrite !== "visual";
       const rewriteVisual = input.rewrite !== "text";
       const slideCount = Math.max(1, post.media.length);
-      const usageUnits = (rewriteText ? 1 : 0) + (rewriteVisual ? slideCount : 0);
+      const platforms = defaultPublishPlatforms(post.targets.map((target) => target.platform));
+      const usageUnits = (rewriteText ? platforms.length : 0) + (rewriteVisual ? slideCount : 0);
       const at = now();
       const limit = await resolveLimit(workspaceId);
       const periodStart = await reserveUsage(
@@ -637,24 +667,31 @@ export function createAiService(
       try {
         let title = version.title;
         let body = version.body;
-        const platforms = defaultPublishPlatforms(post.targets.map((target) => target.platform));
-        const platform = platforms.length === 1 ? platforms[0] : "telegram and vkontakte";
+        const variants: PlatformVariants = {};
         if (rewriteText) {
           const copy = await providerFor(workspaceId, "copy");
           if (!copy.ready) {
             throw new AccessError(400, "Правка текста недоступна: подключите ChatGPT.");
           }
-          const generated = await callWithFallback(workspaceId, "copy", (item) =>
-            item.generate({
-              kind: "post",
-              prompt: `Текущий заголовок: ${version.title}\nТекущий текст:\n${version.body}\n\nПравка от автора: ${comment}`,
-              tone: "friendly",
-              length: "medium",
-              platform,
-            }),
-          );
-          title = generated.title.trim() || title;
-          body = generated.body.trim() || body;
+          for (const target of platforms) {
+            const current = copyForPlatform(version, target);
+            const generated = await callWithFallback(workspaceId, "copy", (item) =>
+              item.generate({
+                kind: "post",
+                prompt: `Текущий заголовок: ${current.title}\nТекущий текст:\n${current.body}\n\nПравка от автора: ${comment}`,
+                tone: "friendly",
+                length: "medium",
+                platform: target,
+              }),
+            );
+            variants[target] = {
+              title: generated.title.trim() || current.title,
+              body: generated.body.trim() || current.body,
+            };
+          }
+          const primary = variants[platforms[0] ?? "telegram"];
+          title = primary?.title || title;
+          body = primary?.body || body;
         }
         const mediaIds = post.media.map((item) => item.mediaId);
         if (rewriteVisual) {
@@ -695,6 +732,7 @@ export function createAiService(
           title: title.slice(0, 180),
           body,
           platforms,
+          variants: rewriteText ? variants : parseVariants(version.variantsJson),
           mediaIds,
         });
         await db.auditLog.create({

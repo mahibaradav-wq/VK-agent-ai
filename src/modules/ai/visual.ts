@@ -75,8 +75,8 @@ export function parseCarouselCount(value: string | number | undefined, kind?: Vi
   return Math.min(maxCarouselCount, Math.max(minCarouselCount, Math.round(parsed)));
 }
 
-export function agentUsageUnits(kind: VisualKind, carouselCount?: string | number) {
-  return 1 + parseCarouselCount(carouselCount, kind);
+export function agentUsageUnits(kind: VisualKind, carouselCount?: string | number, copyCount = 1) {
+  return Math.max(1, copyCount) + parseCarouselCount(carouselCount, kind);
 }
 
 export function slideVisualPrompt(base: string, index: number, total: number) {

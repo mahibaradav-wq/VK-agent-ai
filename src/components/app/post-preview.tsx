@@ -7,12 +7,14 @@ export function PostPreview({
   platforms,
   mediaUrls,
   aspect = "4:5",
+  copies,
 }: {
   title: string;
   body: string;
   platforms: string[];
   mediaUrls: string[];
   aspect?: string;
+  copies?: Record<string, { title: string; body: string }>;
 }) {
   const selected = previewPlatforms.filter((item) => platforms.includes(item.id));
   const cards = selected.length ? selected : previewPlatforms.filter((item) => item.live);
@@ -45,9 +47,9 @@ export function PostPreview({
               ))}
             </div>
           ) : null}
-          <h3 className="mt-3 text-lg font-black">{title || "Без названия"}</h3>
+          <h3 className="mt-3 text-lg font-black">{copies?.[platform.id]?.title || title || "Без названия"}</h3>
           <p className={`mt-2 whitespace-pre-wrap text-sm leading-6 ${platform.id === "telegram" ? "text-white/80" : "text-ink/70"}`}>
-            {body || "Текст черновика появится здесь."}
+            {copies?.[platform.id]?.body || body || "Текст черновика появится здесь."}
           </p>
           <p className={`mt-3 text-xs ${platform.id === "telegram" ? "text-white/50" : "text-ink/50"}`}>{platform.hint}</p>
         </article>

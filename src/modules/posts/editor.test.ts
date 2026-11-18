@@ -102,6 +102,18 @@ describe("post editor and media library", () => {
     expect(second.post.status).toBe("draft");
     expect(second.post.targets.every((target) => target.status === "draft")).toBe(true);
     expect(second.post.versions.filter((version) => version.supersededAt).length).toBe(2);
+
+    const withVariants = await posts.saveDraft(owner.userId, owner.workspaceId, created.id, {
+      title: "ТГ заголовок",
+      body: "Текст для канала",
+      platforms: ["vk", "telegram"],
+      variants: {
+        telegram: { title: "ТГ заголовок", body: "Текст для канала" },
+        vk: { title: "ВК заголовок", body: "Текст для стены" },
+      },
+      mediaIds: [],
+    });
+    expect(withVariants.version.variantsJson).toMatch(/Текст для стены/);
   });
 
   it("keeps an unscheduled draft as the Studio card until it is discarded or scheduled", async () => {

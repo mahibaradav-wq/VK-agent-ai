@@ -11,6 +11,7 @@ import { getAppContext } from "@/modules/access/app-context";
 import { hasPermission } from "@/modules/access/permissions";
 import { createAiService } from "@/modules/ai/ai-service";
 import { createPostService } from "@/modules/posts/post-service";
+import { parseVariants } from "@/modules/posts/variants";
 import { prisma } from "@/server/db/prisma";
 
 export const metadata = createPageMetadata({
@@ -69,7 +70,7 @@ export default async function StudioPage({
       <PageHeader
         eyebrow="Студия"
         title="Пост + визуал"
-        description="Бриф из идеи, товара или свой. ChatGPT пишет голосом проекта. Ключ — в Подключениях."
+        description="Бриф из идеи, товара или свой. Две сети — два текста: Telegram и ВКонтакте. Ключ — в Подключениях."
       />
       <Container className="grid gap-6 pb-20">
         {studioPosts.length ? (
@@ -96,6 +97,7 @@ export default async function StudioPage({
                     lastError: post.targets.find((target) => target.lastError)?.lastError ?? "",
                     platforms: post.targets.map((target) => target.platform),
                     mediaIds: post.media.map((item) => item.mediaId),
+                    variants: parseVariants(version?.variantsJson),
                   }}
                 />
               );
