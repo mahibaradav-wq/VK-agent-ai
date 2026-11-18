@@ -86,7 +86,7 @@ export function createTelegramTransport(fetchImpl: typeof fetch = createTelegram
                 }
                 return form;
               })(),
-              signal: AbortSignal.timeout(20_000),
+              signal: AbortSignal.timeout(60_000),
             })
           : await fetchImpl(url, {
               method: "POST",

@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 
-import { detectMediaType } from "@/modules/media/file-validation";
+import { detectMediaType, isVideoMime } from "@/modules/media/file-validation";
 import { decryptToken } from "@/server/crypto/token-cipher";
 import {
   createTelegramTransport,
@@ -21,6 +21,9 @@ function composeText(input: PublishInput) {
 }
 
 function filenameForMime(mimeType: string) {
+  if (isVideoMime(mimeType)) {
+    return "video.mp4";
+  }
   if (mimeType === "image/png") {
     return "photo.png";
   }
@@ -142,18 +145,30 @@ export function createTelegramAdapter(options: {
             return {
               kind: "permanent_failure",
               code: "media_type",
-              message: "В Telegram можно прикрепить только изображение JPEG, PNG, GIF или WebP.",
+              message: "В Telegram можно прикрепить JPEG, PNG, GIF, WebP или MP4.",
             };
           }
           photos.push({
-            field: mediaKeys.length > 1 ? `photo${index}` : "photo",
+            field: isVideoMime(mimeType) ? "video" : mediaKeys.length > 1 ? `photo${index}` : "photo",
             filename: filenameForMime(mimeType),
             mimeType,
             bytes,
           });
         }
         const caption = text.length <= TELEGRAM_CAPTION_LIMIT ? text : text.slice(0, TELEGRAM_CAPTION_LIMIT);
-        if (photos.length === 1) {
+        const video = photos.find((item) => isVideoMime(item.mimeType));
+        if (video) {
+          sent = await transport.request(
+            token,
+            "sendVideo",
+            {
+              chat_id: account.externalId,
+              caption,
+              supports_streaming: true,
+            },
+            video,
+          );
+        } else if (photos.length === 1) {
           sent = await transport.request(
             token,
             "sendPhoto",

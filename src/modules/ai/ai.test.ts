@@ -482,22 +482,29 @@ describe("AI assistant", () => {
     expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(3);
   });
 
-  it("draws a 9:16 video cover still, not an MP4", async () => {
+  it("assembles a real MP4 from ChatGPT stills", async () => {
     const owner = await registerOwner("agent-video");
     const provider = scriptedProvider([sample]);
     const ai = createAiService(prisma, {
       provider,
       storage: createLocalStorage(storageDir),
+      monthlyLimit: 20,
     });
     const composed = await ai.composeAgentPost(owner.userId, owner.workspaceId, {
       prompt: "ролик про полки",
       projectId: owner.projectId,
       visualKind: "video",
       visualAspect: "9:16",
+      videoSeconds: 4,
+      platforms: ["telegram"],
     });
     expect(composed.post.media).toHaveLength(1);
     expect(provider.imageSizes[0]).toBe("1024x1536");
-    expect(provider.imagePrompts[0]).toMatch(/cover still|opening frame/i);
+    expect(provider.imagePrompts).toHaveLength(2);
+    expect(provider.imagePrompts[0]).toMatch(/assembled into an MP4|kitchen organizing clip/i);
+    const stored = await prisma.mediaAsset.findFirstOrThrow({ where: { id: composed.mediaId } });
+    expect(stored.mimeType).toBe("video/mp4");
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(3);
   });
 
   it("fails entirely if the image is missing and does not leave a text-only post", async () => {

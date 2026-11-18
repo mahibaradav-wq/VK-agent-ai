@@ -16,6 +16,7 @@ describe("production hosting stack", () => {
   it("builds the app image and applies migrations before start", () => {
     expect(dockerfile).toContain("npx prisma generate && npm run build");
     expect(dockerfile).toContain("npx prisma migrate deploy");
+    expect(dockerfile).toContain("ffmpeg");
     expect(dockerfile).toContain("npm start -- --hostname 0.0.0.0 --port 3000");
   });
 

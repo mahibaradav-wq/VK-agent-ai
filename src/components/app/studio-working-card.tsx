@@ -26,6 +26,7 @@ export type StudioCardView = {
   lastError: string;
   platforms: string[];
   mediaIds: string[];
+  mediaTypes?: string[];
   variants?: PlatformVariants;
 };
 
@@ -130,6 +131,7 @@ export function StudioWorkingCard({
         copies={copies}
         platforms={platforms}
         mediaUrls={card.mediaIds.map((id) => `/api/media/${id}`)}
+        mediaTypes={card.mediaTypes}
       />
       {inFlight ? (
         <StatusBanner tone="warning">

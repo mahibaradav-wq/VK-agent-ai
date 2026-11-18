@@ -32,7 +32,7 @@ export function MediaUploadForm({ workspaceId, canUpload, setupMessage }: { work
           className="rounded-2xl border border-ink/10 bg-white px-4 py-3 text-sm"
         />
       </label>
-      <p className="text-xs text-ink/60">JPEG, PNG, WEBP или GIF до 8 МБ. SVG, HTML и исполняемые файлы отклоняются.</p>
+      <p className="text-xs text-ink/60">JPEG, PNG, WEBP или GIF до 8 МБ, MP4 до 32 МБ. SVG, HTML и исполняемые файлы отклоняются.</p>
       {state.message ? (
         <StatusBanner tone={state.status === "success" ? "success" : "warning"}>{state.message}</StatusBanner>
       ) : null}
