@@ -27,33 +27,61 @@ export function aspectRatioCss(aspect: string) {
   return `${width} / ${height}`;
 }
 
-export const copyLengthRules = {
-  short:
-    "Post length SHORT. Body 400–700 characters including spaces (count them). One short opening, 3 numbered steps, one closing line. Title under 60 characters. Do not pad with empty adjectives.",
-  medium:
-    "Post length MEDIUM. Body 900–1400 characters including spaces. This is longer than a caption. Opening 2–4 sentences; the solution; 4–6 numbered practical steps; a short benefit; one question.",
-  long:
-    "Post length LONG. Body 1800–2800 characters including spaces. Do not stop after a caption. Opening scene 3–5 sentences; why it matters in a small kitchen; 6–8 numbered steps with a one-sentence why after each; one typical mistake; a closing benefit and a question.",
+export const copyLengthSpec = {
+  short: { min: 900, max: 1400, maxTokens: 1800, timeoutMs: 45_000, label: "Короткий · 900–1400 знаков" },
+  medium: { min: 1900, max: 2600, maxTokens: 3200, timeoutMs: 70_000, label: "Средний · 1900–2600 знаков" },
+  long: { min: 3800, max: 5000, maxTokens: 5500, timeoutMs: 120_000, label: "Длинный · 3800–5000 знаков" },
 } as const;
 
+export type CopyLengthKey = keyof typeof copyLengthSpec;
+
+const copyLengthShape: Record<CopyLengthKey, string> = {
+  short:
+    "SHORT body: opening 2–3 sentences, why it matters, 4 numbered steps, one closing question. Title under 60 characters. Do not pad with empty adjectives.",
+  medium:
+    "MEDIUM body: opening 3–5 sentences; the problem in a small kitchen; 6 numbered practical steps with a one-sentence why after each; one typical mistake; a short benefit and a question.",
+  long:
+    "LONG body: opening scene 4–6 sentences; why the problem appears in a small kitchen; what not to do; 8–10 numbered steps, each with two sentences (action + why); a mini-checklist; two typical mistakes; a closing benefit and a question. Do not stop after a caption or after 1500 characters.",
+};
+
+export function resolveCopyLength(length?: string): CopyLengthKey {
+  if (length === "short" || length === "long") {
+    return length;
+  }
+  return "medium";
+}
+
+export function copyLengthRange(length?: string) {
+  return copyLengthSpec[resolveCopyLength(length)];
+}
+
 export function copyLengthInstruction(length?: string) {
-  if (length === "short") {
-    return copyLengthRules.short;
-  }
-  if (length === "long") {
-    return copyLengthRules.long;
-  }
-  return copyLengthRules.medium;
+  const key = resolveCopyLength(length);
+  const spec = copyLengthSpec[key];
+  return `Post length ${key.toUpperCase()}. Body ${spec.min}–${spec.max} characters including spaces (count them; title is extra). ${copyLengthShape[key]}`;
+}
+
+export function copyUserLengthHint(length?: string) {
+  const key = resolveCopyLength(length);
+  const spec = copyLengthSpec[key];
+  return `Длина: ${key}. Поле body — от ${spec.min} до ${spec.max} знаков с пробелами. Заголовок в подсчёт не входит. Не заканчивай, пока не наберёшь минимум ${spec.min} знаков.`;
+}
+
+export function copyExpandHint(currentChars: number, length?: string) {
+  const spec = copyLengthRange(length);
+  return `Предыдущий текст слишком короткий: ${currentChars} знаков, нужно ${spec.min}–${spec.max}. Верни JSON целиком: тот же title и расширенный body. Не пиши только дополнение.`;
 }
 
 export function copyMaxTokens(length?: string) {
-  if (length === "short") {
-    return 500;
-  }
-  if (length === "long") {
-    return 1800;
-  }
-  return 900;
+  return copyLengthRange(length).maxTokens;
+}
+
+export function copyTimeoutMs(length?: string) {
+  return copyLengthRange(length).timeoutMs;
+}
+
+export function bodyMeetsCopyLength(body: string, length?: string) {
+  return body.trim().length >= copyLengthRange(length).min;
 }
 
 export function copySystemRules(kind: string, length?: string) {
@@ -67,7 +95,7 @@ export function copySystemRules(kind: string, length?: string) {
           "For a post fill title and body.",
           "Title: a concrete household problem or a useful result.",
           copyLengthInstruction(length),
-          "The length instruction is mandatory: write a body inside that character range. Lists for sequences. Break into paragraphs. Not a one-line caption unless length is SHORT.",
+          "The length instruction is mandatory: write a body inside that character range. Lists for sequences. Break into paragraphs. A 1300-character text is SHORT, not LONG.",
         ].join(" ")
       : `Task kind: ${kind}.`,
   ].join(" ");

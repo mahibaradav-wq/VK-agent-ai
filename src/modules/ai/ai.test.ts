@@ -292,11 +292,14 @@ describe("AI assistant", () => {
       platform: "vk",
     });
     const system = posted[0]?.messages?.find((item) => item.role === "system")?.content ?? "";
-    const user = posted[0]?.messages?.find((item) => item.role === "user")?.content ?? "";
-    expect(posted[0]?.max_tokens).toBe(1800);
-    expect(system).toMatch(/1800–2800/);
-    expect(system).not.toMatch(/400–700/);
-    expect(user).toMatch(/long/);
+    const firstUser = posted[0]?.messages?.find((item) => item.role === "user")?.content ?? "";
+    const expandUser = posted[1]?.messages?.find((item) => item.role === "user")?.content ?? "";
+    expect(posted[0]?.max_tokens).toBe(5500);
+    expect(system).toMatch(/3800–5000/);
+    expect(system).not.toMatch(/900–1400/);
+    expect(firstUser).toMatch(/3800/);
+    expect(posted).toHaveLength(2);
+    expect(expandUser).toMatch(/слишком короткий/);
   });
 
   it("explains OpenAI region blocks instead of a generic outage", async () => {

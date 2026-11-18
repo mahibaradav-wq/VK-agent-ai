@@ -10,10 +10,9 @@ import {
   type TelegramTransport,
 } from "@/server/social/telegram-api";
 import { withProductLink } from "@/modules/products/shop-labels";
+import { splitTelegramText, telegramCaptionAndRest } from "@/server/social/telegram-text";
 import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/social/types";
 import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
-
-const TELEGRAM_CAPTION_LIMIT = 1024;
 
 function composeText(input: PublishInput) {
   const parts = [input.title.trim(), input.body.trim()].filter(Boolean);
@@ -155,7 +154,7 @@ export function createTelegramAdapter(options: {
             bytes,
           });
         }
-        const caption = text.length <= TELEGRAM_CAPTION_LIMIT ? text : text.slice(0, TELEGRAM_CAPTION_LIMIT);
+        const { caption, rest } = telegramCaptionAndRest(text);
         const video = photos.find((item) => isVideoMime(item.mimeType));
         if (video) {
           sent = await transport.request(
@@ -195,20 +194,30 @@ export function createTelegramAdapter(options: {
             photos,
           );
         }
-        if (sent.ok && text.length > TELEGRAM_CAPTION_LIMIT) {
-          const rest = await transport.request(token, "sendMessage", {
-            chat_id: account.externalId,
-            text,
-          });
-          if (!rest.ok) {
-            sent = rest;
+        if (sent.ok && rest) {
+          for (const chunk of splitTelegramText(rest)) {
+            const followUp = await transport.request(token, "sendMessage", {
+              chat_id: account.externalId,
+              text: chunk,
+            });
+            if (!followUp.ok) {
+              sent = followUp;
+              break;
+            }
           }
         }
       } else {
-        sent = await transport.request(token, "sendMessage", {
-          chat_id: account.externalId,
-          text,
-        });
+        const chunks = splitTelegramText(text);
+        sent = { ok: false, error_code: 400, description: "empty text" };
+        for (const chunk of chunks) {
+          sent = await transport.request(token, "sendMessage", {
+            chat_id: account.externalId,
+            text: chunk,
+          });
+          if (!sent.ok) {
+            break;
+          }
+        }
       }
 
       if (!sent.ok) {
