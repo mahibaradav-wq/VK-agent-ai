@@ -6,6 +6,7 @@ import { assertApprovedVersion } from "@/modules/collaboration/approval";
 import { createCollaborationService } from "@/modules/collaboration/collaboration-service";
 import { deliverNotifications } from "@/modules/notifications/dispatch";
 import { isLivePublishPlatform } from "@/modules/posts/platforms";
+import { copyForPlatform } from "@/modules/posts/variants";
 import { aggregatePostStatus } from "@/modules/publishing/aggregate";
 import { defaultBackoffMs, nextBackoffMs } from "@/modules/publishing/backoff";
 import { createDefaultAdapters, type AdapterRegistry, type PublishOutcome } from "@/server/social";
@@ -424,14 +425,15 @@ export function createPublishService(
         const startedAt = now();
         let outcome: PublishOutcome;
         try {
+          const copy = copyForPlatform(version, target.platform);
           outcome = await adapters.get(target.platform).publish({
             platform: target.platform,
             workspaceId: claimed.workspaceId,
             postId: claimed.postId,
             targetId: target.id,
             versionId: version.id,
-            title: version.title,
-            body: version.body,
+            title: copy.title,
+            body: copy.body,
             mediaKeys: claimed.post.media.map((item) => item.media.storageKey),
             market: claimed.post.shopProduct
               ? {

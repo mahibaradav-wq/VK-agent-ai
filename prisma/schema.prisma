@@ -208,6 +208,7 @@ model PostVersion {
   number       Int
   title        String
   body         String    @db.Text
+  variantsJson String    @default("{}") @db.Text
   createdById  String
   createdAt    DateTime  @default(now())
   supersededAt DateTime?

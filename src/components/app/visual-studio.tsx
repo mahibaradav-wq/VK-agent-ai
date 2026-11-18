@@ -40,6 +40,7 @@ export function VisualStudio({
   used,
   limit,
   pending = false,
+  copyCount = 1,
   onLiveChange,
 }: {
   workspaceId: string;
@@ -51,6 +52,7 @@ export function VisualStudio({
   used: number;
   limit: number;
   pending?: boolean;
+  copyCount?: number;
   onLiveChange?: (live: boolean) => void;
 }) {
   const [kind, setKind] = useState<VisualKind>("image");
@@ -64,7 +66,7 @@ export function VisualStudio({
   const live = isVisualKindLive(kind);
   const aspects = visualAspectsByKind[kind];
   const slideCount = parseCarouselCount(carouselCount, kind);
-  const needed = agentUsageUnits(kind, carouselCount);
+  const needed = agentUsageUnits(kind, carouselCount, copyCount);
   const missing: string[] = [];
   if (!imageReady) {
     missing.push("подключение генератора картинок");

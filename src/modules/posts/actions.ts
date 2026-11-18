@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
 import { AccessError } from "@/modules/access/permissions";
+import { draftInputFromForm } from "@/modules/posts/draft-fields";
 import { createPostService } from "@/modules/posts/post-service";
 import { prisma } from "@/server/db/prisma";
 
@@ -39,15 +40,17 @@ export async function createPost(formData: FormData) {
 
 export async function savePostDraft(_prev: PostFormState, formData: FormData): Promise<PostFormState> {
   try {
+    const draft = draftInputFromForm(formData);
     const result = await createPostService(prisma).saveDraft(
       await requireUserId(),
       readField(formData, "workspaceId"),
       readField(formData, "postId"),
       {
-        title: readField(formData, "title"),
-        body: readField(formData, "body"),
-        platforms: formData.getAll("platform").filter((value): value is string => typeof value === "string"),
-        mediaIds: formData.getAll("mediaId").filter((value): value is string => typeof value === "string"),
+        title: draft.title,
+        body: draft.body,
+        platforms: draft.platforms,
+        variants: draft.variants,
+        mediaIds: draft.mediaIds,
       },
     );
     revalidatePath("/app/posts");

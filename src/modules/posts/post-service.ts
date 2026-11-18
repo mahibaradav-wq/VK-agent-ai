@@ -6,6 +6,7 @@ import { getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
 import { invalidateApprovals } from "@/modules/collaboration/approval";
 import { parsePlatforms } from "@/modules/posts/platforms";
+import { serializeVariants, type PlatformVariants } from "@/modules/posts/variants";
 
 const postInclude = {
   versions: { orderBy: { number: "desc" as const } },
@@ -21,10 +22,17 @@ function currentVersion(post: PostRecord) {
   return post.versions.find((version) => !version.supersededAt) ?? post.versions[0] ?? null;
 }
 
-function fingerprint(input: { title: string; body: string; platforms: string[]; mediaIds: string[] }) {
+function fingerprint(input: {
+  title: string;
+  body: string;
+  platforms: string[];
+  mediaIds: string[];
+  variantsJson?: string;
+}) {
   return JSON.stringify({
     title: input.title.trim(),
     body: input.body.trim(),
+    variantsJson: input.variantsJson ?? "{}",
     platforms: [...input.platforms].sort(),
     mediaIds: [...input.mediaIds].sort(),
   });
@@ -218,7 +226,13 @@ export function createPostService(db: PrismaClient) {
       userId: string,
       workspaceId: string,
       postId: string,
-      input: { title: string; body: string; platforms: string[]; mediaIds: string[] },
+      input: {
+        title: string;
+        body: string;
+        platforms: string[];
+        mediaIds: string[];
+        variants?: PlatformVariants;
+      },
     ) {
       await access.requirePermission(userId, workspaceId, "post.update");
       const post = await loadBoundPost(workspaceId, postId);
@@ -249,13 +263,15 @@ export function createPostService(db: PrismaClient) {
       }
 
       const active = currentVersion(post);
+      const variantsJson = serializeVariants(input.variants ?? {});
       const currentPrint = fingerprint({
         title: active?.title ?? "",
         body: active?.body ?? "",
+        variantsJson: active?.variantsJson ?? "{}",
         platforms: post.targets.map((target) => target.platform),
         mediaIds: post.media.map((item) => item.mediaId),
       });
-      const nextPrint = fingerprint({ title, body, platforms, mediaIds: requestedMediaIds });
+      const nextPrint = fingerprint({ title, body, platforms, mediaIds: requestedMediaIds, variantsJson });
 
       if (currentPrint === nextPrint && active) {
         return { post, version: active, changed: false };
@@ -276,6 +292,7 @@ export function createPostService(db: PrismaClient) {
             number: nextNumber,
             title,
             body,
+            variantsJson,
             createdById: userId,
           },
         });

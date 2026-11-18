@@ -9,8 +9,9 @@ import { StatusBanner } from "@/components/ui/status-banner";
 import { reviseStudioCard, type AiFormState } from "@/modules/ai/actions";
 import { reschedulePost, type CalendarFormState } from "@/modules/calendar/actions";
 import { discardStudioCard, savePostDraft, type PostFormState } from "@/modules/posts/actions";
-import { previewPlatforms } from "@/modules/posts/platforms";
+import { previewPlatforms, type PreviewPlatformId } from "@/modules/posts/platforms";
 import { publishNowPost, type PublishFormState } from "@/modules/publishing/actions";
+import type { PlatformCopy, PlatformVariants } from "@/modules/posts/variants";
 
 const calendarIdle: CalendarFormState = { status: "idle", message: "" };
 const publishIdle: PublishFormState = { status: "idle", message: "" };
@@ -25,7 +26,16 @@ export type StudioCardView = {
   lastError: string;
   platforms: string[];
   mediaIds: string[];
+  variants?: PlatformVariants;
 };
+
+function copiesFromCard(card: StudioCardView): Record<PreviewPlatformId, PlatformCopy> {
+  const fallback = { title: card.title, body: card.body };
+  return {
+    telegram: card.variants?.telegram ?? fallback,
+    vk: card.variants?.vk ?? fallback,
+  };
+}
 
 export function StudioWorkingCard({
   workspaceId,
@@ -48,16 +58,15 @@ export function StudioWorkingCard({
   const [publishState, publishAction, publishPending] = useActionState(publishNowPost, publishIdle);
   const [draftState, draftAction, draftPending] = useActionState(savePostDraft, draftIdle);
   const [reviseState, reviseAction, revisePending] = useActionState(reviseStudioCard, reviseIdle);
-  const [title, setTitle] = useState(card.title);
-  const [body, setBody] = useState(card.body);
+  const [copies, setCopies] = useState(() => copiesFromCard(card));
   const [platforms, setPlatforms] = useState(card.platforms.length ? card.platforms : ["telegram", "vk"]);
 
   const storedPlatforms = card.platforms.join(",");
+  const storedVariants = JSON.stringify(card.variants ?? {});
   useEffect(() => {
-    setTitle(card.title);
-    setBody(card.body);
+    setCopies(copiesFromCard(card));
     setPlatforms(storedPlatforms ? storedPlatforms.split(",") : ["telegram", "vk"]);
-  }, [card.id, card.title, card.body, storedPlatforms]);
+  }, [card.id, card.title, card.body, storedPlatforms, storedVariants]);
   const message = reviseState.message || draftState.message || publishState.message || calendarState.message;
   const tone =
     reviseState.status === "invalid" ||
@@ -68,6 +77,7 @@ export function StudioWorkingCard({
       : "success";
   const inFlight = card.status === "queued" || card.status === "publishing";
   const locked = inFlight || !canEdit;
+  const primary = copies[(platforms[0] as PreviewPlatformId) || "telegram"] ?? copies.telegram;
 
   function togglePlatform(id: string) {
     setPlatforms((current) => {
@@ -78,13 +88,24 @@ export function StudioWorkingCard({
     });
   }
 
+  function setCopy(platform: PreviewPlatformId, field: keyof PlatformCopy, value: string) {
+    setCopies((current) => ({
+      ...current,
+      [platform]: { ...current[platform], [field]: value },
+    }));
+  }
+
   function draftFields() {
     return (
       <>
         <input type="hidden" name="workspaceId" value={workspaceId} />
         <input type="hidden" name="postId" value={card.id} />
-        <input type="hidden" name="title" value={title} />
-        <input type="hidden" name="body" value={body} />
+        <input type="hidden" name="title" value={primary.title} />
+        <input type="hidden" name="body" value={primary.body} />
+        <input type="hidden" name="telegramTitle" value={copies.telegram.title} />
+        <input type="hidden" name="telegramBody" value={copies.telegram.body} />
+        <input type="hidden" name="vkTitle" value={copies.vk.title} />
+        <input type="hidden" name="vkBody" value={copies.vk.body} />
         {platforms.map((platform) => (
           <input key={platform} type="hidden" name="platform" value={platform} />
         ))}
@@ -100,12 +121,13 @@ export function StudioWorkingCard({
       <div>
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Карточка в Студии</p>
         <p className="mt-1 text-sm text-ink/70">
-          Поправьте текст, визуал и галочки сетей. Пост выйдет только в отмеченные Telegram и ВКонтакте.
+          Две галочки — два текста: Telegram и ВКонтакте. Пост выйдет только в отмеченные сети.
         </p>
       </div>
       <PostPreview
-        title={title}
-        body={body}
+        title={primary.title}
+        body={primary.body}
+        copies={copies}
         platforms={platforms}
         mediaUrls={card.mediaIds.map((id) => `/api/media/${id}`)}
       />
@@ -128,35 +150,33 @@ export function StudioWorkingCard({
 
       {canEdit ? (
         <form action={draftAction} className="grid gap-4 rounded-2xl bg-sand-50 p-4 ring-1 ring-ink/10">
-          <input type="hidden" name="workspaceId" value={workspaceId} />
-          <input type="hidden" name="postId" value={card.id} />
-          {platforms.map((platform) => (
-            <input key={platform} type="hidden" name="platform" value={platform} />
-          ))}
-          {card.mediaIds.map((id) => (
-            <input key={id} type="hidden" name="mediaId" value={id} />
-          ))}
-          <label className="grid gap-2 text-sm font-medium text-ink">
-            Заголовок
-            <input
-              name="title"
-              required
-              disabled={locked}
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
-            />
-          </label>
-          <label className="grid gap-2 text-sm font-medium text-ink">
-            Текст
-            <textarea
-              name="body"
-              disabled={locked}
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              className="min-h-48 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
-            />
-          </label>
+          {draftFields()}
+          {previewPlatforms
+            .filter((item) => item.live && platforms.includes(item.id))
+            .map((item) => (
+              <div key={item.id} className="grid gap-3 rounded-2xl bg-white p-4 ring-1 ring-ink/10">
+                <p className="text-sm font-bold text-ink">{item.label}</p>
+                <label className="grid gap-2 text-sm font-medium text-ink">
+                  Заголовок
+                  <input
+                    required
+                    disabled={locked}
+                    value={copies[item.id].title}
+                    onChange={(event) => setCopy(item.id, "title", event.target.value)}
+                    className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-ink">
+                  Текст
+                  <textarea
+                    disabled={locked}
+                    value={copies[item.id].body}
+                    onChange={(event) => setCopy(item.id, "body", event.target.value)}
+                    className="min-h-40 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
+                  />
+                </label>
+              </div>
+            ))}
           <fieldset className="grid gap-2">
             <legend className="text-sm font-medium text-ink">Куда выложить</legend>
             {previewPlatforms.map((item) => (

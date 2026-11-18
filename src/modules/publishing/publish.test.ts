@@ -15,7 +15,7 @@ import { prisma } from "@/server/db/prisma";
 import { createInlineQueue } from "@/server/queue";
 import { createUnconfiguredQueue } from "@/server/queue/unconfigured-queue";
 import { createAdapterRegistry } from "@/server/social";
-import type { PublishOutcome, SocialAdapter } from "@/server/social";
+import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/social";
 
 const auth = createAuthService(prisma, "http://localhost:3000");
 const posts = createPostService(prisma);
@@ -426,6 +426,40 @@ describe("publishing queue", () => {
     expect(stored.targets.find((target) => target.platform === "vk")?.status).toBe("published");
     expect(stored.targets.find((target) => target.platform === "telegram")?.status).toBe("published");
     expect(job?.status).toBe("completed");
+  });
+
+  it("sends Telegram and VK their own copy", async () => {
+    const owner = await registerOwner("pub-variants");
+    const created = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "ТГ заголовок");
+    await posts.saveDraft(owner.userId, owner.workspaceId, created.id, {
+      title: "ТГ заголовок",
+      body: "Текст для канала",
+      platforms: ["telegram", "vk"],
+      variants: {
+        telegram: { title: "ТГ заголовок", body: "Текст для канала" },
+        vk: { title: "ВК заголовок", body: "Текст для стены" },
+      },
+      mediaIds: [],
+    });
+    const titles: Record<string, string> = {};
+    const bodies: Record<string, string> = {};
+    function capture(platform: string): SocialAdapter {
+      return {
+        platform,
+        async publish(input: PublishInput) {
+          titles[platform] = input.title;
+          bodies[platform] = input.body;
+          return { kind: "success", externalId: `${platform}-ok` };
+        },
+      };
+    }
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: createAdapterRegistry([capture("vk"), capture("telegram")]),
+    });
+    await publishing.publishNow(owner.userId, owner.workspaceId, created.id);
+    expect(titles).toEqual({ telegram: "ТГ заголовок", vk: "ВК заголовок" });
+    expect(bodies).toEqual({ telegram: "Текст для канала", vk: "Текст для стены" });
   });
 
   it("reclaims a stale processing job instead of leaving the post locked", async () => {

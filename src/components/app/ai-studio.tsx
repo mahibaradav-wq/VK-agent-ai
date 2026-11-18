@@ -18,11 +18,15 @@ function BriefFields({
   defaultPlatform = "",
   textareaId,
   highlight = false,
+  selected,
+  onToggle,
 }: {
   defaultPrompt?: string;
   defaultPlatform?: string;
   textareaId?: string;
   highlight?: boolean;
+  selected: string[];
+  onToggle: (id: string) => void;
 }) {
   return (
     <>
@@ -63,25 +67,18 @@ function BriefFields({
           </select>
         </label>
       </div>
-      <PlatformChecks defaultPlatform={defaultPlatform} />
+      <PlatformChecks selected={selected} onToggle={onToggle} />
     </>
   );
 }
 
-function PlatformChecks({ defaultPlatform = "" }: { defaultPlatform?: string }) {
-  const [selected, setSelected] = useState<string[]>(
-    defaultPlatform === "vk" || defaultPlatform === "telegram" ? [defaultPlatform] : ["telegram", "vk"],
-  );
-
-  function toggle(id: string) {
-    setSelected((current) => {
-      if (current.includes(id)) {
-        return current.length === 1 ? current : current.filter((item) => item !== id);
-      }
-      return [...current, id];
-    });
-  }
-
+function PlatformChecks({
+  selected,
+  onToggle,
+}: {
+  selected: string[];
+  onToggle: (id: string) => void;
+}) {
   return (
     <fieldset className="grid gap-2">
       <legend className="text-sm font-medium text-ink">Куда выложить</legend>
@@ -93,13 +90,13 @@ function PlatformChecks({ defaultPlatform = "" }: { defaultPlatform?: string }) 
             value={item.id}
             checked={selected.includes(item.id)}
             disabled={!item.live}
-            onChange={() => toggle(item.id)}
+            onChange={() => onToggle(item.id)}
           />
           {item.live ? item.label : `${item.label} (пока нельзя)`}
         </label>
       ))}
       <p className="text-xs text-ink/60">
-        Галочки задают сети публикации. Две галочки — один общий текст и два предпросмотра, Telegram и ВКонтакте.
+        Две галочки — два текста: отдельный для Telegram и отдельный для ВКонтакте. Это +1 генерация к визуалу.
       </p>
     </fieldset>
   );
@@ -139,7 +136,19 @@ export function AiStudio({
   const router = useRouter();
   const [agentState, agentAction, agentPending] = useActionState(composeAgentPost, idle);
   const [visualLive, setVisualLive] = useState(true);
+  const [selected, setSelected] = useState<string[]>(
+    defaultPlatform === "vk" || defaultPlatform === "telegram" ? [defaultPlatform] : ["telegram", "vk"],
+  );
   const agentReady = ready && imageReady && storageReady;
+
+  function togglePlatform(id: string) {
+    setSelected((current) => {
+      if (current.includes(id)) {
+        return current.length === 1 ? current : current.filter((item) => item !== id);
+      }
+      return [...current, id];
+    });
+  }
 
   useEffect(() => {
     if (agentState.status === "success" && agentState.postId) {
@@ -182,7 +191,8 @@ export function AiStudio({
           </StatusBanner>
         ) : (
           <StatusBanner tone="info">
-            Провайдер {provider} · текст {model} · визуал {imageModel} · лимит {used}/{limit}. Агент берёт 2 генерации.
+            Провайдер {provider} · текст {model} · визуал {imageModel} · лимит {used}/{limit}. Две сети — отдельный
+            текст каждой плюс визуал.
           </StatusBanner>
         )}
         {!projectId ? (
@@ -205,6 +215,8 @@ export function AiStudio({
             defaultPlatform={defaultPlatform}
             textareaId="agent-brief"
             highlight={Boolean(defaultPrompt)}
+            selected={selected}
+            onToggle={togglePlatform}
           />
           <VisualStudio
             workspaceId={workspaceId}
@@ -215,6 +227,7 @@ export function AiStudio({
             imageModel={imageModel}
             used={used}
             limit={limit}
+            copyCount={selected.length}
             pending={agentPending}
             onLiveChange={setVisualLive}
           />

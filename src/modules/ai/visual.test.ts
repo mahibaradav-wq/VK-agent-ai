@@ -49,7 +49,9 @@ describe("visual studio helpers", () => {
     expect(parseCarouselCount(4, "carousel")).toBe(4);
     expect(parseCarouselCount(15, "carousel")).toBe(10);
     expect(agentUsageUnits("image")).toBe(2);
+    expect(agentUsageUnits("image", undefined, 2)).toBe(3);
     expect(agentUsageUnits("carousel", 4)).toBe(5);
+    expect(agentUsageUnits("carousel", 4, 2)).toBe(6);
     expect(slideVisualPrompt("base", 1, 3)).toContain("Slide 2 of 3");
   });
 

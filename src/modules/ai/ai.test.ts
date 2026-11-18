@@ -377,6 +377,32 @@ describe("AI assistant", () => {
     expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(2);
   });
 
+  it("writes separate Telegram and VK copy when both networks are selected", async () => {
+    const owner = await registerOwner("agent-two-copy");
+    const provider = scriptedProvider([
+      { ...sample, title: "ТГ заголовок", body: "Текст для канала" },
+      { ...sample, title: "ВК заголовок", body: "Текст для стены" },
+    ]);
+    const ai = createAiService(prisma, {
+      provider,
+      storage: createLocalStorage(storageDir),
+      monthlyLimit: 10,
+    });
+    const composed = await ai.composeAgentPost(owner.userId, owner.workspaceId, {
+      prompt: "полки без хаоса",
+      platforms: ["telegram", "vk"],
+      projectId: owner.projectId,
+    });
+    expect(provider.prompts.some((item) => item.includes(":telegram:"))).toBe(true);
+    expect(provider.prompts.some((item) => item.includes(":vk:"))).toBe(true);
+    const version = await prisma.postVersion.findFirstOrThrow({
+      where: { postId: composed.post.id, supersededAt: null },
+    });
+    expect(version.variantsJson).toMatch(/Текст для канала/);
+    expect(version.variantsJson).toMatch(/Текст для стены/);
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(3);
+  });
+
   it("uses a prepared visual request, VK 4:5 frame, and does not spend credits on a catalog check", async () => {
     const owner = await registerOwner("agent-studio");
     const provider = scriptedProvider([sample]);
@@ -424,7 +450,7 @@ describe("AI assistant", () => {
     expect(provider.imagePrompts).toHaveLength(3);
     expect(provider.imagePrompts[0]).toContain("Slide 1 of 3");
     expect(provider.imagePrompts[2]).toContain("Slide 3 of 3");
-    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(4);
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(5);
   });
 
   it("rewrites studio copy from an author comment without creating a new card", async () => {
@@ -510,7 +536,7 @@ describe("AI assistant", () => {
         projectId: owner.projectId,
       }),
       400,
-      /две генерации/,
+      /текст Telegram, текст ВК/,
     );
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
 
