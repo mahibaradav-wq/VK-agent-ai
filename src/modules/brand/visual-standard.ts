@@ -30,7 +30,7 @@ export function aspectRatioCss(aspect: string) {
 export const copyLengthSpec = {
   short: { min: 900, max: 1400, maxTokens: 1800, timeoutMs: 45_000, label: "Короткий · 900–1400 знаков" },
   medium: { min: 1900, max: 2600, maxTokens: 3200, timeoutMs: 70_000, label: "Средний · 1900–2600 знаков" },
-  long: { min: 3800, max: 5000, maxTokens: 5500, timeoutMs: 120_000, label: "Длинный · 3800–5000 знаков" },
+  long: { min: 3800, max: 4090, maxTokens: 5000, timeoutMs: 120_000, label: "Длинный · 3800–4090 знаков" },
 } as const;
 
 export type CopyLengthKey = keyof typeof copyLengthSpec;
@@ -82,6 +82,28 @@ export function copyTimeoutMs(length?: string) {
 
 export function bodyMeetsCopyLength(body: string, length?: string) {
   return body.trim().length >= copyLengthRange(length).min;
+}
+
+export function clampCopyBody(body: string, length?: string) {
+  const text = body.trim();
+  const max = copyLengthRange(length).max;
+  if (text.length <= max) {
+    return text;
+  }
+  let cut = text.lastIndexOf("\n\n", max);
+  if (cut < max / 2) {
+    cut = text.lastIndexOf("\n", max);
+  }
+  if (cut < max / 2) {
+    cut = text.lastIndexOf(". ", max);
+    if (cut >= max / 2) {
+      cut += 1;
+    }
+  }
+  if (cut < max / 2) {
+    cut = max;
+  }
+  return text.slice(0, cut).trimEnd();
 }
 
 export function copySystemRules(kind: string, length?: string) {

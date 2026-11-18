@@ -294,12 +294,41 @@ describe("AI assistant", () => {
     const system = posted[0]?.messages?.find((item) => item.role === "system")?.content ?? "";
     const firstUser = posted[0]?.messages?.find((item) => item.role === "user")?.content ?? "";
     const expandUser = posted[1]?.messages?.find((item) => item.role === "user")?.content ?? "";
-    expect(posted[0]?.max_tokens).toBe(5500);
-    expect(system).toMatch(/3800–5000/);
+    expect(posted[0]?.max_tokens).toBe(5000);
+    expect(system).toMatch(/3800–4090/);
     expect(system).not.toMatch(/900–1400/);
     expect(firstUser).toMatch(/3800/);
     expect(posted).toHaveLength(2);
     expect(expandUser).toMatch(/слишком короткий/);
+  });
+
+  it("clips a long post to 4090 characters", async () => {
+    const provider = createOpenAiCompatibleProvider({
+      apiKey: "sk-test-secret-key",
+      baseUrl: "https://example.test/v1",
+      model: "demo-mini",
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({ title: "Длинный", body: "а".repeat(5000), items: [] }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    });
+    const result = await provider.generate({
+      kind: "post",
+      prompt: "полки без хаоса",
+      tone: "friendly",
+      length: "long",
+      platform: "vk",
+    });
+    expect(result.body.length).toBe(4090);
   });
 
   it("explains OpenAI region blocks instead of a generic outage", async () => {

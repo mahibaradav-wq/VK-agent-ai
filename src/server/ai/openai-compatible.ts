@@ -1,6 +1,7 @@
 import { AccessError } from "@/modules/access/permissions";
 import {
   bodyMeetsCopyLength,
+  clampCopyBody,
   copyExpandHint,
   copyMaxTokens,
   copySystemRules,
@@ -230,6 +231,10 @@ export function createOpenAiCompatibleProvider(options: {
         } catch {
           // Keep the first draft if the expand call fails.
         }
+      }
+
+      if (input.kind === "post") {
+        parsed = { ...parsed, body: clampCopyBody(parsed.body, input.length) };
       }
 
       return {

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   aspectRatioCss,
   bodyMeetsCopyLength,
+  clampCopyBody,
   copyLengthSpec,
   copyMaxTokens,
   copySystemRules,
@@ -24,12 +25,14 @@ describe("house visual standard", () => {
     expect(rules).toContain("Do not invent sizes");
     expect(copySystemRules("post", "short")).toMatch(/900–1400/);
     expect(copySystemRules("post", "medium")).toMatch(/1900–2600/);
-    expect(copySystemRules("post", "long")).toMatch(/3800–5000/);
+    expect(copySystemRules("post", "long")).toMatch(/3800–4090/);
     expect(copySystemRules("post", "long")).not.toMatch(/900–1400/);
+    expect(copyLengthSpec.long.max).toBe(4090);
     expect(copyMaxTokens("short")).toBe(copyLengthSpec.short.maxTokens);
     expect(copyMaxTokens("long")).toBe(copyLengthSpec.long.maxTokens);
     expect(bodyMeetsCopyLength("а".repeat(1332), "long")).toBe(false);
     expect(bodyMeetsCopyLength("а".repeat(3800), "long")).toBe(true);
     expect(bodyMeetsCopyLength("а".repeat(900), "short")).toBe(true);
+    expect(clampCopyBody("а".repeat(5000), "long").length).toBe(4090);
   });
 });
