@@ -1,12 +1,12 @@
 import { AccessError } from "@/modules/access/permissions";
 import {
   bodyMeetsCopyLength,
-  clampCopyBody,
-  copyExpandHint,
+  copyReviseHint,
   copyMaxTokens,
   copySystemRules,
   copyTimeoutMs,
   copyUserLengthHint,
+  preferRevisedCopy,
 } from "@/modules/brand/visual-standard";
 import {
   AI_BALANCE_MESSAGE,
@@ -215,26 +215,19 @@ export function createOpenAiCompatibleProvider(options: {
 
       if (input.kind === "post" && !bodyMeetsCopyLength(parsed.body, input.length)) {
         try {
-          const expanded = await complete(
-            `${input.prompt}\n\n${copyExpandHint(parsed.body.trim().length, input.length)}\n\nЧерновик:\n${parsed.body}`,
+          const revised = await complete(
+            `${input.prompt}\n\n${copyReviseHint(parsed.body.trim().length, input.length)}\n\nЧерновик:\n${parsed.body}`,
           );
-          inputTokens += expanded.json.usage?.prompt_tokens ?? 0;
-          outputTokens += expanded.json.usage?.completion_tokens ?? 0;
-          if (
-            bodyMeetsCopyLength(expanded.parsed.body, input.length) ||
-            expanded.parsed.body.trim().length > parsed.body.trim().length
-          ) {
-            parsed = expanded.parsed;
-            content = expanded.content;
-            json = expanded.json;
+          inputTokens += revised.json.usage?.prompt_tokens ?? 0;
+          outputTokens += revised.json.usage?.completion_tokens ?? 0;
+          if (preferRevisedCopy(parsed.body, revised.parsed.body, input.length)) {
+            parsed = revised.parsed;
+            content = revised.content;
+            json = revised.json;
           }
         } catch {
-          // Keep the first draft if the expand call fails.
+          // Keep the first complete draft if the rewrite call fails.
         }
-      }
-
-      if (input.kind === "post") {
-        parsed = { ...parsed, body: clampCopyBody(parsed.body, input.length) };
       }
 
       return {

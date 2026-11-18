@@ -41,7 +41,7 @@ const copyLengthShape: Record<CopyLengthKey, string> = {
   medium:
     "MEDIUM body: opening 3–5 sentences; the problem in a small kitchen; 6 numbered practical steps with a one-sentence why after each; one typical mistake; a short benefit and a question.",
   long:
-    "LONG body: opening scene 4–6 sentences; why the problem appears in a small kitchen; what not to do; 8–10 numbered steps, each with two sentences (action + why); a mini-checklist; two typical mistakes; a closing benefit and a question. Do not stop after a caption or after 1500 characters.",
+    "LONG body: opening scene 4–6 sentences; why the problem appears in a small kitchen; what not to do; 8–10 numbered steps, each with two sentences (action + why); a mini-checklist; two typical mistakes; a closing benefit and a question. Do not stop after a caption or after 1500 characters. The last paragraph must close the thought.",
 };
 
 export function resolveCopyLength(length?: string): CopyLengthKey {
@@ -64,12 +64,15 @@ export function copyLengthInstruction(length?: string) {
 export function copyUserLengthHint(length?: string) {
   const key = resolveCopyLength(length);
   const spec = copyLengthSpec[key];
-  return `Длина: ${key}. Поле body — от ${spec.min} до ${spec.max} знаков с пробелами. Заголовок в подсчёт не входит. Не заканчивай, пока не наберёшь минимум ${spec.min} знаков.`;
+  return `Длина: ${key}. Поле body — от ${spec.min} до ${spec.max} знаков с пробелами. Заголовок в подсчёт не входит. Текст законченный по смыслу: каждое предложение закрыто, список дописан, последний абзац — вывод и вопрос. Уложись в лимит сам, ничего не обрезай.`;
 }
 
-export function copyExpandHint(currentChars: number, length?: string) {
+export function copyReviseHint(currentChars: number, length?: string) {
   const spec = copyLengthRange(length);
-  return `Предыдущий текст слишком короткий: ${currentChars} знаков, нужно ${spec.min}–${spec.max}. Верни JSON целиком: тот же title и расширенный body. Не пиши только дополнение.`;
+  if (currentChars < spec.min) {
+    return `Предыдущий текст незавершённый и слишком короткий: ${currentChars} знаков, нужно ${spec.min}–${spec.max}. Верни JSON целиком с тем же title. Допиши законченный пост: все пункты списка закрыты, последний абзац — вывод и вопрос. Не обрывай фразу и не пиши только дополнение.`;
+  }
+  return `Предыдущий текст слишком длинный: ${currentChars} знаков, максимум ${spec.max}. Не обрезай конец. Перепиши целиком короче, сохрани смысл, закончи выводом и вопросом. Все предложения закрыты. Верни JSON с тем же title.`;
 }
 
 export function copyMaxTokens(length?: string) {
@@ -81,29 +84,30 @@ export function copyTimeoutMs(length?: string) {
 }
 
 export function bodyMeetsCopyLength(body: string, length?: string) {
-  return body.trim().length >= copyLengthRange(length).min;
+  const n = body.trim().length;
+  const spec = copyLengthRange(length);
+  return n >= spec.min && n <= spec.max;
 }
 
-export function clampCopyBody(body: string, length?: string) {
-  const text = body.trim();
-  const max = copyLengthRange(length).max;
-  if (text.length <= max) {
-    return text;
+export function preferRevisedCopy(original: string, revised: string, length?: string) {
+  const spec = copyLengthRange(length);
+  const a = original.trim();
+  const b = revised.trim();
+  if (!b) {
+    return false;
   }
-  let cut = text.lastIndexOf("\n\n", max);
-  if (cut < max / 2) {
-    cut = text.lastIndexOf("\n", max);
+  const aFit = a.length >= spec.min && a.length <= spec.max;
+  const bFit = b.length >= spec.min && b.length <= spec.max;
+  if (bFit) {
+    return true;
   }
-  if (cut < max / 2) {
-    cut = text.lastIndexOf(". ", max);
-    if (cut >= max / 2) {
-      cut += 1;
-    }
+  if (aFit) {
+    return false;
   }
-  if (cut < max / 2) {
-    cut = max;
+  if (a.length > spec.max) {
+    return b.length < a.length;
   }
-  return text.slice(0, cut).trimEnd();
+  return b.length > a.length;
 }
 
 export function copySystemRules(kind: string, length?: string) {
@@ -117,7 +121,7 @@ export function copySystemRules(kind: string, length?: string) {
           "For a post fill title and body.",
           "Title: a concrete household problem or a useful result.",
           copyLengthInstruction(length),
-          "The length instruction is mandatory: write a body inside that character range. Lists for sequences. Break into paragraphs. A 1300-character text is SHORT, not LONG.",
+          "The length instruction is mandatory: write a finished body inside that character range. Lists for sequences. Break into paragraphs. Close every sentence and the numbered list. The last paragraph is a benefit and a question. Never truncate mid-thought. A 1300-character text is SHORT, not LONG.",
         ].join(" ")
       : `Task kind: ${kind}.`,
   ].join(" ");

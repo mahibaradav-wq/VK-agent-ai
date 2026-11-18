@@ -3,11 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   aspectRatioCss,
   bodyMeetsCopyLength,
-  clampCopyBody,
   copyLengthSpec,
   copyMaxTokens,
+  copyReviseHint,
   copySystemRules,
   houseBrand,
+  preferRevisedCopy,
 } from "@/modules/brand/visual-standard";
 
 describe("house visual standard", () => {
@@ -33,6 +34,8 @@ describe("house visual standard", () => {
     expect(bodyMeetsCopyLength("а".repeat(1332), "long")).toBe(false);
     expect(bodyMeetsCopyLength("а".repeat(3800), "long")).toBe(true);
     expect(bodyMeetsCopyLength("а".repeat(900), "short")).toBe(true);
-    expect(clampCopyBody("а".repeat(5000), "long").length).toBe(4090);
+    expect(bodyMeetsCopyLength("а".repeat(5000), "long")).toBe(false);
+    expect(copyReviseHint(5000, "long")).toMatch(/Не обрезай/);
+    expect(preferRevisedCopy("а".repeat(5000), "Готовый вывод и вопрос?", "long")).toBe(true);
   });
 });

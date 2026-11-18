@@ -302,24 +302,25 @@ describe("AI assistant", () => {
     expect(expandUser).toMatch(/слишком короткий/);
   });
 
-  it("clips a long post to 4090 characters", async () => {
+  it("rewrites an overlong post instead of cutting it mid-sentence", async () => {
+    const posted: Array<{ messages?: Array<{ role?: string; content?: string }> }> = [];
+    let calls = 0;
+    const finished = `${"На маленькой кухне каждый ящик должен работать на порядок. ".repeat(64)}В итоге стол с ящиками даёт место для мелочей и спокойный ритм готовки. Как вы организуете хранение?`;
     const provider = createOpenAiCompatibleProvider({
       apiKey: "sk-test-secret-key",
       baseUrl: "https://example.test/v1",
       model: "demo-mini",
-      fetchImpl: async () =>
-        new Response(
+      fetchImpl: async (_url, init) => {
+        posted.push(JSON.parse(String(init?.body ?? "{}")) as (typeof posted)[number]);
+        calls += 1;
+        const body = calls === 1 ? `${"Черновик без финала ".repeat(260)}и обрыв` : finished;
+        return new Response(
           JSON.stringify({
-            choices: [
-              {
-                message: {
-                  content: JSON.stringify({ title: "Длинный", body: "а".repeat(5000), items: [] }),
-                },
-              },
-            ],
+            choices: [{ message: { content: JSON.stringify({ title: "Длинный", body, items: [] }) } }],
           }),
           { status: 200 },
-        ),
+        );
+      },
     });
     const result = await provider.generate({
       kind: "post",
@@ -328,7 +329,10 @@ describe("AI assistant", () => {
       length: "long",
       platform: "vk",
     });
-    expect(result.body.length).toBe(4090);
+    const reviseUser = posted[1]?.messages?.find((item) => item.role === "user")?.content ?? "";
+    expect(result.body).toBe(finished);
+    expect(result.body.endsWith("?")).toBe(true);
+    expect(reviseUser).toMatch(/Не обрезай/);
   });
 
   it("explains OpenAI region blocks instead of a generic outage", async () => {
