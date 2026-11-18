@@ -86,13 +86,13 @@ export function createTelegramTransport(fetchImpl: typeof fetch = createTelegram
                 }
                 return form;
               })(),
-              signal: AbortSignal.timeout(60_000),
+              signal: AbortSignal.timeout(120_000),
             })
           : await fetchImpl(url, {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: body ? JSON.stringify(body) : undefined,
-              signal: AbortSignal.timeout(12_000),
+              signal: AbortSignal.timeout(30_000),
             });
         const json = (await response.json()) as TelegramJson;
         if (json.ok) {

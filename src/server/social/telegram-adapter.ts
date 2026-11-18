@@ -10,13 +10,27 @@ import {
   type TelegramTransport,
 } from "@/server/social/telegram-api";
 import { withProductLink } from "@/modules/products/shop-labels";
-import { splitTelegramText, telegramCaptionAndRest } from "@/server/social/telegram-text";
+import { TELEGRAM_CAPTION_LIMIT, splitTelegramText, telegramCaptionAndRest } from "@/server/social/telegram-text";
 import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/social/types";
 import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
 
 function composeText(input: PublishInput) {
   const parts = [input.title.trim(), input.body.trim()].filter(Boolean);
   return withProductLink(parts.join("\n\n"), input.market?.url);
+}
+
+async function requestTelegram(
+  transport: TelegramTransport,
+  token: string,
+  method: string,
+  body?: Record<string, unknown>,
+  file?: TelegramFilePart | TelegramFilePart[],
+) {
+  let result = await transport.request(token, method, body, file);
+  if (!result.ok && result.error_code === 0 && !file) {
+    result = await transport.request(token, method, body, file);
+  }
+  return result;
 }
 
 function filenameForMime(mimeType: string) {
@@ -163,52 +177,71 @@ export function createTelegramAdapter(options: {
             bytes,
           });
         }
-        const { caption, rest } = telegramCaptionAndRest(text);
-        const video = photos.find((item) => isVideoMime(item.mimeType));
-        if (video) {
-          sent = await transport.request(
-            token,
-            "sendVideo",
-            {
+        const longCopy = text.length > TELEGRAM_CAPTION_LIMIT;
+        let caption = longCopy ? input.title.trim().slice(0, TELEGRAM_CAPTION_LIMIT) : text;
+        let rest = "";
+        if (longCopy) {
+          sent = { ok: false, error_code: 400, description: "empty text" };
+          for (const chunk of splitTelegramText(text)) {
+            sent = await requestTelegram(transport, token, "sendMessage", {
               chat_id: account.externalId,
-              caption,
-              supports_streaming: true,
-            },
-            video,
-          );
-        } else if (photos.length === 1) {
-          sent = await transport.request(
-            token,
-            "sendPhoto",
-            {
-              chat_id: account.externalId,
-              caption,
-            },
-            photos[0],
-          );
-        } else {
-          sent = await transport.request(
-            token,
-            "sendMediaGroup",
-            {
-              chat_id: account.externalId,
-              media: JSON.stringify(
-                photos.map((photo, index) => ({
-                  type: "photo",
-                  media: `attach://${photo.field}`,
-                  ...(index === 0 ? { caption } : {}),
-                })),
-              ),
-            },
-            photos,
-          );
+              text: chunk,
+            });
+            if (!sent.ok) {
+              break;
+            }
+            delivered = true;
+          }
+          if (!delivered) {
+            const split = telegramCaptionAndRest(text);
+            caption = split.caption;
+            rest = split.rest;
+          }
         }
-        if (sent.ok) {
+        const video = photos.find((item) => isVideoMime(item.mimeType));
+        const mediaSent = video
+          ? await transport.request(
+              token,
+              "sendVideo",
+              {
+                chat_id: account.externalId,
+                caption,
+                supports_streaming: true,
+              },
+              video,
+            )
+          : photos.length === 1
+            ? await transport.request(
+                token,
+                "sendPhoto",
+                {
+                  chat_id: account.externalId,
+                  caption,
+                },
+                photos[0],
+              )
+            : await transport.request(
+                token,
+                "sendMediaGroup",
+                {
+                  chat_id: account.externalId,
+                  media: JSON.stringify(
+                    photos.map((photo, index) => ({
+                      type: "photo",
+                      media: `attach://${photo.field}`,
+                      ...(index === 0 ? { caption } : {}),
+                    })),
+                  ),
+                },
+                photos,
+              );
+        sent = mediaSent;
+        if (mediaSent.ok) {
           delivered = true;
         }
         if (sent.ok && rest) {
           for (const chunk of splitTelegramText(rest)) {
-            const followUp = await transport.request(token, "sendMessage", {
+            const followUp = await requestTelegram(transport, token, "sendMessage", {
               chat_id: account.externalId,
               text: chunk,
             });
@@ -222,7 +255,7 @@ export function createTelegramAdapter(options: {
         const chunks = splitTelegramText(text);
         sent = { ok: false, error_code: 400, description: "empty text" };
         for (const chunk of chunks) {
-          sent = await transport.request(token, "sendMessage", {
+          sent = await requestTelegram(transport, token, "sendMessage", {
             chat_id: account.externalId,
             text: chunk,
           });

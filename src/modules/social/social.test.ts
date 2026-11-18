@@ -485,6 +485,55 @@ describe("social accounts", () => {
     expect(transport.calls.some((item) => item.method === "sendMessage")).toBe(false);
   });
 
+  it("sends the full Telegram body as a message before the photo when the caption would overflow", async () => {
+    const owner = await registerOwner("soc-tg-long-photo");
+    const transport = scriptedTelegram({
+      getMe: { ok: true, result: { id: 9, is_bot: true, username: "pub_bot" } },
+      getChat: { ok: true, result: { id: -1004392473566, type: "channel", title: "ДОМ по полочкам" } },
+      sendMessage: { ok: true, result: { message_id: 87, chat: { id: -1004392473566 } } },
+      sendPhoto: { ok: true, result: { message_id: 88, chat: { id: -1004392473566 } } },
+    });
+    const social = createSocialService(prisma, { telegram: transport });
+    await social.connectTelegram(owner.userId, owner.workspaceId, {
+      token: BOT_TOKEN,
+      chatId: "https://t.me/dom_po_polochkam",
+      projectId: owner.projectId,
+    });
+    const media = createMediaService(prisma, createLocalStorage(storageDir));
+    const asset = await media.upload(owner.userId, owner.workspaceId, {
+      filename: "cover.png",
+      declaredType: "image/png",
+      bytes: png,
+    });
+    const body = "Стол с ящиками. ".repeat(80);
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Длинный стол");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Длинный стол",
+      body,
+      platforms: ["telegram"],
+      mediaIds: [asset.id],
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: {
+        get: () => createTelegramAdapter({ db: prisma, transport, storage: createLocalStorage(storageDir) }),
+      },
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-tg-long-photo");
+    const message = transport.calls.find((item) => item.method === "sendMessage");
+    const photo = transport.calls.find((item) => item.method === "sendPhoto");
+    expect(String(message?.body?.text)).toContain("Стол с ящиками.");
+    expect(String(message?.body?.text).length).toBeGreaterThan(1024);
+    expect(String(photo?.body?.caption)).toBe("Длинный стол");
+    expect(transport.calls.map((item) => item.method).filter((item) => item === "sendMessage" || item === "sendPhoto")).toEqual([
+      "sendMessage",
+      "sendPhoto",
+    ]);
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
+  });
+
   it("publishes an MP4 to Telegram with sendVideo", async () => {
     const owner = await registerOwner("soc-tg-video");
     const transport = scriptedTelegram({
@@ -800,7 +849,7 @@ describe("social accounts", () => {
     expect(stored.status).toBe("published");
     expect(stored.targets[0]?.externalId).toBe("88");
     expect(transport.uploads).toHaveLength(1);
-    expect(transport.uploads[0]?.filename).toBe("slide-1.png");
+    expect(transport.uploads[0]?.filename).toBe("slide-1.jpg");
     expect(transport.methods).toEqual([
       "groups.getById",
       "wall.post",

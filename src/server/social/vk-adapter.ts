@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
 import { detectMediaType, isVideoMime } from "@/modules/media/file-validation";
+import { jpegForVkWall } from "@/modules/media/jpeg-encode";
 import { parseShopPrice, withProductLink } from "@/modules/products/shop-labels";
 import { decryptToken } from "@/server/crypto/token-cipher";
 import {
@@ -165,7 +166,7 @@ async function readImageFiles(options: {
         },
       };
     }
-    files.push({ bytes, mimeType });
+    files.push(await jpegForVkWall({ bytes, mimeType }));
   }
   return { files };
 }
