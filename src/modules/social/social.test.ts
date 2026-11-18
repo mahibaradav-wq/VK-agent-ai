@@ -391,6 +391,55 @@ describe("social accounts", () => {
     expect(attempt.errorCode).toBe("rate_limit");
   });
 
+  it("does not auto-retry Telegram after a partial long-text send", async () => {
+    const owner = await registerOwner("soc-tg-partial");
+    const connect = scriptedTelegram({
+      getMe: { ok: true, result: { id: 9, is_bot: true, username: "pub_bot" } },
+      getChat: { ok: true, result: { id: 77, title: "Чат" } },
+    });
+    const social = createSocialService(prisma, { telegram: connect });
+    const account = await social.connectTelegram(owner.userId, owner.workspaceId, {
+      token: BOT_TOKEN,
+      chatId: "77",
+    });
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Длинный");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Длинный",
+      body: "А".repeat(4200),
+      platforms: ["telegram"],
+      mediaIds: [],
+    });
+    await approveCurrent(owner, post.id);
+    let messages = 0;
+    const transport = scriptedTelegram((method) => {
+      if (method === "getChatMember") {
+        return { ok: true, result: { status: "administrator" } };
+      }
+      if (method === "sendMessage") {
+        messages += 1;
+        if (messages === 1) {
+          return { ok: true, result: { message_id: 11, chat: { id: 77 } } };
+        }
+        return { ok: false, error_code: 429, description: "Too Many Requests", retry_after: 12 };
+      }
+      return { ok: false, error_code: 400, description: `unexpected ${method}` };
+    });
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createTelegramAdapter({ db: prisma, transport }) },
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-tg-partial");
+    const attempt = await prisma.publishAttempt.findFirstOrThrow({ where: { jobId: job.id } });
+    expect(attempt.kind).toBe("unknown");
+    expect(attempt.errorCode).toBe("telegram_partial");
+    expect((await prisma.postTarget.findFirstOrThrow({ where: { postId: post.id } })).status).toBe(
+      "requires_manual_check",
+    );
+    expect(account.id).toBeTruthy();
+    expect(messages).toBe(2);
+  });
+
   it("publishes a photo to the bound Telegram channel", async () => {
     const owner = await registerOwner("soc-tg-photo");
     const transport = scriptedTelegram({

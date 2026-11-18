@@ -1,5 +1,12 @@
 import { AccessError } from "@/modules/access/permissions";
 
+export function parseIdeaIndex(value: string) {
+  if (!/^\d+$/.test(value.trim())) {
+    throw new AccessError(400, "Не выбран пункт идеи.");
+  }
+  return Number.parseInt(value.trim(), 10);
+}
+
 export function parseVkCommunitySource(raw: string) {
   const source = raw.trim();
   if (!source) {

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
 import { AccessError } from "@/modules/access/permissions";
+import { parseIdeaIndex } from "@/modules/watch/parse";
 import { watchIdeaAgentHref } from "@/modules/watch/prompt";
 import { createWatchService } from "@/modules/watch/watch-service";
 import { prisma } from "@/server/db/prisma";
@@ -33,6 +34,7 @@ function revalidateWatch() {
   revalidatePath("/app/ideas");
   revalidatePath("/app/ai");
   revalidatePath("/app/studio");
+  revalidatePath("/app/products");
 }
 
 export async function connectVkWatch(_prev: WatchFormState, formData: FormData): Promise<WatchFormState> {
@@ -122,7 +124,7 @@ export async function sendWatchIdeaToStudio(formData: FormData) {
     await requireUserId(),
     readField(formData, "workspaceId"),
     readField(formData, "requestId"),
-    Number(readField(formData, "itemIndex")),
+    parseIdeaIndex(readField(formData, "itemIndex")),
   );
   revalidateWatch();
   revalidatePath("/app/studio");
@@ -135,7 +137,7 @@ export async function dismissWatchIdea(formData: FormData) {
       await requireUserId(),
       readField(formData, "workspaceId"),
       readField(formData, "requestId"),
-      Number(readField(formData, "itemIndex")),
+      parseIdeaIndex(readField(formData, "itemIndex")),
     );
     revalidateWatch();
   } catch (error) {
@@ -152,7 +154,7 @@ export async function applyWatchIdea(_prev: WatchFormState, formData: FormData):
       await requireUserId(),
       readField(formData, "workspaceId"),
       readField(formData, "requestId"),
-      Number(readField(formData, "itemIndex")),
+      parseIdeaIndex(readField(formData, "itemIndex")),
       readField(formData, "projectId"),
     );
     revalidateWatch();

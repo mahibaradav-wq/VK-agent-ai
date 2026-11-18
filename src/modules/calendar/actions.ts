@@ -34,6 +34,7 @@ export async function selectTimezone(formData: FormData) {
   const cookieStore = await cookies();
   cookieStore.set(TIMEZONE_COOKIE, timezone, { httpOnly: true, sameSite: "lax", path: "/" });
   revalidatePath("/app/calendar");
+  revalidatePath("/app/studio");
 }
 
 export async function createOnDate(formData: FormData) {

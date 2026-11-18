@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import { AccessError } from "@/modules/access/permissions";
-import { parseVkCommunitySource } from "@/modules/watch/parse";
+import { parseIdeaIndex, parseVkCommunitySource } from "@/modules/watch/parse";
 import { extractSavedDoc, extractVkGroup, isVkAccessToken } from "@/server/social/vk-api";
 
 describe("VK watch parse", () => {
+  it("does not treat an empty idea index as the first item", () => {
+    expect(parseIdeaIndex("0")).toBe(0);
+    expect(parseIdeaIndex("2")).toBe(2);
+    expect(() => parseIdeaIndex("")).toThrow(/пункт идеи/);
+  });
+
   it("accepts community URLs and short names, and rejects personal pages", () => {
     expect(parseVkCommunitySource("https://vk.com/club2048871526")).toEqual({
       source: "https://vk.com/club2048871526",

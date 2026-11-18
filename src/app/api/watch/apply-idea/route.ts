@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
 import { AccessError } from "@/modules/access/permissions";
+import { parseIdeaIndex } from "@/modules/watch/parse";
 import { createWatchService } from "@/modules/watch/watch-service";
 import { prisma } from "@/server/db/prisma";
 
@@ -29,11 +30,14 @@ export async function POST(request: Request) {
       session.user.id,
       readField(formData, "workspaceId"),
       readField(formData, "requestId"),
-      Number(readField(formData, "itemIndex")),
+      parseIdeaIndex(readField(formData, "itemIndex")),
       readField(formData, "projectId"),
     );
     revalidatePath("/app/watch");
     revalidatePath("/app/ai");
+    revalidatePath("/app/studio");
+    revalidatePath("/app/ideas");
+    revalidatePath("/app/products");
     revalidatePath("/app/posts");
     revalidatePath(`/app/posts/${post.id}`);
     return Response.json({

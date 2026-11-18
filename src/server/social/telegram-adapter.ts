@@ -35,6 +35,14 @@ function filenameForMime(mimeType: string) {
   return "photo.jpg";
 }
 
+function telegramPartial(description: string): PublishOutcome {
+  return {
+    kind: "unknown",
+    code: "telegram_partial",
+    message: `Часть поста уже ушла в Telegram. Повторно не отправляем, чтобы не задублировать. ${description}`,
+  };
+}
+
 function mapTelegramFailure(errorCode: number, description: string, retryAfter?: number): PublishOutcome {
   if (errorCode === 0) {
     return { kind: "unknown", code: "network_unknown", message: description };
@@ -118,6 +126,7 @@ export function createTelegramAdapter(options: {
       const text = composeText(input);
       const mediaKeys = input.mediaKeys.filter(Boolean).slice(0, 10);
       let sent;
+      let delivered = false;
 
       if (mediaKeys.length > 0) {
         if (!storage.ready) {
@@ -194,6 +203,9 @@ export function createTelegramAdapter(options: {
             photos,
           );
         }
+        if (sent.ok) {
+          delivered = true;
+        }
         if (sent.ok && rest) {
           for (const chunk of splitTelegramText(rest)) {
             const followUp = await transport.request(token, "sendMessage", {
@@ -217,6 +229,7 @@ export function createTelegramAdapter(options: {
           if (!sent.ok) {
             break;
           }
+          delivered = true;
         }
       }
 
@@ -226,6 +239,9 @@ export function createTelegramAdapter(options: {
             where: { id: account.id },
             data: { status: "token_expired", lastError: sent.description },
           });
+        }
+        if (delivered) {
+          return telegramPartial(sent.description);
         }
         return mapTelegramFailure(sent.error_code, sent.description, sent.retry_after);
       }
