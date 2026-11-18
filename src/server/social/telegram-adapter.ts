@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
 import { detectMediaType, isVideoMime } from "@/modules/media/file-validation";
+import { jpegForVkWall } from "@/modules/media/jpeg-encode";
 import { decryptToken } from "@/server/crypto/token-cipher";
 import {
   createTelegramTransport,
@@ -170,11 +171,12 @@ export function createTelegramAdapter(options: {
               message: "В Telegram можно прикрепить JPEG, PNG, GIF, WebP или MP4.",
             };
           }
+          const still = isVideoMime(mimeType) ? { bytes, mimeType } : await jpegForVkWall({ bytes, mimeType });
           photos.push({
-            field: isVideoMime(mimeType) ? "video" : mediaKeys.length > 1 ? `photo${index}` : "photo",
-            filename: filenameForMime(mimeType),
-            mimeType,
-            bytes,
+            field: isVideoMime(still.mimeType) ? "video" : mediaKeys.length > 1 ? `photo${index}` : "photo",
+            filename: filenameForMime(still.mimeType),
+            mimeType: still.mimeType,
+            bytes: still.bytes,
           });
         }
         const longCopy = text.length > TELEGRAM_CAPTION_LIMIT;

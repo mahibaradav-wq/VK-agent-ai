@@ -481,7 +481,7 @@ describe("social accounts", () => {
     const photo = transport.calls.find((item) => item.method === "sendPhoto");
     expect(photo?.body).toMatchObject({ chat_id: "-1004392473566" });
     expect(String(photo?.body?.caption)).toContain("Разложили специи.");
-    expect(photo?.fileName).toBe("photo.png");
+    expect(photo?.fileName).toBe("photo.jpg");
     expect(transport.calls.some((item) => item.method === "sendMessage")).toBe(false);
   });
 
@@ -1086,7 +1086,7 @@ describe("social accounts", () => {
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
   });
 
-  it("posts VK text without a fake document carousel when the community key cannot upload photos", async () => {
+  it("attaches one JPEG document when the community key cannot upload a native photo carousel", async () => {
     const owner = await registerOwner("soc-vk-docs");
     const transport = scriptedVk({
       "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
@@ -1100,13 +1100,18 @@ describe("social accounts", () => {
         error_code: 27,
         error_msg: "Group authorization failed: method is unavailable with group auth.",
       },
+      "photos.createAlbum": {
+        ok: false,
+        error_code: 27,
+        error_msg: "Group authorization failed: method is unavailable with group auth.",
+      },
+      "docs.getWallUploadServer": { ok: true, response: { upload_url: "https://upload.vk.test/doc-1" } },
+      "docs.save": { ok: true, response: { type: "doc", doc: { id: 701, owner_id: -242155421 } } },
       "wall.post": (params) => {
-        if (String(params.attachments ?? "").trim()) {
-          throw new Error("wall.post must not attach a fake document carousel");
-        }
         if (!String(params.message ?? "").trim()) {
           return { ok: false, error_code: 100, error_msg: "message is empty" };
         }
+        expect(String(params.attachments)).toBe("doc-242155421_701");
         return { ok: true, response: { post_id: 99 } };
       },
     });
@@ -1144,7 +1149,8 @@ describe("social accounts", () => {
     expect(attempt.kind).toBe("success");
     expect(attempt.externalId).toBe("99");
     expect(transport.methods).toContain("wall.post");
-    expect(transport.methods).not.toContain("docs.getWallUploadServer");
+    expect(transport.methods).toContain("docs.getWallUploadServer");
+    expect(transport.uploads[0]?.filename).toBe("slide-1.jpg");
   });
 
   it("attaches a single image as a titled wall document when photo upload is blocked", async () => {
@@ -1157,6 +1163,11 @@ describe("social accounts", () => {
         error_msg: "Group authorization failed: method is unavailable with group auth.",
       },
       "photos.getAlbums": {
+        ok: false,
+        error_code: 27,
+        error_msg: "Group authorization failed: method is unavailable with group auth.",
+      },
+      "photos.createAlbum": {
         ok: false,
         error_code: 27,
         error_msg: "Group authorization failed: method is unavailable with group auth.",

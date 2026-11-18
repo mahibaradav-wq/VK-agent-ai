@@ -260,8 +260,6 @@ async function resolveCommunityAlbum(options: {
     if (albumId) {
       return { albumId };
     }
-  } else if (isGroupAuthUnavailable(listed)) {
-    return { blocked: true };
   }
 
   const created = await options.transport.call(options.token, "photos.createAlbum", {
@@ -423,7 +421,7 @@ async function attachAsWallDocuments(options: {
 
     const saved = await options.transport.call(options.token, "docs.save", {
       file: uploaded.response.file,
-      title: options.title?.trim() || `Карточка ${index + 1}`,
+      title: `${(options.title?.trim() || `Карточка ${index + 1}`).slice(0, 80)}.jpg`,
     });
     if (!saved.ok) {
       return { attachments: [], failure: mapVkFailure(saved, "upload") };
@@ -486,18 +484,23 @@ async function attachWallPhotos(options: {
     }
   }
 
-  if (images.files.length === 1) {
-    return attachAsWallDocuments({
+  const stills = images.files.filter((file) => !isVideoMime(file.mimeType));
+  if (stills.length > 0) {
+    const docs = await attachAsWallDocuments({
       transport: options.transport,
       token: options.token,
       groupId: options.groupId,
       title: options.title,
-      files: images.files,
+      files: stills.slice(0, MAX_VK_WALL_DOCS),
     });
+    if (docs.attachments.length > 0) {
+      return docs;
+    }
   }
 
-  // Community token cannot upload new wall photos (error 27). Do not fake a
-  // carousel as one photo.png document, and do not block the text post.
+  // Community token cannot upload native wall photos (error 27). A JPEG
+  // document is the visible still VK will accept; if even that fails, the
+  // text post still goes out.
   return { attachments: [] };
 }
 
