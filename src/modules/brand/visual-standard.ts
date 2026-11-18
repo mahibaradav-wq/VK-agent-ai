@@ -27,7 +27,36 @@ export function aspectRatioCss(aspect: string) {
   return `${width} / ${height}`;
 }
 
-export function copySystemRules(kind: string) {
+export const copyLengthRules = {
+  short:
+    "Post length SHORT. Body 400–700 characters including spaces (count them). One short opening, 3 numbered steps, one closing line. Title under 60 characters. Do not pad with empty adjectives.",
+  medium:
+    "Post length MEDIUM. Body 900–1400 characters including spaces. This is longer than a caption. Opening 2–4 sentences; the solution; 4–6 numbered practical steps; a short benefit; one question.",
+  long:
+    "Post length LONG. Body 1800–2800 characters including spaces. Do not stop after a caption. Opening scene 3–5 sentences; why it matters in a small kitchen; 6–8 numbered steps with a one-sentence why after each; one typical mistake; a closing benefit and a question.",
+} as const;
+
+export function copyLengthInstruction(length?: string) {
+  if (length === "short") {
+    return copyLengthRules.short;
+  }
+  if (length === "long") {
+    return copyLengthRules.long;
+  }
+  return copyLengthRules.medium;
+}
+
+export function copyMaxTokens(length?: string) {
+  if (length === "short") {
+    return 500;
+  }
+  if (length === "long") {
+    return 1800;
+  }
+  return 900;
+}
+
+export function copySystemRules(kind: string, length?: string) {
   return [
     `You write for «${houseBrand.name}»: practical home organization, especially small kitchens.`,
     "Language: Russian. Tone: calm, competent, friendly, not preachy, no hard sell.",
@@ -37,8 +66,8 @@ export function copySystemRules(kind: string) {
       ? [
           "For a post fill title and body.",
           "Title: a concrete household problem or a useful result.",
-          "Body structure: 1-3 sentence situation; the solution; numbered practical steps; a short benefit; one fitting question.",
-          "Paragraphs of 1-3 sentences. Lists for sequences. No wall of text.",
+          copyLengthInstruction(length),
+          "The length instruction is mandatory: write a body inside that character range. Lists for sequences. Break into paragraphs. Not a one-line caption unless length is SHORT.",
         ].join(" ")
       : `Task kind: ${kind}.`,
   ].join(" ");

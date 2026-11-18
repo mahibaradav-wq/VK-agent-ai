@@ -1,5 +1,5 @@
 import { AccessError } from "@/modules/access/permissions";
-import { copySystemRules } from "@/modules/brand/visual-standard";
+import { copyMaxTokens, copySystemRules } from "@/modules/brand/visual-standard";
 import {
   AI_BALANCE_MESSAGE,
   AI_UNAVAILABLE_MESSAGE,
@@ -26,19 +26,18 @@ function platformRule(platform: string) {
     return "Adapt the copy to the VKontakte community wall. No Markdown asterisks. Plain Russian text and numbered lists.";
   }
   if (platform === "telegram") {
-    return "Adapt the copy to Telegram. Short paragraphs. Light Markdown is allowed.";
+    return "Adapt the copy to Telegram. Break into short paragraphs, but keep the requested post length. Light Markdown is allowed.";
   }
   return `Adapt the copy to platform: ${platform}.`;
 }
 
 function systemPrompt(input: AiGenerateInput) {
   return [
-    copySystemRules(input.kind),
+    copySystemRules(input.kind, input.length),
     `Tone: ${input.tone}.`,
-    `Length: ${input.length}.`,
     platformRule(input.platform),
     'Return JSON only: {"title": string, "body": string, "items": string[]}.',
-    "ideas/headline/cta/hashtags: fill items. post: fill title and body.",
+    "ideas/headline/cta/hashtags: fill items. post: fill title and body. The body must satisfy the post length character range.",
   ].join(" ");
 }
 
@@ -163,10 +162,14 @@ export function createOpenAiCompatibleProvider(options: {
           body: JSON.stringify({
             model: options.model,
             temperature: 0.7,
+            max_tokens: copyMaxTokens(input.length),
             response_format: { type: "json_object" },
             messages: [
               { role: "system", content: systemPrompt(input) },
-              { role: "user", content: input.prompt },
+              {
+                role: "user",
+                content: `${input.prompt}\n\nWrite at length «${input.length}». Count characters in the body.`,
+              },
             ],
           }),
         });

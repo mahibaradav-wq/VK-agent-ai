@@ -268,6 +268,37 @@ describe("AI assistant", () => {
     expect(result.inputTokens).toBe(11);
   });
 
+  it("asks ChatGPT for a long body when Studio length is long", async () => {
+    const posted: Array<{ max_tokens?: number; messages?: Array<{ role?: string; content?: string }> }> = [];
+    const provider = createOpenAiCompatibleProvider({
+      apiKey: "sk-test-secret-key",
+      baseUrl: "https://example.test/v1",
+      model: "demo-mini",
+      fetchImpl: async (_url, init) => {
+        posted.push(JSON.parse(String(init?.body ?? "{}")) as (typeof posted)[number]);
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify({ title: "Длинный", body: "Текст", items: [] }) } }],
+          }),
+          { status: 200 },
+        );
+      },
+    });
+    await provider.generate({
+      kind: "post",
+      prompt: "полки без хаоса",
+      tone: "friendly",
+      length: "long",
+      platform: "vk",
+    });
+    const system = posted[0]?.messages?.find((item) => item.role === "system")?.content ?? "";
+    const user = posted[0]?.messages?.find((item) => item.role === "user")?.content ?? "";
+    expect(posted[0]?.max_tokens).toBe(1800);
+    expect(system).toMatch(/1800–2800/);
+    expect(system).not.toMatch(/400–700/);
+    expect(user).toMatch(/long/);
+  });
+
   it("explains OpenAI region blocks instead of a generic outage", async () => {
     const provider = createOpenAiCompatibleProvider({
       apiKey: "sk-test-secret-key",

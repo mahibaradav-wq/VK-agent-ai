@@ -26,9 +26,9 @@ export const toneLabels: Record<AiTone, string> = {
 };
 
 export const lengthLabels: Record<AiLength, string> = {
-  short: "Короткий",
-  medium: "Средний",
-  long: "Длинный",
+  short: "Короткий · 400–700 знаков",
+  medium: "Средний · 900–1400 знаков",
+  long: "Длинный · 1800–2800 знаков",
 };
 
 function pick<T extends string>(value: string, allowed: readonly T[], fallback: T, label: string): T {
