@@ -1,0 +1,32 @@
+name: Deploy VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git branch or tag to deploy
+        required: true
+        default: main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish on Timeweb VPS
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.VPS_PATH }}"
+            git fetch origin "${{ github.event.inputs.ref }}"
+            git checkout "${{ github.event.inputs.ref }}"
+            git pull --ff-only origin "${{ github.event.inputs.ref }}"
+            if [ -f docker-compose.timeweb.yml ]; then
+              docker compose -f docker-compose.prod.yml -f docker-compose.timeweb.yml --env-file .env.production up -d --build
+            else
+              docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+            fi

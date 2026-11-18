@@ -20,6 +20,7 @@
     "db:migrate:dev": "prisma migrate dev",
     "worker": "tsx --env-file=.env src/server/queue/worker.ts",
     "hosting:up": "bash scripts/vps-up.sh",
+    "hosting:pull": "bash scripts/vps-pull.sh",
     "hosting:down": "docker compose -f docker-compose.prod.yml --env-file .env.production down"
   },
   "repository": {

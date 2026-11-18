@@ -391,6 +391,55 @@ describe("social accounts", () => {
     expect(attempt.errorCode).toBe("rate_limit");
   });
 
+  it("does not auto-retry Telegram after a partial long-text send", async () => {
+    const owner = await registerOwner("soc-tg-partial");
+    const connect = scriptedTelegram({
+      getMe: { ok: true, result: { id: 9, is_bot: true, username: "pub_bot" } },
+      getChat: { ok: true, result: { id: 77, title: "Чат" } },
+    });
+    const social = createSocialService(prisma, { telegram: connect });
+    const account = await social.connectTelegram(owner.userId, owner.workspaceId, {
+      token: BOT_TOKEN,
+      chatId: "77",
+    });
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Длинный");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Длинный",
+      body: "А".repeat(4200),
+      platforms: ["telegram"],
+      mediaIds: [],
+    });
+    await approveCurrent(owner, post.id);
+    let messages = 0;
+    const transport = scriptedTelegram((method) => {
+      if (method === "getChatMember") {
+        return { ok: true, result: { status: "administrator" } };
+      }
+      if (method === "sendMessage") {
+        messages += 1;
+        if (messages === 1) {
+          return { ok: true, result: { message_id: 11, chat: { id: 77 } } };
+        }
+        return { ok: false, error_code: 429, description: "Too Many Requests", retry_after: 12 };
+      }
+      return { ok: false, error_code: 400, description: `unexpected ${method}` };
+    });
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createTelegramAdapter({ db: prisma, transport }) },
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-tg-partial");
+    const attempt = await prisma.publishAttempt.findFirstOrThrow({ where: { jobId: job.id } });
+    expect(attempt.kind).toBe("unknown");
+    expect(attempt.errorCode).toBe("telegram_partial");
+    expect((await prisma.postTarget.findFirstOrThrow({ where: { postId: post.id } })).status).toBe(
+      "requires_manual_check",
+    );
+    expect(account.id).toBeTruthy();
+    expect(messages).toBe(2);
+  });
+
   it("publishes a photo to the bound Telegram channel", async () => {
     const owner = await registerOwner("soc-tg-photo");
     const transport = scriptedTelegram({
@@ -432,8 +481,57 @@ describe("social accounts", () => {
     const photo = transport.calls.find((item) => item.method === "sendPhoto");
     expect(photo?.body).toMatchObject({ chat_id: "-1004392473566" });
     expect(String(photo?.body?.caption)).toContain("Разложили специи.");
-    expect(photo?.fileName).toBe("photo.png");
+    expect(photo?.fileName).toBe("photo.jpg");
     expect(transport.calls.some((item) => item.method === "sendMessage")).toBe(false);
+  });
+
+  it("sends the full Telegram body as a message before the photo when the caption would overflow", async () => {
+    const owner = await registerOwner("soc-tg-long-photo");
+    const transport = scriptedTelegram({
+      getMe: { ok: true, result: { id: 9, is_bot: true, username: "pub_bot" } },
+      getChat: { ok: true, result: { id: -1004392473566, type: "channel", title: "ДОМ по полочкам" } },
+      sendMessage: { ok: true, result: { message_id: 87, chat: { id: -1004392473566 } } },
+      sendPhoto: { ok: true, result: { message_id: 88, chat: { id: -1004392473566 } } },
+    });
+    const social = createSocialService(prisma, { telegram: transport });
+    await social.connectTelegram(owner.userId, owner.workspaceId, {
+      token: BOT_TOKEN,
+      chatId: "https://t.me/dom_po_polochkam",
+      projectId: owner.projectId,
+    });
+    const media = createMediaService(prisma, createLocalStorage(storageDir));
+    const asset = await media.upload(owner.userId, owner.workspaceId, {
+      filename: "cover.png",
+      declaredType: "image/png",
+      bytes: png,
+    });
+    const body = "Стол с ящиками. ".repeat(80);
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Длинный стол");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Длинный стол",
+      body,
+      platforms: ["telegram"],
+      mediaIds: [asset.id],
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: {
+        get: () => createTelegramAdapter({ db: prisma, transport, storage: createLocalStorage(storageDir) }),
+      },
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-tg-long-photo");
+    const message = transport.calls.find((item) => item.method === "sendMessage");
+    const photo = transport.calls.find((item) => item.method === "sendPhoto");
+    expect(String(message?.body?.text)).toContain("Стол с ящиками.");
+    expect(String(message?.body?.text).length).toBeGreaterThan(1024);
+    expect(String(photo?.body?.caption)).toBe("Длинный стол");
+    expect(transport.calls.map((item) => item.method).filter((item) => item === "sendMessage" || item === "sendPhoto")).toEqual([
+      "sendMessage",
+      "sendPhoto",
+    ]);
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
   });
 
   it("publishes an MP4 to Telegram with sendVideo", async () => {
@@ -751,7 +849,7 @@ describe("social accounts", () => {
     expect(stored.status).toBe("published");
     expect(stored.targets[0]?.externalId).toBe("88");
     expect(transport.uploads).toHaveLength(1);
-    expect(transport.uploads[0]?.filename).toBe("slide-1.png");
+    expect(transport.uploads[0]?.filename).toBe("slide-1.jpg");
     expect(transport.methods).toEqual([
       "groups.getById",
       "wall.post",
@@ -988,7 +1086,7 @@ describe("social accounts", () => {
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
   });
 
-  it("posts VK text without a fake document carousel when the community key cannot upload photos", async () => {
+  it("attaches one JPEG document when the community key cannot upload a native photo carousel", async () => {
     const owner = await registerOwner("soc-vk-docs");
     const transport = scriptedVk({
       "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
@@ -1002,13 +1100,18 @@ describe("social accounts", () => {
         error_code: 27,
         error_msg: "Group authorization failed: method is unavailable with group auth.",
       },
+      "photos.createAlbum": {
+        ok: false,
+        error_code: 27,
+        error_msg: "Group authorization failed: method is unavailable with group auth.",
+      },
+      "docs.getWallUploadServer": { ok: true, response: { upload_url: "https://upload.vk.test/doc-1" } },
+      "docs.save": { ok: true, response: { type: "doc", doc: { id: 701, owner_id: -242155421 } } },
       "wall.post": (params) => {
-        if (String(params.attachments ?? "").trim()) {
-          throw new Error("wall.post must not attach a fake document carousel");
-        }
         if (!String(params.message ?? "").trim()) {
           return { ok: false, error_code: 100, error_msg: "message is empty" };
         }
+        expect(String(params.attachments)).toBe("doc-242155421_701");
         return { ok: true, response: { post_id: 99 } };
       },
     });
@@ -1046,7 +1149,8 @@ describe("social accounts", () => {
     expect(attempt.kind).toBe("success");
     expect(attempt.externalId).toBe("99");
     expect(transport.methods).toContain("wall.post");
-    expect(transport.methods).not.toContain("docs.getWallUploadServer");
+    expect(transport.methods).toContain("docs.getWallUploadServer");
+    expect(transport.uploads[0]?.filename).toBe("slide-1.jpg");
   });
 
   it("attaches a single image as a titled wall document when photo upload is blocked", async () => {
@@ -1059,6 +1163,11 @@ describe("social accounts", () => {
         error_msg: "Group authorization failed: method is unavailable with group auth.",
       },
       "photos.getAlbums": {
+        ok: false,
+        error_code: 27,
+        error_msg: "Group authorization failed: method is unavailable with group auth.",
+      },
+      "photos.createAlbum": {
         ok: false,
         error_code: 27,
         error_msg: "Group authorization failed: method is unavailable with group auth.",

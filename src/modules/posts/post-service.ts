@@ -142,11 +142,14 @@ export function createPostService(db: PrismaClient) {
       const leftover = await db.post.findMany({
         where: this.studioCardWhere(workspaceId, projectId),
         select: { id: true },
+        orderBy: { updatedAt: "desc" },
       });
       if (leftover.length <= 1) {
         return { cleared: 0 };
       }
-      return { cleared: await this.clearUnscheduledStudioCards(userId, workspaceId, projectId) };
+      return {
+        cleared: await this.clearUnscheduledStudioCards(userId, workspaceId, projectId, leftover[0]!.id),
+      };
     },
 
     async discardStudioCard(userId: string, workspaceId: string, postId: string) {

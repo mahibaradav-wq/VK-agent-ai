@@ -46,6 +46,8 @@ export function StudioWorkingCard({
   canEdit = false,
   vkCarouselReady = false,
   defaultSlot,
+  timezone = "Europe/Moscow",
+  timezoneLabel = "Москва (UTC+3)",
 }: {
   workspaceId: string;
   card: StudioCardView;
@@ -54,6 +56,8 @@ export function StudioWorkingCard({
   canEdit?: boolean;
   vkCarouselReady?: boolean;
   defaultSlot: string;
+  timezone?: string;
+  timezoneLabel?: string;
 }) {
   const [calendarState, calendarAction, calendarPending] = useActionState(reschedulePost, calendarIdle);
   const [publishState, publishAction, publishPending] = useActionState(publishNowPost, publishIdle);
@@ -199,8 +203,7 @@ export function StudioWorkingCard({
 
       {canEdit && !inFlight ? (
         <form action={reviseAction} className="grid gap-3 rounded-2xl bg-sand-50 p-4 ring-1 ring-ink/10">
-          <input type="hidden" name="workspaceId" value={workspaceId} />
-          <input type="hidden" name="postId" value={card.id} />
+          {draftFields()}
           <label className="grid gap-2 text-sm font-medium text-ink">
             Комментарий к правке
             <textarea
@@ -234,9 +237,9 @@ export function StudioWorkingCard({
       {canSchedule && !inFlight ? (
         <form action={calendarAction} className="grid gap-3 sm:grid-cols-[1fr_auto]">
           {draftFields()}
-          <input type="hidden" name="timezone" value="Europe/Moscow" />
+          <input type="hidden" name="timezone" value={timezone} />
           <label className="grid gap-2 text-sm font-medium text-ink">
-            Время Москвы
+            {timezoneLabel}
             <input
               name="localDateTime"
               type="datetime-local"

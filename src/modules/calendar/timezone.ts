@@ -46,11 +46,14 @@ export function localDateTimeToUtc(localDateTime: string, timezone: string) {
     throw new AccessError(400, "Это локальное время не существует из-за перехода на летнее/зимнее время.");
   }
 
-  if (parsed.hour !== wall.hour || parsed.minute !== wall.minute || parsed.day !== wall.day) {
+  const candidates = parsed.getPossibleOffsets();
+  const chosen = candidates.reduce((best, item) => (item.offset > best.offset ? item : best));
+
+  if (chosen.hour !== wall.hour || chosen.minute !== wall.minute || chosen.day !== wall.day) {
     throw new AccessError(400, "Это локальное время не существует из-за перехода на летнее/зимнее время.");
   }
 
-  return parsed.toUTC().toJSDate();
+  return chosen.toUTC().toJSDate();
 }
 
 export function utcToLocalInput(utcDate: Date, timezone: string) {

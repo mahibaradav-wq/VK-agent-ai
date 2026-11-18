@@ -1,5 +1,13 @@
 import { AccessError } from "@/modules/access/permissions";
-import { copySystemRules } from "@/modules/brand/visual-standard";
+import {
+  bodyMeetsCopyLength,
+  copyReviseHint,
+  copyMaxTokens,
+  copySystemRules,
+  copyTimeoutMs,
+  copyUserLengthHint,
+  preferRevisedCopy,
+} from "@/modules/brand/visual-standard";
 import {
   AI_BALANCE_MESSAGE,
   AI_UNAVAILABLE_MESSAGE,
@@ -26,19 +34,18 @@ function platformRule(platform: string) {
     return "Adapt the copy to the VKontakte community wall. No Markdown asterisks. Plain Russian text and numbered lists.";
   }
   if (platform === "telegram") {
-    return "Adapt the copy to Telegram. Short paragraphs. Light Markdown is allowed.";
+    return "Adapt the copy to Telegram. Break into short paragraphs, but keep the requested post length. Light Markdown is allowed.";
   }
   return `Adapt the copy to platform: ${platform}.`;
 }
 
 function systemPrompt(input: AiGenerateInput) {
   return [
-    copySystemRules(input.kind),
+    copySystemRules(input.kind, input.length),
     `Tone: ${input.tone}.`,
-    `Length: ${input.length}.`,
     platformRule(input.platform),
     'Return JSON only: {"title": string, "body": string, "items": string[]}.',
-    "ideas/headline/cta/hashtags: fill items. post: fill title and body.",
+    "ideas/headline/cta/hashtags: fill items. post: fill title and body. The body must satisfy the post length character range.",
   ].join(" ");
 }
 
@@ -151,53 +158,85 @@ export function createOpenAiCompatibleProvider(options: {
     ready: true,
     imageReady,
     async generate(input: AiGenerateInput): Promise<AiGenerateOutput> {
-      let response: Response;
-      try {
-        response = await fetchImpl(`${baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${options.apiKey}`,
-            "content-type": "application/json",
-          },
-          signal: AbortSignal.timeout(25_000),
-          body: JSON.stringify({
-            model: options.model,
-            temperature: 0.7,
-            response_format: { type: "json_object" },
-            messages: [
-              { role: "system", content: systemPrompt(input) },
-              { role: "user", content: input.prompt },
-            ],
-          }),
-        });
-      } catch {
-        throw new AccessError(400, name === "openai" ? OPENAI_REGION_MESSAGE : AI_UNAVAILABLE_MESSAGE);
+      const complete = async (userContent: string) => {
+        let response: Response;
+        try {
+          response = await fetchImpl(`${baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${options.apiKey}`,
+              "content-type": "application/json",
+            },
+            signal: AbortSignal.timeout(copyTimeoutMs(input.length)),
+            body: JSON.stringify({
+              model: options.model,
+              temperature: 0.7,
+              max_tokens: copyMaxTokens(input.length),
+              response_format: { type: "json_object" },
+              messages: [
+                { role: "system", content: systemPrompt(input) },
+                { role: "user", content: userContent },
+              ],
+            }),
+          });
+        } catch {
+          throw new AccessError(400, name === "openai" ? OPENAI_REGION_MESSAGE : AI_UNAVAILABLE_MESSAGE);
+        }
+
+        if (!response.ok) {
+          const body = await readErrorBody(response);
+          if (isOpenAiRegionBlock(body)) {
+            throw new AccessError(400, OPENAI_REGION_MESSAGE);
+          }
+          if (isInsufficientBalance(response.status, body)) {
+            throw new AccessError(400, AI_BALANCE_MESSAGE);
+          }
+          throw new AccessError(400, `Провайдер AI вернул ошибку ${response.status}. Ключ в ответ не попадает.`);
+        }
+
+        const json = (await response.json()) as ChatResponse;
+        const content = json.choices?.[0]?.message?.content?.trim();
+        if (!content) {
+          throw new AccessError(400, "Провайдер AI вернул пустой ответ.");
+        }
+        return {
+          json,
+          content,
+          parsed: parseContent(content, input.kind),
+        };
+      };
+
+      const first = await complete(`${input.prompt}\n\n${copyUserLengthHint(input.length)}`);
+      let parsed = first.parsed;
+      let content = first.content;
+      let json = first.json;
+      let inputTokens = first.json.usage?.prompt_tokens ?? 0;
+      let outputTokens = first.json.usage?.completion_tokens ?? 0;
+
+      if (input.kind === "post" && !bodyMeetsCopyLength(parsed.body, input.length)) {
+        try {
+          const revised = await complete(
+            `${input.prompt}\n\n${copyReviseHint(parsed.body.trim().length, input.length)}\n\nЧерновик:\n${parsed.body}`,
+          );
+          inputTokens += revised.json.usage?.prompt_tokens ?? 0;
+          outputTokens += revised.json.usage?.completion_tokens ?? 0;
+          if (preferRevisedCopy(parsed.body, revised.parsed.body, input.length)) {
+            parsed = revised.parsed;
+            content = revised.content;
+            json = revised.json;
+          }
+        } catch {
+          // Keep the first complete draft if the rewrite call fails.
+        }
       }
 
-      if (!response.ok) {
-        const body = await readErrorBody(response);
-        if (isOpenAiRegionBlock(body)) {
-          throw new AccessError(400, OPENAI_REGION_MESSAGE);
-        }
-        if (isInsufficientBalance(response.status, body)) {
-          throw new AccessError(400, AI_BALANCE_MESSAGE);
-        }
-        throw new AccessError(400, `Провайдер AI вернул ошибку ${response.status}. Ключ в ответ не попадает.`);
-      }
-
-      const json = (await response.json()) as ChatResponse;
-      const content = json.choices?.[0]?.message?.content?.trim();
-      if (!content) {
-        throw new AccessError(400, "Провайдер AI вернул пустой ответ.");
-      }
-      const parsed = parseContent(content, input.kind);
       return {
         ...parsed,
         raw: content,
         provider: name,
         model: json.model || options.model,
-        inputTokens: json.usage?.prompt_tokens,
-        outputTokens: json.usage?.completion_tokens,
+        inputTokens,
+        outputTokens,
       };
     },
     async generateImage(input: AiImageInput): Promise<AiImageOutput> {

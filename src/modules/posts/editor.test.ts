@@ -154,13 +154,15 @@ describe("post editor and media library", () => {
     expect((await prisma.post.findUniqueOrThrow({ where: { id: created.id } })).status).toBe("cancelled");
   });
 
-  it("clears a pile of leftover Studio drafts and keeps only a brand-new card", async () => {
+  it("clears extra leftover Studio drafts and keeps the newest card", async () => {
     const owner = await registerOwner("studio-pile");
     await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Старый 1");
     await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Старый 2");
     await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Старый 3");
-    expect((await posts.collapseStudioPile(owner.userId, owner.workspaceId, owner.projectId)).cleared).toBe(3);
-    expect(await posts.listStudioCards(owner.userId, owner.workspaceId, owner.projectId)).toHaveLength(0);
+    expect((await posts.collapseStudioPile(owner.userId, owner.workspaceId, owner.projectId)).cleared).toBe(2);
+    const kept = await posts.listStudioCards(owner.userId, owner.workspaceId, owner.projectId);
+    expect(kept).toHaveLength(1);
+    expect(posts.currentVersion(kept[0]!)?.title).toBe("Старый 3");
 
     const current = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Текущая");
     await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Ещё одна");

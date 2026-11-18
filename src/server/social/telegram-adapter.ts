@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
 import { detectMediaType, isVideoMime } from "@/modules/media/file-validation";
+import { jpegForVkWall } from "@/modules/media/jpeg-encode";
 import { decryptToken } from "@/server/crypto/token-cipher";
 import {
   createTelegramTransport,
@@ -10,14 +11,27 @@ import {
   type TelegramTransport,
 } from "@/server/social/telegram-api";
 import { withProductLink } from "@/modules/products/shop-labels";
+import { TELEGRAM_CAPTION_LIMIT, splitTelegramText, telegramCaptionAndRest } from "@/server/social/telegram-text";
 import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/social/types";
 import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
-
-const TELEGRAM_CAPTION_LIMIT = 1024;
 
 function composeText(input: PublishInput) {
   const parts = [input.title.trim(), input.body.trim()].filter(Boolean);
   return withProductLink(parts.join("\n\n"), input.market?.url);
+}
+
+async function requestTelegram(
+  transport: TelegramTransport,
+  token: string,
+  method: string,
+  body?: Record<string, unknown>,
+  file?: TelegramFilePart | TelegramFilePart[],
+) {
+  let result = await transport.request(token, method, body, file);
+  if (!result.ok && result.error_code === 0 && !file) {
+    result = await transport.request(token, method, body, file);
+  }
+  return result;
 }
 
 function filenameForMime(mimeType: string) {
@@ -34,6 +48,14 @@ function filenameForMime(mimeType: string) {
     return "photo.webp";
   }
   return "photo.jpg";
+}
+
+function telegramPartial(description: string): PublishOutcome {
+  return {
+    kind: "unknown",
+    code: "telegram_partial",
+    message: `Часть поста уже ушла в Telegram. Повторно не отправляем, чтобы не задублировать. ${description}`,
+  };
 }
 
 function mapTelegramFailure(errorCode: number, description: string, retryAfter?: number): PublishOutcome {
@@ -119,6 +141,7 @@ export function createTelegramAdapter(options: {
       const text = composeText(input);
       const mediaKeys = input.mediaKeys.filter(Boolean).slice(0, 10);
       let sent;
+      let delivered = false;
 
       if (mediaKeys.length > 0) {
         if (!storage.ready) {
@@ -148,67 +171,101 @@ export function createTelegramAdapter(options: {
               message: "В Telegram можно прикрепить JPEG, PNG, GIF, WebP или MP4.",
             };
           }
+          const still = isVideoMime(mimeType) ? { bytes, mimeType } : await jpegForVkWall({ bytes, mimeType });
           photos.push({
-            field: isVideoMime(mimeType) ? "video" : mediaKeys.length > 1 ? `photo${index}` : "photo",
-            filename: filenameForMime(mimeType),
-            mimeType,
-            bytes,
+            field: isVideoMime(still.mimeType) ? "video" : mediaKeys.length > 1 ? `photo${index}` : "photo",
+            filename: filenameForMime(still.mimeType),
+            mimeType: still.mimeType,
+            bytes: still.bytes,
           });
         }
-        const caption = text.length <= TELEGRAM_CAPTION_LIMIT ? text : text.slice(0, TELEGRAM_CAPTION_LIMIT);
+        const longCopy = text.length > TELEGRAM_CAPTION_LIMIT;
+        let caption = longCopy ? input.title.trim().slice(0, TELEGRAM_CAPTION_LIMIT) : text;
+        let rest = "";
+        if (longCopy) {
+          sent = { ok: false, error_code: 400, description: "empty text" };
+          for (const chunk of splitTelegramText(text)) {
+            sent = await requestTelegram(transport, token, "sendMessage", {
+              chat_id: account.externalId,
+              text: chunk,
+            });
+            if (!sent.ok) {
+              break;
+            }
+            delivered = true;
+          }
+          if (!delivered) {
+            const split = telegramCaptionAndRest(text);
+            caption = split.caption;
+            rest = split.rest;
+          }
+        }
         const video = photos.find((item) => isVideoMime(item.mimeType));
-        if (video) {
-          sent = await transport.request(
-            token,
-            "sendVideo",
-            {
-              chat_id: account.externalId,
-              caption,
-              supports_streaming: true,
-            },
-            video,
-          );
-        } else if (photos.length === 1) {
-          sent = await transport.request(
-            token,
-            "sendPhoto",
-            {
-              chat_id: account.externalId,
-              caption,
-            },
-            photos[0],
-          );
-        } else {
-          sent = await transport.request(
-            token,
-            "sendMediaGroup",
-            {
-              chat_id: account.externalId,
-              media: JSON.stringify(
-                photos.map((photo, index) => ({
-                  type: "photo",
-                  media: `attach://${photo.field}`,
-                  ...(index === 0 ? { caption } : {}),
-                })),
-              ),
-            },
-            photos,
-          );
+        const mediaSent = video
+          ? await transport.request(
+              token,
+              "sendVideo",
+              {
+                chat_id: account.externalId,
+                caption,
+                supports_streaming: true,
+              },
+              video,
+            )
+          : photos.length === 1
+            ? await transport.request(
+                token,
+                "sendPhoto",
+                {
+                  chat_id: account.externalId,
+                  caption,
+                },
+                photos[0],
+              )
+            : await transport.request(
+                token,
+                "sendMediaGroup",
+                {
+                  chat_id: account.externalId,
+                  media: JSON.stringify(
+                    photos.map((photo, index) => ({
+                      type: "photo",
+                      media: `attach://${photo.field}`,
+                      ...(index === 0 ? { caption } : {}),
+                    })),
+                  ),
+                },
+                photos,
+              );
+        sent = mediaSent;
+        if (mediaSent.ok) {
+          delivered = true;
         }
-        if (sent.ok && text.length > TELEGRAM_CAPTION_LIMIT) {
-          const rest = await transport.request(token, "sendMessage", {
-            chat_id: account.externalId,
-            text,
-          });
-          if (!rest.ok) {
-            sent = rest;
+        if (sent.ok && rest) {
+          for (const chunk of splitTelegramText(rest)) {
+            const followUp = await requestTelegram(transport, token, "sendMessage", {
+              chat_id: account.externalId,
+              text: chunk,
+            });
+            if (!followUp.ok) {
+              sent = followUp;
+              break;
+            }
           }
         }
       } else {
-        sent = await transport.request(token, "sendMessage", {
-          chat_id: account.externalId,
-          text,
-        });
+        const chunks = splitTelegramText(text);
+        sent = { ok: false, error_code: 400, description: "empty text" };
+        for (const chunk of chunks) {
+          sent = await requestTelegram(transport, token, "sendMessage", {
+            chat_id: account.externalId,
+            text: chunk,
+          });
+          if (!sent.ok) {
+            break;
+          }
+          delivered = true;
+        }
       }
 
       if (!sent.ok) {
@@ -217,6 +274,9 @@ export function createTelegramAdapter(options: {
             where: { id: account.id },
             data: { status: "token_expired", lastError: sent.description },
           });
+        }
+        if (delivered) {
+          return telegramPartial(sent.description);
         }
         return mapTelegramFailure(sent.error_code, sent.description, sent.retry_after);
       }

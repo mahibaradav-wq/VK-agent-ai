@@ -1,4 +1,5 @@
 import { DateTime } from "luxon";
+import { cookies } from "next/headers";
 
 import { auth } from "@/auth";
 import { AiStudio } from "@/components/app/ai-studio";
@@ -10,6 +11,7 @@ import { createPageMetadata } from "@/lib/metadata";
 import { getAppContext } from "@/modules/access/app-context";
 import { hasPermission } from "@/modules/access/permissions";
 import { createAiService } from "@/modules/ai/ai-service";
+import { displayTimezones, parseTimezone, TIMEZONE_COOKIE } from "@/modules/calendar/timezone";
 import { createPostService } from "@/modules/posts/post-service";
 import { parseVariants } from "@/modules/posts/variants";
 import { prisma } from "@/server/db/prisma";
@@ -59,7 +61,9 @@ export default async function StudioPage({
   const vkCarouselReady = Boolean(
     vkAccount?.capabilities.some((item) => item.name === "publish_carousel" && item.enabled),
   );
-  const defaultSlot = DateTime.now().setZone("Europe/Moscow").plus({ hours: 1 }).toFormat("yyyy-MM-dd'T'HH:mm");
+  const timezone = parseTimezone((await cookies()).get(TIMEZONE_COOKIE)?.value);
+  const timezoneLabel = displayTimezones.find((item) => item.id === timezone)?.label ?? timezone;
+  const defaultSlot = DateTime.now().setZone(timezone).plus({ hours: 1 }).toFormat("yyyy-MM-dd'T'HH:mm");
   const canPublishNow =
     hasPermission(activeMembership.role, "post.approve") && hasPermission(activeMembership.role, "post.update");
   const canSchedule = hasPermission(activeMembership.role, "post.update");
@@ -89,6 +93,8 @@ export default async function StudioPage({
                   canEdit={canEdit}
                   vkCarouselReady={vkCarouselReady}
                   defaultSlot={defaultSlot}
+                  timezone={timezone}
+                  timezoneLabel={timezoneLabel}
                   card={{
                     id: post.id,
                     title: version?.title ?? "Черновик",

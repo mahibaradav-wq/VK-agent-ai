@@ -106,16 +106,52 @@ curl -fsS https://ваш-домен.ru/api/health
 
 Стек: Caddy (HTTPS) → Next.js → PostgreSQL, плюс воркер очереди. Медиа лежат в Docker-томе `media_data`.
 
-Обновление после `git pull`:
+Обновление на уже работающем сервере:
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+bash scripts/vps-pull.sh
 ```
 
-Остановка: `npm run hosting:down` или тот же `docker compose ... down`.
+Скрипт сам подхватит `docker-compose.timeweb.yml`, если файл есть на VPS. Остановка: `npm run hosting:down`.
 
 Проверьте вход, что `/dev/mailbox` закрыт, и что `/admin` недоступен обычному Owner. Первый аккаунт на рабочем сайте подтверждается сразу, без письма. Superadmin: `ADMIN_EMAILS` с email уже зарегистрированного пользователя.
 
 В кабинете ЮKassa укажите HTTP-уведомления на `https://ваш-домен.ru/api/webhooks/billing` (события `payment.succeeded` и `payment.canceled`). Ключи — `YOOKASSA_SHOP_ID` и `YOOKASSA_SECRET_KEY` в `.env.production`.
 
-Секреты только в `.env.production` на сервере, не в git. Без ваших SSH-ключей и оплаченного VPS выкладка с этой машины невозможна.
+Секреты только в `.env.production` на сервере, не в git.
+
+## Почему облачный агент Cursor не заходит на VPS
+
+Это не «права в чате». Cursor крутится на **другой** машине, не на Timeweb. VPS пускает только тех, чей **публичный** SSH-ключ уже лежит в `/root/.ssh/authorized_keys` (или в ключах сервера в панели Timeweb). У облачной машины такого ключа нет, поэтому `ssh root@24dom-po-polochkam.ru` отвечает `Permission denied (publickey,password)`.
+
+Разрешение в переписке ключ на сервер не добавляет. Пароль root в чат не присылайте.
+
+### Один раз: ключ в Timeweb, чтобы агент мог выложить
+
+В [панели Timeweb](https://timeweb.cloud/) откройте VPS → SSH-ключи и добавьте эту строку целиком:
+
+```
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILh3zvl5RyoqR5SDpLTB+MrmDy2amBvOF5921rrcYX2N cursor-agent-polka-deploy
+```
+
+Или с компьютера, где вход на сервер уже есть:
+
+```bash
+echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILh3zvl5RyoqR5SDpLTB+MrmDy2amBvOF5921rrcYX2N cursor-agent-polka-deploy' \
+  | ssh root@24dom-po-polochkam.ru 'umask 077; mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys'
+```
+
+Когда ключ окажется на сервере, напишите «ключ добавлен» — агент выложит сайт сам.
+
+### Постоянная выкладка из GitHub Actions
+
+На своём компьютере создайте **отдельную** пару ключей (`ssh-keygen -t ed25519 -f polka-deploy -N ""`). Публичный ключ (`polka-deploy.pub`) тоже добавьте в Timeweb. Закрытый ключ не присылайте в чат: положите его в GitHub → Settings → Secrets and variables → Actions:
+
+| Secret | Значение |
+|---|---|
+| `VPS_HOST` | `24dom-po-polochkam.ru` |
+| `VPS_USER` | `root` |
+| `VPS_PATH` | `/opt/polka-social` |
+| `VPS_SSH_KEY` | содержимое файла `polka-deploy` целиком |
+
+Затем GitHub → Actions → **Deploy VPS** → Run workflow. На сервере вручную: `bash scripts/vps-pull.sh <ветка>`.

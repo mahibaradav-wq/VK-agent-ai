@@ -1,4 +1,5 @@
 import { AccessError } from "@/modules/access/permissions";
+import { copyLengthSpec } from "@/modules/brand/visual-standard";
 import {
   aiKinds,
   aiLengths,
@@ -26,9 +27,9 @@ export const toneLabels: Record<AiTone, string> = {
 };
 
 export const lengthLabels: Record<AiLength, string> = {
-  short: "Короткий",
-  medium: "Средний",
-  long: "Длинный",
+  short: copyLengthSpec.short.label,
+  medium: copyLengthSpec.medium.label,
+  long: copyLengthSpec.long.label,
 };
 
 function pick<T extends string>(value: string, allowed: readonly T[], fallback: T, label: string): T {

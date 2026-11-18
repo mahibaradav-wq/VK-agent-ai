@@ -268,6 +268,73 @@ describe("AI assistant", () => {
     expect(result.inputTokens).toBe(11);
   });
 
+  it("asks ChatGPT for a long body when Studio length is long", async () => {
+    const posted: Array<{ max_tokens?: number; messages?: Array<{ role?: string; content?: string }> }> = [];
+    const provider = createOpenAiCompatibleProvider({
+      apiKey: "sk-test-secret-key",
+      baseUrl: "https://example.test/v1",
+      model: "demo-mini",
+      fetchImpl: async (_url, init) => {
+        posted.push(JSON.parse(String(init?.body ?? "{}")) as (typeof posted)[number]);
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify({ title: "Длинный", body: "Текст", items: [] }) } }],
+          }),
+          { status: 200 },
+        );
+      },
+    });
+    await provider.generate({
+      kind: "post",
+      prompt: "полки без хаоса",
+      tone: "friendly",
+      length: "long",
+      platform: "vk",
+    });
+    const system = posted[0]?.messages?.find((item) => item.role === "system")?.content ?? "";
+    const firstUser = posted[0]?.messages?.find((item) => item.role === "user")?.content ?? "";
+    const expandUser = posted[1]?.messages?.find((item) => item.role === "user")?.content ?? "";
+    expect(posted[0]?.max_tokens).toBe(5000);
+    expect(system).toMatch(/3800–4090/);
+    expect(system).not.toMatch(/900–1400/);
+    expect(firstUser).toMatch(/3800/);
+    expect(posted).toHaveLength(2);
+    expect(expandUser).toMatch(/слишком короткий/);
+  });
+
+  it("rewrites an overlong post instead of cutting it mid-sentence", async () => {
+    const posted: Array<{ messages?: Array<{ role?: string; content?: string }> }> = [];
+    let calls = 0;
+    const finished = `${"На маленькой кухне каждый ящик должен работать на порядок. ".repeat(64)}В итоге стол с ящиками даёт место для мелочей и спокойный ритм готовки. Как вы организуете хранение?`;
+    const provider = createOpenAiCompatibleProvider({
+      apiKey: "sk-test-secret-key",
+      baseUrl: "https://example.test/v1",
+      model: "demo-mini",
+      fetchImpl: async (_url, init) => {
+        posted.push(JSON.parse(String(init?.body ?? "{}")) as (typeof posted)[number]);
+        calls += 1;
+        const body = calls === 1 ? `${"Черновик без финала ".repeat(260)}и обрыв` : finished;
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify({ title: "Длинный", body, items: [] }) } }],
+          }),
+          { status: 200 },
+        );
+      },
+    });
+    const result = await provider.generate({
+      kind: "post",
+      prompt: "полки без хаоса",
+      tone: "friendly",
+      length: "long",
+      platform: "vk",
+    });
+    const reviseUser = posted[1]?.messages?.find((item) => item.role === "user")?.content ?? "";
+    expect(result.body).toBe(finished);
+    expect(result.body.endsWith("?")).toBe(true);
+    expect(reviseUser).toMatch(/Не обрезай/);
+  });
+
   it("explains OpenAI region blocks instead of a generic outage", async () => {
     const provider = createOpenAiCompatibleProvider({
       apiKey: "sk-test-secret-key",

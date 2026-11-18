@@ -7,6 +7,7 @@ import { auth } from "@/auth";
 import { AccessError } from "@/modules/access/permissions";
 import { createAiService } from "@/modules/ai/ai-service";
 import { createAiConnectionService } from "@/modules/ai/provider-service";
+import { persistStudioDraftFromForm } from "@/modules/posts/studio-draft";
 import { prisma } from "@/server/db/prisma";
 
 export type AiFormState = {
@@ -170,8 +171,10 @@ export async function reviseStudioCard(_prev: AiFormState, formData: FormData): 
   try {
     const rewriteRaw = readField(formData, "rewrite");
     const rewrite = rewriteRaw === "text" || rewriteRaw === "visual" ? rewriteRaw : "both";
+    const userId = await requireUserId();
+    await persistStudioDraftFromForm(userId, formData);
     const post = await createAiService(prisma).reviseStudioCard(
-      await requireUserId(),
+      userId,
       readField(formData, "workspaceId"),
       {
         postId: readField(formData, "postId"),
