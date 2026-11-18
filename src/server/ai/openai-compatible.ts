@@ -9,7 +9,7 @@ import {
   readErrorBody,
 } from "@/server/ai/errors";
 import { createAiFetch } from "@/server/http/outbound-fetch";
-import { detectMediaType, MAX_MEDIA_BYTES } from "@/modules/media/file-validation";
+import { detectMediaType, isVideoMime, MAX_MEDIA_BYTES } from "@/modules/media/file-validation";
 import type { AiGenerateInput, AiGenerateOutput, AiImageInput, AiImageOutput, AiProvider } from "@/server/ai/types";
 
 type ChatResponse = {
@@ -252,7 +252,7 @@ export function createOpenAiCompatibleProvider(options: {
       }
 
       const mimeType = detectMediaType(bytes);
-      if (!mimeType) {
+      if (!mimeType || isVideoMime(mimeType)) {
         throw new AccessError(400, "Провайдер вернул файл, который нельзя сохранить как изображение.");
       }
 

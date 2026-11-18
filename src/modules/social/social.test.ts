@@ -21,6 +21,7 @@ import { createTelegramAdapter } from "@/server/social/telegram-adapter";
 import { createVkAdapter } from "@/server/social/vk-adapter";
 import { isTelegramBotToken, type TelegramApiResult, type TelegramTransport } from "@/server/social/telegram-api";
 import type { VkApiResult, VkTransport, VkWallUploadFile } from "@/server/social/vk-api";
+import { encodeSlideshowMp4 } from "@/modules/ai/video-encode";
 import { createLocalStorage } from "@/server/storage/local-storage";
 
 const auth = createAuthService(prisma, "http://localhost:3000");
@@ -100,6 +101,11 @@ function scriptedVk(
       methods.push("uploadDocument");
       uploads.push(file);
       return { ok: true, response: { file: "[uploaded-doc]" } };
+    },
+    async uploadVideo(_uploadUrl, file) {
+      methods.push("uploadVideo");
+      uploads.push(file);
+      return { ok: true, response: { video_id: 77, owner_id: -242155421 } };
     },
   };
 }
@@ -430,6 +436,49 @@ describe("social accounts", () => {
     expect(transport.calls.some((item) => item.method === "sendMessage")).toBe(false);
   });
 
+  it("publishes an MP4 to Telegram with sendVideo", async () => {
+    const owner = await registerOwner("soc-tg-video");
+    const transport = scriptedTelegram({
+      getMe: { ok: true, result: { id: 9, is_bot: true, username: "pub_bot" } },
+      getChat: { ok: true, result: { id: -1004392473566, type: "channel", title: "ДОМ по полочкам" } },
+      sendVideo: { ok: true, result: { message_id: 91, chat: { id: -1004392473566 } } },
+    });
+    const social = createSocialService(prisma, { telegram: transport });
+    await social.connectTelegram(owner.userId, owner.workspaceId, {
+      token: BOT_TOKEN,
+      chatId: "https://t.me/dom_po_polochkam",
+      projectId: owner.projectId,
+    });
+    const mp4 = await encodeSlideshowMp4({ frames: [png, png], seconds: 4, aspect: "9:16" });
+    const media = createMediaService(prisma, createLocalStorage(storageDir));
+    const asset = await media.upload(owner.userId, owner.workspaceId, {
+      filename: "clip.mp4",
+      declaredType: "video/mp4",
+      bytes: mp4,
+    });
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Ролик");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Ролик",
+      body: "Как сложить банки.",
+      platforms: ["telegram"],
+      mediaIds: [asset.id],
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: {
+        get: () => createTelegramAdapter({ db: prisma, transport, storage: createLocalStorage(storageDir) }),
+      },
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-tg-video");
+    const video = transport.calls.find((item) => item.method === "sendVideo");
+    expect(video?.fileName).toBe("video.mp4");
+    expect(String(video?.body?.caption)).toContain("Как сложить банки.");
+    expect(transport.calls.some((item) => item.method === "sendPhoto")).toBe(false);
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
+  });
+
   it("publishes a Telegram album when the post has several photos", async () => {
     const owner = await registerOwner("soc-tg-album");
     const transport = scriptedTelegram({
@@ -711,6 +760,57 @@ describe("social accounts", () => {
       "photos.saveWallPhoto",
       "wall.post",
     ]);
+  });
+
+  it("uploads a video and attaches it to wall.post", async () => {
+    const owner = await registerOwner("soc-vk-video");
+    const transport = scriptedVk({
+      "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
+      "video.save": (params) => {
+        expect(params.group_id).toBe(242155421);
+        return {
+          ok: true,
+          response: { upload_url: "https://upload.vk.test/video", vid: 77, owner_id: -242155421 },
+        };
+      },
+      "wall.post": (params) => {
+        if (!String(params.message ?? "").trim()) {
+          return { ok: false, error_code: 100, error_msg: "message is empty" };
+        }
+        expect(params.attachments).toBe("video-242155421_77");
+        return { ok: true, response: { post_id: 21 } };
+      },
+    });
+    const social = createSocialService(prisma, { vk: transport });
+    await social.connectVk(owner.userId, owner.workspaceId, {
+      token: VK_COMMUNITY_TOKEN,
+      source: "https://vk.com/club242155421",
+    });
+    const mp4 = await encodeSlideshowMp4({ frames: [png, png], seconds: 4, aspect: "9:16" });
+    const media = createMediaService(prisma, createLocalStorage(storageDir));
+    const asset = await media.upload(owner.userId, owner.workspaceId, {
+      filename: "clip.mp4",
+      declaredType: "video/mp4",
+      bytes: mp4,
+    });
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Ролик");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Ролик",
+      body: "Как сложить банки.",
+      platforms: ["vk"],
+      mediaIds: [asset.id],
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createVkAdapter({ db: prisma, transport, storage: createLocalStorage(storageDir) }) },
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-vk-video");
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
+    expect(transport.methods).toContain("video.save");
+    expect(transport.methods).toContain("uploadVideo");
+    expect(transport.uploads[0]?.filename).toBe("video.mp4");
   });
 
   it("asks VK for a fresh wall upload URL for every carousel photo", async () => {

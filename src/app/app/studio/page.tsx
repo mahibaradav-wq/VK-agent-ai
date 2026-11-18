@@ -97,6 +97,7 @@ export default async function StudioPage({
                     lastError: post.targets.find((target) => target.lastError)?.lastError ?? "",
                     platforms: post.targets.map((target) => target.platform),
                     mediaIds: post.media.map((item) => item.mediaId),
+                    mediaTypes: post.media.map((item) => item.media.mimeType),
                     variants: parseVariants(version?.variantsJson),
                   }}
                 />

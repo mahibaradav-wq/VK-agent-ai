@@ -1,4 +1,5 @@
 import { aspectRatioCss } from "@/modules/brand/visual-standard";
+import { isVideoMime } from "@/modules/media/file-validation";
 import { previewPlatforms } from "@/modules/posts/platforms";
 
 export function PostPreview({
@@ -6,6 +7,7 @@ export function PostPreview({
   body,
   platforms,
   mediaUrls,
+  mediaTypes,
   aspect = "4:5",
   copies,
 }: {
@@ -13,6 +15,7 @@ export function PostPreview({
   body: string;
   platforms: string[];
   mediaUrls: string[];
+  mediaTypes?: string[];
   aspect?: string;
   copies?: Record<string, { title: string; body: string }>;
 }) {
@@ -36,13 +39,17 @@ export function PostPreview({
           </p>
           {mediaUrls.length ? (
             <div className="mt-3 grid gap-2">
-              {mediaUrls.map((url) => (
+              {mediaUrls.map((url, index) => (
                 <div
                   key={url}
                   className="overflow-hidden rounded-2xl bg-[#F3EEE5]"
                   style={{ aspectRatio: aspectRatioCss(mediaAspect) }}
                 >
-                  <img src={url} alt="" className="h-full w-full object-contain" />
+                  {isVideoMime(mediaTypes?.[index] ?? "") ? (
+                    <video src={url} controls playsInline muted className="h-full w-full object-contain" />
+                  ) : (
+                    <img src={url} alt="" className="h-full w-full object-contain" />
+                  )}
                 </div>
               ))}
             </div>

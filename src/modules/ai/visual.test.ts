@@ -52,10 +52,13 @@ describe("visual studio helpers", () => {
     expect(agentUsageUnits("image", undefined, 2)).toBe(3);
     expect(agentUsageUnits("carousel", 4)).toBe(5);
     expect(agentUsageUnits("carousel", 4, 2)).toBe(6);
+    expect(agentUsageUnits("video")).toBe(5);
+    expect(agentUsageUnits("video", 8, 2)).toBe(6);
+    expect(agentUsageUnits("video", 4)).toBe(3);
     expect(slideVisualPrompt("base", 1, 3)).toContain("Slide 2 of 3");
   });
 
-  it("keeps video as a live cover-still kind with 9:16", () => {
+  it("keeps video live and sizes it 9:16", () => {
     expect(parseVisualKind("video")).toBe("video");
     expect(isVisualKindLive("video")).toBe(true);
     expect(parseVisualAspect("nope")).toBe("4:5");

@@ -1,10 +1,16 @@
 import { AccessError } from "@/modules/access/permissions";
 
-export const MAX_MEDIA_BYTES = 8 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+export const MAX_VIDEO_BYTES = 32 * 1024 * 1024;
+export const MAX_MEDIA_BYTES = MAX_IMAGE_BYTES;
 
-export const allowedMediaTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"] as const;
+export const allowedMediaTypes = ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4"] as const;
 
 export type AllowedMediaType = (typeof allowedMediaTypes)[number];
+
+export function isVideoMime(mime: string) {
+  return mime === "video/mp4";
+}
 
 const magicChecks: Array<{ mime: AllowedMediaType; match: (bytes: Uint8Array) => boolean }> = [
   {
@@ -38,6 +44,10 @@ const magicChecks: Array<{ mime: AllowedMediaType; match: (bytes: Uint8Array) =>
       Buffer.from(bytes.slice(0, 4)).toString("ascii") === "RIFF" &&
       Buffer.from(bytes.slice(8, 12)).toString("ascii") === "WEBP",
   },
+  {
+    mime: "video/mp4",
+    match: (bytes) => bytes.length > 12 && Buffer.from(bytes.slice(4, 8)).toString("ascii") === "ftyp",
+  },
 ];
 
 function looksLikeTextOrMarkup(bytes: Uint8Array) {
@@ -61,8 +71,10 @@ export function validateMediaFile(input: { bytes: Uint8Array; filename: string; 
     throw new AccessError(400, "Пустой файл нельзя загрузить.");
   }
 
-  if (input.bytes.byteLength > MAX_MEDIA_BYTES) {
-    throw new AccessError(400, "Файл больше 8 МБ.");
+  const detectedEarly = magicChecks.find((check) => check.match(input.bytes))?.mime;
+  const maxBytes = detectedEarly === "video/mp4" ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+  if (input.bytes.byteLength > maxBytes) {
+    throw new AccessError(400, detectedEarly === "video/mp4" ? "Файл больше 32 МБ." : "Файл больше 8 МБ.");
   }
 
   if (looksLikeTextOrMarkup(input.bytes)) {
@@ -84,6 +96,7 @@ export function validateMediaFile(input: { bytes: Uint8Array; filename: string; 
     "image/png": ["png"],
     "image/webp": ["webp"],
     "image/gif": ["gif"],
+    "video/mp4": ["mp4", "m4v"],
   };
 
   if (extension && !extensionMap[detected].includes(extension)) {

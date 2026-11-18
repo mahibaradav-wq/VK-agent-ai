@@ -85,11 +85,17 @@ export type VkSavedDoc = {
   owner_id: number;
 };
 
+export type VkVideoUploadResult = {
+  video_id: number;
+  owner_id: number;
+};
+
 export type VkTransport = {
   call: (token: string, method: string, params?: Record<string, string | number>) => Promise<VkApiResult<unknown>>;
   uploadWallPhoto?: (uploadUrl: string, file: VkWallUploadFile) => Promise<VkApiResult<VkWallUploadResult>>;
   uploadAlbumPhoto?: (uploadUrl: string, file: VkWallUploadFile) => Promise<VkApiResult<VkAlbumUploadResult>>;
   uploadDocument?: (uploadUrl: string, file: VkWallUploadFile) => Promise<VkApiResult<VkDocUploadResult>>;
+  uploadVideo?: (uploadUrl: string, file: VkWallUploadFile) => Promise<VkApiResult<VkVideoUploadResult>>;
 };
 
 type VkJson = {
@@ -307,6 +313,31 @@ export function extractSavedWallPhoto(response: unknown): VkSavedWallPhoto | nul
   return { id, owner_id: ownerId };
 }
 
+export function extractSavedVideo(response: unknown): VkVideoUploadResult | null {
+  if (!response || typeof response !== "object") {
+    return null;
+  }
+  const body = response as { video_id?: unknown; vid?: unknown; owner_id?: unknown };
+  const idRaw = body.video_id ?? body.vid;
+  const id = typeof idRaw === "number" ? idRaw : Number(idRaw);
+  const ownerId = typeof body.owner_id === "number" ? body.owner_id : Number(body.owner_id);
+  if (!Number.isFinite(id) || !Number.isFinite(ownerId) || id === 0 || ownerId === 0) {
+    return null;
+  }
+  return { video_id: id, owner_id: ownerId };
+}
+
+function parseVideoUploadPayload(payload: unknown): VkVideoUploadResult | null {
+  const extracted = extractSavedVideo(payload);
+  if (extracted) {
+    return extracted;
+  }
+  if (payload && typeof payload === "object" && "size" in payload) {
+    return { video_id: 0, owner_id: 0 };
+  }
+  return null;
+}
+
 export function extractSavedDoc(response: unknown): VkSavedDoc | null {
   const body = response && typeof response === "object" ? (response as { doc?: unknown; type?: unknown }) : null;
   const raw =
@@ -446,6 +477,28 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
           ok: false,
           error_code: 0,
           error_msg: networkErrorMessage("Сеть до загрузчика документов VK недоступна.", error),
+        };
+      }
+    },
+    async uploadVideo(uploadUrl, file) {
+      try {
+        const encoded = encodeMultipartFile("video_file", file);
+        const response = await postUpload(uploadUrl, encoded);
+        const { json, text } = await readUploadJson(response);
+        const uploaded = parseVideoUploadPayload(json);
+        if (!uploaded) {
+          return {
+            ok: false,
+            error_code: 0,
+            error_msg: `VK не принял ролик.${text ? ` Ответ: ${text.slice(0, 160)}` : ""}`,
+          };
+        }
+        return { ok: true, response: uploaded };
+      } catch (error) {
+        return {
+          ok: false,
+          error_code: 0,
+          error_msg: networkErrorMessage("Сеть до загрузчика видео VK недоступна.", error),
         };
       }
     },

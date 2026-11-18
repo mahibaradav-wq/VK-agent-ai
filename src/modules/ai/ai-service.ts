@@ -4,14 +4,18 @@ import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions"
 import { OPENAI_IMAGE_REGION_MESSAGE, OPENAI_REGION_MESSAGE, isOpenAiRegionError } from "@/server/ai/errors";
 import { createAccessService } from "@/modules/access/access-service";
 import { parseKind, parseLength, parseTone } from "@/modules/ai/kinds";
+import { encodeSlideshowMp4 } from "@/modules/ai/video-encode";
 import {
   agentUsageUnits,
+  defaultVideoSeconds,
   imageSizeForAspect,
   parseCarouselCount,
+  parseVideoSeconds,
   parseVisualAspect,
   parseVisualKind,
   prepareVisualPrompt,
   slideVisualPrompt,
+  videoFrameCount,
 } from "@/modules/ai/visual";
 import { createAiConnectionService } from "@/modules/ai/provider-service";
 import { getWorkspacePlanLimits } from "@/modules/billing/plans";
@@ -435,6 +439,7 @@ export function createAiService(
         visualAspect?: string;
         visualPrompt?: string;
         carouselCount?: string | number;
+        videoSeconds?: string | number;
         shopProductId?: string;
       },
     ) {
@@ -456,8 +461,14 @@ export function createAiService(
       );
       const visualKind = parseVisualKind(input.visualKind ?? "image");
       const visualAspect = parseVisualAspect(input.visualAspect ?? "", visualKind);
-      const slideCount = parseCarouselCount(input.carouselCount, visualKind);
-      const usageUnits = agentUsageUnits(visualKind, slideCount, publishPlatforms.length);
+      const videoSeconds = parseVideoSeconds(input.videoSeconds);
+      const slideCount =
+        visualKind === "video" ? videoFrameCount(videoSeconds) : parseCarouselCount(input.carouselCount, visualKind);
+      const usageUnits = agentUsageUnits(
+        visualKind,
+        visualKind === "video" ? videoSeconds : input.carouselCount,
+        publishPlatforms.length,
+      );
 
       const copy = await providerFor(workspaceId, "copy");
       const imageProvider = await providerFor(workspaceId, "image");
@@ -496,6 +507,8 @@ export function createAiService(
         at,
         visualKind === "carousel"
           ? `Агенту нужны ${usageUnits} генерации (${publishPlatforms.length > 1 ? "тексты Telegram и ВК" : "текст"} и ${slideCount} карточек). Лимит AI на месяц исчерпан (${limit}).`
+          : visualKind === "video"
+            ? `Агенту нужны ${usageUnits} генерации (${publishPlatforms.length > 1 ? "тексты Telegram и ВК" : "текст"} и ${slideCount} кадров ролика ${videoSeconds} с). Лимит AI на месяц исчерпан (${limit}).`
           : publishPlatforms.length > 1
             ? `Агенту нужны ${usageUnits} генерации (текст Telegram, текст ВК и визуал). Лимит AI на месяц исчерпан (${limit}).`
             : `Агенту нужны две генерации (текст и визуал). Лимит AI на месяц исчерпан (${limit}).`,
@@ -549,7 +562,7 @@ export function createAiService(
           visualAspect,
           visualPrompt: input.visualPrompt,
         });
-        const assets = [];
+        const frames = [];
         let imageModel = "";
         for (let index = 0; index < slideCount; index += 1) {
           const image = await callWithFallback(workspaceId, "image", (item) =>
@@ -559,13 +572,32 @@ export function createAiService(
             }),
           );
           imageModel = image.model;
+          frames.push(image);
+        }
+        const assets = [];
+        if (visualKind === "video") {
+          const mp4 = await encodeSlideshowMp4({
+            frames: frames.map((item) => item.bytes),
+            seconds: videoSeconds,
+            aspect: visualAspect,
+          });
           assets.push(
             await media.upload(userId, workspaceId, {
-              filename: `agent-visual-${index + 1}.${extensionForMime(image.mimeType)}`,
-              declaredType: image.mimeType,
-              bytes: image.bytes,
+              filename: "agent-video.mp4",
+              declaredType: "video/mp4",
+              bytes: mp4,
             }),
           );
+        } else {
+          for (const [index, image] of frames.entries()) {
+            assets.push(
+              await media.upload(userId, workspaceId, {
+                filename: `agent-visual-${index + 1}.${extensionForMime(image.mimeType)}`,
+                declaredType: image.mimeType,
+                bytes: image.bytes,
+              }),
+            );
+          }
         }
         const mediaIds = assets.map((asset) => asset.id);
         const coverId = mediaIds[0] ?? "";
@@ -650,7 +682,8 @@ export function createAiService(
       }
       const rewriteText = input.rewrite !== "visual";
       const rewriteVisual = input.rewrite !== "text";
-      const slideCount = Math.max(1, post.media.length);
+      const existingVideo = post.media.some((item) => item.media.mimeType === "video/mp4");
+      const slideCount = existingVideo ? videoFrameCount(defaultVideoSeconds) : Math.max(1, post.media.length);
       const platforms = defaultPublishPlatforms(post.targets.map((target) => target.platform));
       const usageUnits = (rewriteText ? platforms.length : 0) + (rewriteVisual ? slideCount : 0);
       const at = now();
@@ -702,29 +735,50 @@ export function createAiService(
           if (!storageDriver.ready) {
             throw new AccessError(400, storageDriver.setupMessage ?? "Хранилище не настроено.");
           }
-          const visualKind = slideCount > 1 ? "carousel" : "image";
+          const visualKind = existingVideo ? "video" : slideCount > 1 ? "carousel" : "image";
+          const visualAspect = existingVideo ? "9:16" : "4:5";
           const baseVisualPrompt = prepareVisualPrompt({
             brief: comment,
             kind: visualKind,
-            aspect: "4:5",
+            aspect: visualAspect,
             title,
             body,
           });
-          const assets = [];
+          const frames = [];
           for (let index = 0; index < slideCount; index += 1) {
-            const image = await callWithFallback(workspaceId, "image", (item) =>
-              item.generateImage({
-                prompt: slideVisualPrompt(baseVisualPrompt, index, slideCount),
-                size: imageSizeForAspect("4:5"),
-              }),
+            frames.push(
+              await callWithFallback(workspaceId, "image", (item) =>
+                item.generateImage({
+                  prompt: slideVisualPrompt(baseVisualPrompt, index, slideCount),
+                  size: imageSizeForAspect(visualAspect),
+                }),
+              ),
             );
+          }
+          const assets = [];
+          if (existingVideo) {
+            const mp4 = await encodeSlideshowMp4({
+              frames: frames.map((item) => item.bytes),
+              seconds: defaultVideoSeconds,
+              aspect: visualAspect,
+            });
             assets.push(
               await media.upload(userId, workspaceId, {
-                filename: `studio-visual-${index + 1}.${extensionForMime(image.mimeType)}`,
-                declaredType: image.mimeType,
-                bytes: image.bytes,
+                filename: "studio-video.mp4",
+                declaredType: "video/mp4",
+                bytes: mp4,
               }),
             );
+          } else {
+            for (const [index, image] of frames.entries()) {
+              assets.push(
+                await media.upload(userId, workspaceId, {
+                  filename: `studio-visual-${index + 1}.${extensionForMime(image.mimeType)}`,
+                  declaredType: image.mimeType,
+                  bytes: image.bytes,
+                }),
+              );
+            }
           }
           mediaIds.splice(0, mediaIds.length, ...assets.map((asset) => asset.id));
         }

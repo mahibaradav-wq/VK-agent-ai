@@ -41,9 +41,14 @@ export const defaultCarouselCount: CarouselCount = 3;
 export const minCarouselCount = 2;
 export const maxCarouselCount = 10;
 
+export const videoSecondsOptions = [4, 8, 12] as const;
+export type VideoSeconds = (typeof videoSecondsOptions)[number];
+export const defaultVideoSeconds: VideoSeconds = 8;
+
 const kindHints: Record<VisualKind, string> = {
   image: "Create one realistic photograph of a small kitchen or home storage scene.",
-  video: "Create a still opening frame for a short vertical video of a real organizing action. This is a cover still, not an MP4.",
+  video:
+    "Create one still from a short kitchen organizing clip: realistic photo, same kitchen and light as the other shots, one clear action. This frame will be assembled into an MP4 with the rest of the set. Not a poster, not text-heavy.",
   carousel: "Create one slide of a carousel series: one problem or useful result, empty space for later layout, identical frame to the rest of the set.",
   infographic: "Create one infographic card: one idea, large shapes, at most three short labels. Types allowed: steps, placement scheme, before/after, size table, checklist, storage zones, mistakes vs fixes.",
 };
@@ -75,8 +80,24 @@ export function parseCarouselCount(value: string | number | undefined, kind?: Vi
   return Math.min(maxCarouselCount, Math.max(minCarouselCount, Math.round(parsed)));
 }
 
-export function agentUsageUnits(kind: VisualKind, carouselCount?: string | number, copyCount = 1) {
-  return Math.max(1, copyCount) + parseCarouselCount(carouselCount, kind);
+export function parseVideoSeconds(value: string | number | undefined): VideoSeconds {
+  const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? "").trim(), 10);
+  return (videoSecondsOptions as readonly number[]).includes(parsed) ? (parsed as VideoSeconds) : defaultVideoSeconds;
+}
+
+export function videoFrameCount(seconds: string | number | undefined): number {
+  return parseVideoSeconds(seconds) / 2;
+}
+
+export function parseVisualAssetCount(kind: VisualKind, count?: string | number): number {
+  if (kind === "video") {
+    return videoFrameCount(count);
+  }
+  return parseCarouselCount(count, kind);
+}
+
+export function agentUsageUnits(kind: VisualKind, count?: string | number, copyCount = 1) {
+  return Math.max(1, copyCount) + parseVisualAssetCount(kind, count);
 }
 
 export function slideVisualPrompt(base: string, index: number, total: number) {

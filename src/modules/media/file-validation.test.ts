@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { AccessError } from "@/modules/access/permissions";
+import { encodeSlideshowMp4 } from "@/modules/ai/video-encode";
 import { detectMediaType, validateMediaFile } from "@/modules/media/file-validation";
 
 const png = Buffer.from(
@@ -23,6 +24,13 @@ describe("media file validation", () => {
     expect(() => validateMediaFile({ bytes: html, filename: "shot.png", declaredType: "image/png" })).toThrow(
       /не поддерживается/,
     );
+  });
+
+  it("accepts a real MP4", async () => {
+    const mp4 = await encodeSlideshowMp4({ frames: [png, png], seconds: 4, aspect: "9:16" });
+    const result = validateMediaFile({ bytes: mp4, filename: "clip.mp4", declaredType: "video/mp4" });
+    expect(result.mimeType).toBe("video/mp4");
+    expect(detectMediaType(mp4)).toBe("video/mp4");
   });
 
   it("rejects SVG and empty files", () => {

@@ -1,12 +1,13 @@
 import type { PrismaClient } from "@prisma/client";
 
-import { detectMediaType } from "@/modules/media/file-validation";
+import { detectMediaType, isVideoMime } from "@/modules/media/file-validation";
 import { parseShopPrice, withProductLink } from "@/modules/products/shop-labels";
 import { decryptToken } from "@/server/crypto/token-cipher";
 import {
   createVkTransport,
   describeVkApiError,
   extractSavedDoc,
+  extractSavedVideo,
   extractSavedWallPhoto,
   isGroupAuthUnavailable,
   unpackVkTokens,
@@ -160,7 +161,7 @@ async function readImageFiles(options: {
         failure: {
           kind: "permanent_failure",
           code: "media_type",
-          message: "Во ВК можно прикрепить только изображение JPEG, PNG, GIF или WebP.",
+          message: "Во ВК можно прикрепить JPEG, PNG, GIF, WebP или MP4.",
         },
       };
     }
@@ -499,6 +500,77 @@ async function attachWallPhotos(options: {
   return { attachments: [] };
 }
 
+async function attachWallVideo(options: {
+  transport: VkTransport;
+  token: string;
+  groupId: number;
+  title?: string;
+  file: { bytes: Uint8Array; mimeType: string };
+}): Promise<{ attachments: string[]; failure?: PublishOutcome; blocked?: boolean }> {
+  const uploadVideo = options.transport.uploadVideo;
+  if (!uploadVideo) {
+    return {
+      attachments: [],
+      failure: {
+        kind: "permanent_failure",
+        code: "vk_upload_unavailable",
+        message: "Загрузка ролика во ВК недоступна на этом сервере.",
+      },
+    };
+  }
+
+  const saved = await options.transport.call(options.token, "video.save", {
+    group_id: options.groupId,
+    name: options.title?.trim().slice(0, 128) || "Ролик",
+    wallpost: 0,
+  });
+  if (!saved.ok) {
+    if (isGroupAuthUnavailable(saved) || saved.error_code === 15 || saved.error_code === 200) {
+      return { attachments: [], blocked: true };
+    }
+    return { attachments: [], failure: mapVkFailure(saved, "upload") };
+  }
+
+  const uploadUrl = extractUploadUrl(saved.response);
+  const fromSave = extractSavedVideo(saved.response);
+  if (!uploadUrl) {
+    return {
+      attachments: [],
+      failure: {
+        kind: "permanent_failure",
+        code: "vk_upload_url",
+        message: "VK не выдал адрес загрузки ролика. В ключе сообщества нужно право «Видеозаписи».",
+      },
+    };
+  }
+
+  const uploaded = await uploadVideo(uploadUrl, {
+    filename: "video.mp4",
+    bytes: options.file.bytes,
+    mimeType: "video/mp4",
+  });
+  if (!uploaded.ok) {
+    return { attachments: [], failure: mapVkFailure(uploaded, "upload") };
+  }
+
+  const video =
+    uploaded.response.video_id && uploaded.response.owner_id
+      ? uploaded.response
+      : fromSave;
+  if (!video || !video.video_id || !video.owner_id) {
+    return {
+      attachments: [],
+      failure: {
+        kind: "permanent_failure",
+        code: "vk_video_save",
+        message: "VK принял ролик, но не вернул вложение для стены.",
+      },
+    };
+  }
+
+  return { attachments: [`video${video.owner_id}_${video.video_id}`] };
+}
+
 export function createVkAdapter(options: {
   db: PrismaClient;
   transport?: VkTransport;
@@ -563,15 +635,30 @@ export function createVkAdapter(options: {
       const token = tokens.community || packed;
 
       const groupId = groupIdFromOwner(ownerId);
-      const attached = await attachWallPhotos({
-        transport,
-        storage,
-        token,
-        photoToken: tokens.photo,
-        groupId,
-        title: input.title,
-        mediaKeys: input.mediaKeys,
-      });
+      const media = input.mediaKeys.length
+        ? await readImageFiles({ storage, mediaKeys: input.mediaKeys })
+        : { files: [] as Array<{ bytes: Uint8Array; mimeType: string }> };
+      if (media.failure) {
+        return media.failure;
+      }
+      const video = media.files.find((item) => isVideoMime(item.mimeType));
+      const attached = video
+        ? await attachWallVideo({
+            transport,
+            token,
+            groupId,
+            title: input.title,
+            file: video,
+          })
+        : await attachWallPhotos({
+            transport,
+            storage,
+            token,
+            photoToken: tokens.photo,
+            groupId,
+            title: input.title,
+            mediaKeys: input.mediaKeys,
+          });
       if (attached.failure) {
         return attached.failure;
       }

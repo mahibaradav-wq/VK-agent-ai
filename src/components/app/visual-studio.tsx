@@ -10,15 +10,20 @@ import {
   aspectLabel,
   carouselCounts,
   defaultCarouselCount,
+  defaultVideoSeconds,
   defaultVisualAspect,
   isVisualKindLive,
   parseCarouselCount,
+  parseVideoSeconds,
   parseVisualAspect,
   prepareVisualPrompt,
+  videoFrameCount,
+  videoSecondsOptions,
   visualAspectsByKind,
   visualKindLabels,
   visualKinds,
   type CarouselCount,
+  type VideoSeconds,
   type VisualAspect,
   type VisualKind,
 } from "@/modules/ai/visual";
@@ -58,6 +63,7 @@ export function VisualStudio({
   const [kind, setKind] = useState<VisualKind>("image");
   const [aspect, setAspect] = useState<VisualAspect>(defaultVisualAspect("image"));
   const [carouselCount, setCarouselCount] = useState<CarouselCount>(defaultCarouselCount);
+  const [videoSeconds, setVideoSeconds] = useState<VideoSeconds>(defaultVideoSeconds);
   const [visualPrompt, setVisualPrompt] = useState("");
   const [prepareHint, setPrepareHint] = useState("");
   const [checkState, setCheckState] = useState<AiFormState>(idle);
@@ -66,7 +72,7 @@ export function VisualStudio({
   const live = isVisualKindLive(kind);
   const aspects = visualAspectsByKind[kind];
   const slideCount = parseCarouselCount(carouselCount, kind);
-  const needed = agentUsageUnits(kind, carouselCount, copyCount);
+  const needed = agentUsageUnits(kind, kind === "video" ? videoSeconds : carouselCount, copyCount);
   const missing: string[] = [];
   if (!imageReady) {
     missing.push("подключение генератора картинок");
@@ -84,19 +90,20 @@ export function VisualStudio({
       if (!raw) {
         return;
       }
-      const saved = JSON.parse(raw) as { kind?: string; aspect?: string; carouselCount?: number };
+      const saved = JSON.parse(raw) as { kind?: string; aspect?: string; carouselCount?: number; videoSeconds?: number };
       const nextKind = visualKinds.includes(saved.kind as VisualKind) ? (saved.kind as VisualKind) : "image";
       setKind(nextKind);
       setAspect(parseVisualAspect(saved.aspect ?? "", nextKind));
       setCarouselCount(parseCarouselCount(saved.carouselCount, "carousel") as CarouselCount);
+      setVideoSeconds(parseVideoSeconds(saved.videoSeconds));
     } catch {
       // Keep defaults if the browser storage is empty or damaged.
     }
   }, [workspaceId]);
 
   useEffect(() => {
-    window.localStorage.setItem(settingsKey(workspaceId), JSON.stringify({ kind, aspect, carouselCount }));
-  }, [aspect, carouselCount, kind, workspaceId]);
+    window.localStorage.setItem(settingsKey(workspaceId), JSON.stringify({ kind, aspect, carouselCount, videoSeconds }));
+  }, [aspect, carouselCount, kind, videoSeconds, workspaceId]);
 
   useEffect(() => {
     onLiveChange?.(live);
@@ -153,6 +160,7 @@ export function VisualStudio({
       </div>
       <input type="hidden" name="visualKind" value={kind} />
       <input type="hidden" name="carouselCount" value={String(slideCount)} />
+      <input type="hidden" name="videoSeconds" value={String(videoSeconds)} />
 
       {kind === "carousel" ? (
         <div className="grid gap-2">
@@ -175,10 +183,40 @@ export function VisualStudio({
         </div>
       ) : null}
 
+      {kind === "video" ? (
+        <div className="grid gap-2">
+          <p className="text-sm font-medium text-ink">Длина ролика</p>
+          <p className="text-sm text-ink/60">
+            ChatGPT больше не рисует видео сам. Студия берёт {videoFrameCount(videoSeconds)} кадра кухни и собирает MP4{" "}
+            {videoSeconds} секунд. Это не нейросеть-ролик, файл настоящий.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {videoSecondsOptions.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setVideoSeconds(item)}
+                className={`min-h-11 rounded-full px-4 text-sm font-semibold ring-1 ${
+                  videoSeconds === item ? "bg-ink text-white ring-ink" : "bg-white text-ink ring-ink/10"
+                }`}
+              >
+                {item} с
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <dl className="grid gap-2 text-sm text-ink/80">
         <div className="grid gap-1 sm:grid-cols-[10rem_1fr]">
           <dt className="font-medium text-ink">Создаётся сейчас</dt>
-          <dd>{pending ? "агент пишет текст и рисует картинку" : "ещё не создано. Файл сохранится в медиатеку проекта"}</dd>
+          <dd>
+            {pending
+              ? kind === "video"
+                ? "агент пишет текст, рисует кадры и собирает MP4"
+                : "агент пишет текст и рисует картинку"
+              : "ещё не создано. Файл сохранится в медиатеку проекта"}
+          </dd>
         </div>
         <div className="grid gap-1 sm:grid-cols-[10rem_1fr]">
           <dt className="font-medium text-ink">Подготавливается</dt>
@@ -206,8 +244,8 @@ export function VisualStudio({
 
       {kind === "video" ? (
         <StatusBanner tone="info">
-          MP4 агент не собирает: нет отдельного видео-API. Получится обложка первого кадра 9:16 или 16:9 — публикация только
-          после вашей проверки.
+          Ролик {videoSeconds} с, {videoFrameCount(videoSeconds)} кадра, формат {aspect}. Sora у ChatGPT закрыт — клеим кадры
+          в MP4 на сервере. Telegram получит видео, ВК — если у ключа клуба есть право «Видеозаписи».
         </StatusBanner>
       ) : kind === "carousel" ? (
         <StatusBanner tone="info">
@@ -241,7 +279,8 @@ export function VisualStudio({
         <p className="mt-1 text-sm text-ink/60">
           Формат {aspectLabel(aspect)}. Модель отдаёт ближайший кадр ChatGPT, предпросмотр держит выбранные пропорции без
           обрезки. Агент берёт {needed} генерации из лимита {used}/{limit}
-          {kind === "carousel" ? ` · ${slideCount} карточек` : ""}.
+          {kind === "carousel" ? ` · ${slideCount} карточек` : ""}
+          {kind === "video" ? ` · ролик ${videoSeconds} с` : ""}.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {aspects.map((item) => (
