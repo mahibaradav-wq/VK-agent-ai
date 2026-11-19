@@ -140,7 +140,7 @@ export function SubscriptionBoard({
           <Card key={label}>
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">{label}</p>
             <p className="mt-2 text-2xl font-black text-ink">
-              {meter.used}/{meter.limit}
+              {meter.limit <= 0 ? `${meter.used} · без лимита` : `${meter.used}/${meter.limit}`}
             </p>
           </Card>
         ))}

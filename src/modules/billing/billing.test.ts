@@ -4,7 +4,7 @@ import { AccessError } from "@/modules/access/permissions";
 import { createAuthService } from "@/modules/auth/auth-service";
 import { createBillingService } from "@/modules/billing/billing-service";
 import { attachFreeSubscription, ensureCanonicalPlans } from "@/modules/billing/plans";
-import { reserveUsage } from "@/modules/billing/usage";
+import { getUsage, reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
 import { createProjectService } from "@/modules/projects/project-service";
 import { createWorkspaceService } from "@/modules/workspaces/workspace-service";
 import { prisma } from "@/server/db/prisma";
@@ -241,6 +241,16 @@ describe("billing and subscriptions", () => {
     );
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(3);
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(5);
+  });
+
+  it("does not cap AI usage when the monthly limit is unlimited", async () => {
+    const owner = await registerOwner("bill-unlim");
+    for (let index = 0; index < 6; index += 1) {
+      await reserveUsage(prisma, owner.workspaceId, USAGE_METRICS.ai, 0, new Date(), "лимит не должен сработать");
+    }
+    const usage = await getUsage(prisma, owner.workspaceId, USAGE_METRICS.ai, new Date(), 0);
+    expect(usage.used).toBe(6);
+    expect(usage.limit).toBe(0);
   });
 
   it("blocks a Viewer from starting checkout and a foreign workspace from reading billing state", async () => {

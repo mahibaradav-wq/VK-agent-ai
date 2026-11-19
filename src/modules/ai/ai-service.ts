@@ -18,7 +18,6 @@ import {
   videoFrameCount,
 } from "@/modules/ai/visual";
 import { createAiConnectionService } from "@/modules/ai/provider-service";
-import { getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { getUsage, releaseUsage, reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
 import { createMediaService } from "@/modules/media/media-service";
 import { defaultPublishPlatforms, parsePlatforms, parseStoredPlatforms } from "@/modules/posts/platforms";
@@ -80,7 +79,7 @@ function visualPromptForCopy(input: {
   });
 }
 
-const DEFAULT_MONTHLY_LIMIT = 50;
+const DEFAULT_MONTHLY_LIMIT = 0;
 
 export type PublicAiRequest = {
   id: string;
@@ -152,7 +151,7 @@ export function createAiService(
   const media = createMediaService(db, storageDriver);
   const connections = options?.connections ?? createAiConnectionService(db);
   const injected = options?.provider;
-  const monthlyLimit = options?.monthlyLimit ?? Number(process.env.AI_MONTHLY_LIMIT ?? DEFAULT_MONTHLY_LIMIT);
+  const monthlyLimit = options?.monthlyLimit ?? DEFAULT_MONTHLY_LIMIT;
   const now = options?.now ?? (() => new Date());
 
   async function providerFor(workspaceId: string, role: "ideas" | "copy" | "image" = "copy") {
@@ -214,15 +213,11 @@ export function createAiService(
     return row;
   }
 
-  async function resolveLimit(workspaceId: string) {
+  async function resolveLimit(_workspaceId: string) {
     if (options?.monthlyLimit != null) {
       return options.monthlyLimit;
     }
-    try {
-      return (await getWorkspacePlanLimits(db, workspaceId, now())).aiGenerations;
-    } catch {
-      return monthlyLimit;
-    }
+    return monthlyLimit;
   }
 
   return {
