@@ -21,6 +21,7 @@ import {
   extractVkGroup,
   isVkAccessToken,
   packVkTokens,
+  unpackVkTokens,
   type VkTransport,
 } from "@/server/social/vk-api";
 
@@ -476,7 +477,17 @@ export function createSocialService(
         );
       }
 
-      const photoToken = input.photoToken?.trim() ?? "";
+      let photoToken = input.photoToken?.trim() ?? "";
+      if (!photoToken && input.accountId) {
+        const existing = await db.socialAccount.findUnique({ where: { id: input.accountId } });
+        if (existing?.encryptedToken) {
+          try {
+            photoToken = unpackVkTokens(decryptToken(existing.encryptedToken)).photo;
+          } catch {
+            photoToken = "";
+          }
+        }
+      }
       if (photoToken) {
         if (!isVkAccessToken(photoToken)) {
           throw new AccessError(

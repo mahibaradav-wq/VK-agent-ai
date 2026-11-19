@@ -146,10 +146,11 @@ export function StudioWorkingCard({
       {card.status === "failed" && card.lastError ? (
         <StatusBanner tone="warning">{card.lastError}</StatusBanner>
       ) : null}
-      {platforms.includes("vk") && card.mediaIds.length > 1 && !vkCarouselReady ? (
+      {platforms.includes("vk") && card.mediaIds.length > 0 && !vkCarouselReady ? (
         <StatusBanner tone="warning">
-          Ключ клуба не загружает новые фото в альбом стены. Текст в ВК и пост в Telegram уйдут, карусели на стене не
-          будет. В Подключениях добавьте пользовательский ключ админа с правом «Фотографии».
+          Ключ клуба не кладёт новую картинку на стену как фото — ВК показывает её файлом-ссылкой. Пост в Telegram
+          уйдёт, во ВК публикация остановится, пока в Подключениях нет пользовательского ключа админа с правом
+          «Фотографии».
         </StatusBanner>
       ) : null}
       {message ? <StatusBanner tone={tone}>{message}</StatusBanner> : null}
