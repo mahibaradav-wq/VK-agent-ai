@@ -423,14 +423,27 @@ export function createSocialService(
       await access.requirePermission(userId, workspaceId, "social.connect");
       rejectPassword(input);
 
-      const token = input.token.trim();
+      let token = input.token.trim();
+      let photoToken = input.photoToken?.trim() ?? "";
+      if (!token && photoToken) {
+        token = photoToken;
+      }
       if (!token) {
-        throw new AccessError(400, "Нужен ключ доступа сообщества ВКонтакте с правом «Стена».");
+        throw new AccessError(
+          400,
+          "Нужен ключ ВКонтакте: пользовательский ключ админа клуба с правом «Фотографии» (текст и картинка) или ключ сообщества с правом «Стена» (только текст).",
+        );
       }
       if (!isVkAccessToken(token)) {
         throw new AccessError(
           400,
-          "Это не ключ VK API. Пароль аккаунта не принимается. Нужен ключ сообщества из «Работа с API», не сервисный ключ приложения.",
+          "Это не ключ VK API. Пароль аккаунта не принимается. Нужен ключ админа клуба или ключ сообщества из «Работа с API», не сервисный ключ приложения.",
+        );
+      }
+      if (photoToken && photoToken !== token && !isVkAccessToken(photoToken)) {
+        throw new AccessError(
+          400,
+          "Пользовательский ключ для фото — это ключ VK API админа клуба, не пароль и не ключ сообщества.",
         );
       }
       const parsed = parseVkCommunitySource(input.source);
@@ -477,7 +490,6 @@ export function createSocialService(
         );
       }
 
-      let photoToken = input.photoToken?.trim() ?? "";
       if (!photoToken && input.accountId) {
         const existing = await db.socialAccount.findUnique({ where: { id: input.accountId } });
         if (existing?.encryptedToken) {
@@ -488,13 +500,17 @@ export function createSocialService(
           }
         }
       }
-      if (photoToken) {
-        if (!isVkAccessToken(photoToken)) {
+      if (!photoToken) {
+        const photoProbe = await vk.call(token, "photos.getWallUploadServer", { group_id: group.id });
+        if (photoProbe.ok) {
+          photoToken = token;
+        } else if (photoProbe.error_code === 28) {
           throw new AccessError(
             400,
-            "Пользовательский ключ для фото — это ключ VK API админа клуба, не пароль и не ключ сообщества.",
+            "Это сервисный ключ приложения. Им нельзя писать на стену и грузить фото. Нужен ключ админа клуба или ключ сообщества.",
           );
         }
+      } else {
         const photoProbe = await vk.call(photoToken, "photos.getWallUploadServer", { group_id: group.id });
         if (!photoProbe.ok && photoProbe.error_code !== 0) {
           throw new AccessError(

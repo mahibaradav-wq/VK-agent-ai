@@ -851,6 +851,7 @@ describe("social accounts", () => {
       "groups.getById",
       "wall.post",
       "photos.getWallUploadServer",
+      "photos.getWallUploadServer",
       "uploadWallPhoto",
       "photos.saveWallPhoto",
       "wall.post",
@@ -959,7 +960,7 @@ describe("social accounts", () => {
     });
     const job = await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
     expect(job.status).toBe("completed");
-    expect(transport.methods.filter((method) => method === "photos.getWallUploadServer")).toHaveLength(3);
+    expect(transport.methods.filter((method) => method === "photos.getWallUploadServer")).toHaveLength(4);
     expect(transport.uploads).toHaveLength(3);
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
   });
@@ -1021,6 +1022,72 @@ describe("social accounts", () => {
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
     expect(transport.methods).not.toContain("docs.getWallUploadServer");
     expect(transport.methods).toContain("photos.saveWallPhoto");
+  });
+
+  it("uses a single admin user key for text and a native wall photo", async () => {
+    const owner = await registerOwner("soc-vk-one-key");
+    const transport = scriptedVk({
+      "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
+      "photos.getWallUploadServer": { ok: true, response: { upload_url: "https://upload.vk.test/admin" } },
+      "photos.saveWallPhoto": { ok: true, response: [{ id: 44, owner_id: 9001 }] },
+      "wall.post": (params) => {
+        if (!String(params.message ?? "").trim()) {
+          return { ok: false, error_code: 100, error_msg: "message is empty" };
+        }
+        expect(params.from_group).toBe(1);
+        expect(String(params.attachments)).toBe("photo9001_44");
+        expect(transport.methods).not.toContain("docs.getWallUploadServer");
+        return { ok: true, response: { post_id: 12 } };
+      },
+    });
+    const social = createSocialService(prisma, { vk: transport });
+    const connected = await social.connectVk(owner.userId, owner.workspaceId, {
+      token: VK_PHOTO_USER_TOKEN,
+      source: "https://vk.com/club242155421",
+    });
+    expect(connected.capabilities.some((item) => item.name === "publish_carousel" && item.enabled)).toBe(true);
+    const media = createMediaService(prisma, createLocalStorage(storageDir));
+    const asset = await media.upload(owner.userId, owner.workspaceId, {
+      filename: "cover.png",
+      declaredType: "image/png",
+      bytes: png,
+    });
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Один ключ");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Один ключ",
+      body: "Как Lovable: текст и картинка.",
+      platforms: ["vk"],
+      mediaIds: [asset.id],
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createVkAdapter({ db: prisma, transport, storage: createLocalStorage(storageDir) }) },
+    });
+    const job = await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
+    expect(job.status).toBe("completed");
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
+  });
+
+  it("connects with only the admin photo key", async () => {
+    const owner = await registerOwner("soc-vk-photo-only");
+    const transport = scriptedVk({
+      "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
+      "photos.getWallUploadServer": { ok: true, response: { upload_url: "https://upload.vk.test/admin" } },
+      "wall.post": {
+        ok: false,
+        error_code: 100,
+        error_msg: "message is empty",
+      },
+    });
+    const social = createSocialService(prisma, { vk: transport });
+    const connected = await social.connectVk(owner.userId, owner.workspaceId, {
+      token: "",
+      photoToken: VK_PHOTO_USER_TOKEN,
+      source: "https://vk.com/club242155421",
+    });
+    expect(connected.status).toBe("connected");
+    expect(connected.capabilities.some((item) => item.name === "publish_carousel" && item.enabled)).toBe(true);
   });
 
   it("attaches carousel images from a community album when wall photo upload is blocked", async () => {

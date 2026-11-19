@@ -81,8 +81,8 @@ export function SocialAccountsBoard({
             {account.platform === "vk" ? (
               <p className="text-sm text-ink/70">
                 {account.capabilities.some((item) => item.name === "publish_carousel" && item.enabled)
-                  ? "Фото на стене: пользовательский ключ админа сохранён. Картинка из Студии уйдёт как photo, не как файл."
-                  : "Фото на стене: ключ клуба пишет текст, но новые JPEG кладёт только как документ-ссылку. Для настоящей картинки нужен пользовательский ключ админа с правом «Фотографии»."}
+                  ? "Фото на стене: ключ админа умеет photos.getWallUploadServer. Картинка из Студии уйдёт как photo, не как файл."
+                  : "Фото на стене: ключ клуба пишет текст, но не грузит новое фото (ошибка 27). Вставьте ключ админа клуба с правом «Фотографии» — одним ключом, как в Lovable."}
               </p>
             ) : null}
             {account.lastError ? <p className="text-sm text-ink/60">{account.lastError}</p> : null}
@@ -190,34 +190,33 @@ export function SocialAccountsBoard({
                 {existingVk ? "Обновить ключи ВКонтакте" : "Подключить ВКонтакте"}
               </h2>
               <p className="mt-2 text-sm text-ink/70">
-                Ключ сообщества (Управление → Настройки → Работа с API, право «Стена») пишет текст. Новые фото на стену
-                он не загружает: VK отвечает ошибкой 27 на photos.getWallUploadServer, даже если у ключа есть право
-                «Фотографии». JPEG тогда уходит документом и в ленте выглядит как ссылка на файл. Чтобы картинка была
-                фото, вставьте пользовательский ключ админа этого клуба с правом «Фотографии». Право photos выдаёт
-                поддержка VK: https://vk.ru/support?act=new&from=api. Не сервисный ключ приложения, не ключ наблюдения и
-                не пароль.
+                Как в Lovable: если ключ проходит photos.getWallUploadServer, им же грузим JPEG и пишем wall.post с
+                вложением photo. Это пользовательский ключ админа клуба с правом «Фотографии». Ключ сообщества (Управление
+                → Работа с API) пишет только текст: VK отвечает ошибкой 27 даже с правом «Фотографии». Достаточно одного
+                ключа админа. Второй поле — если хотите оставить ключ клуба для текста отдельно. Не сервисный ключ, не
+                ключ наблюдения и не пароль. Право photos: https://vk.ru/support?act=new&from=api
               </p>
               <form action={vkAction} className="mt-4 grid gap-4">
                 <input type="hidden" name="workspaceId" value={workspaceId} />
                 {existingVk ? <input type="hidden" name="accountId" value={existingVk.id} /> : null}
                 {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
                 <label className="grid gap-2 text-sm font-medium text-ink">
-                  Ключ сообщества
+                  Ключ ВКонтакте
                   <input
                     name="communityToken"
                     type="password"
                     autoComplete="off"
-                    required
+                    placeholder="ключ админа — текст и фото; ключ клуба — только текст"
                     className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
                   />
                 </label>
                 <label className="grid gap-2 text-sm font-medium text-ink">
-                  Пользовательский ключ админа для фото на стене
+                  Отдельный ключ админа для фото
                   <input
                     name="photoToken"
                     type="password"
                     autoComplete="off"
-                    placeholder="без него картинка выйдет файлом-ссылкой, не фото"
+                    placeholder="если в поле выше ключ клуба"
                     className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
                   />
                 </label>

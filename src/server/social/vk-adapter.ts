@@ -10,7 +10,7 @@ import {
   extractSavedVideo,
   extractSavedWallPhoto,
   isGroupAuthUnavailable,
-  unpackVkTokens,
+  resolveVkPublishTokens,
   type VkApiFailure,
   type VkTransport,
 } from "@/server/social/vk-api";
@@ -20,7 +20,7 @@ import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
 const MAX_VK_WALL_PHOTOS = 10;
 const POLKA_ALBUM_TITLE = "Polka Social";
 const VK_PHOTO_TOKEN_MESSAGE =
-  "Картинка не вышла на стену как фото. Ключ сообщества не умеет photos.getWallUploadServer (ошибка 27) и тогда ВК показывает JPEG как файл-ссылку. В Подключениях вставьте пользовательский ключ админа клуба с правом «Фотографии» — wall.post получит photo{owner}_{id}. Право photos: https://vk.ru/support?act=new&from=api";
+  "Картинка не вышла на стену как фото. Ключ сообщества не умеет photos.getWallUploadServer (ошибка 27). В Подключениях вставьте ключ админа клуба с правом «Фотографии» — одним ключом, как в Lovable. Тогда wall.post получит photo{owner}_{id}. Право photos: https://vk.ru/support?act=new&from=api";
 
 export function toVkWallText(text: string) {
   return text
@@ -514,7 +514,7 @@ export function createVkAdapter(options: {
           kind: "permanent_failure",
           code: "integration_not_configured",
           message:
-            "Публикация во ВКонтакте недоступна: подключите ключ доступа сообщества с правом «Стена». Сервисный ключ приложения и пароль не подходят.",
+            "Публикация во ВКонтакте недоступна: подключите ключ админа клуба с правом «Фотографии» или ключ сообщества с правом «Стена». Сервисный ключ приложения и пароль не подходят.",
         };
       }
 
@@ -545,8 +545,15 @@ export function createVkAdapter(options: {
           message: "Ключ сообщества не удалось расшифровать. Подключите аккаунт заново.",
         };
       }
-      const tokens = unpackVkTokens(packed);
-      const token = tokens.community || packed;
+      const tokens = resolveVkPublishTokens(packed);
+      const token = tokens.wall;
+      if (!token) {
+        return {
+          kind: "permanent_failure",
+          code: "token_corrupted",
+          message: "Ключ ВКонтакте не удалось разобрать. Подключите аккаунт заново.",
+        };
+      }
 
       const groupId = groupIdFromOwner(ownerId);
       const media = input.mediaKeys.length

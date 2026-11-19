@@ -154,6 +154,16 @@ export function unpackVkTokens(raw: string) {
   return { community: raw, photo: "" };
 }
 
+export function resolveVkPublishTokens(raw: string) {
+  const tokens = unpackVkTokens(raw);
+  const community = tokens.community.trim();
+  const photo = tokens.photo.trim();
+  return {
+    wall: community || photo,
+    photo,
+  };
+}
+
 export function isVkAccessToken(value: string) {
   const token = value.trim();
   if (!token || /\s/.test(token) || token.includes("@")) {

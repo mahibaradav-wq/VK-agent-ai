@@ -148,9 +148,8 @@ export function StudioWorkingCard({
       ) : null}
       {platforms.includes("vk") && card.mediaIds.length > 0 && !vkCarouselReady ? (
         <StatusBanner tone="warning">
-          Ключ клуба не кладёт новую картинку на стену как фото — ВК показывает её файлом-ссылкой. Пост в Telegram
-          уйдёт, во ВК публикация остановится, пока в Подключениях нет пользовательского ключа админа с правом
-          «Фотографии».
+          Ключ клуба не грузит новое фото на стену (ошибка 27). Пост в Telegram уйдёт, во ВК публикация остановится,
+          пока в Подключениях нет ключа админа с правом «Фотографии» — одним ключом, как в Lovable.
         </StatusBanner>
       ) : null}
       {message ? <StatusBanner tone={tone}>{message}</StatusBanner> : null}
