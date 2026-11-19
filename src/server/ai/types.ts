@@ -11,7 +11,7 @@ export type AiGenerateInput = {
   kind: AiKind;
   prompt: string;
   tone: AiTone;
-  length: AiLength;
+  length: AiLength | "caption";
   platform: string;
 };
 

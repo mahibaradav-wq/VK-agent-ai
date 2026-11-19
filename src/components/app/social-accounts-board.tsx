@@ -81,8 +81,8 @@ export function SocialAccountsBoard({
             {account.platform === "vk" ? (
               <p className="text-sm text-ink/70">
                 {account.capabilities.some((item) => item.name === "publish_carousel" && item.enabled)
-                  ? "Карусель фото: пользовательский ключ админа сохранён. Новые слайды из Студии уйдут как фото на стене."
-                  : "Карусель фото: ключ клуба умеет повесить уже лежащие на стене фото, но не загрузить новые. Ручная карусель в ВК идёт от вашего входа, не от ключа клуба. Для Студии нужен пользовательский ключ админа с правом «Фотографии»."}
+                  ? "Фото на стене: ключ админа умеет photos.getWallUploadServer. Картинка из Студии уйдёт как photo, не как файл."
+                  : "Фото на стене: ключ клуба пишет текст, но не грузит новое фото (ошибка 27). Вставьте ключ админа клуба с правом «Фотографии» — одним ключом, как в Lovable."}
               </p>
             ) : null}
             {account.lastError ? <p className="text-sm text-ink/60">{account.lastError}</p> : null}
@@ -190,34 +190,33 @@ export function SocialAccountsBoard({
                 {existingVk ? "Обновить ключи ВКонтакте" : "Подключить ВКонтакте"}
               </h2>
               <p className="mt-2 text-sm text-ink/70">
-                Ключ сообщества (Управление → Настройки → Работа с API, права «Стена» и «Документы») пишет текст и
-                умеет прикрепить фото, которые уже есть в сообществе. Загрузить новые слайды в альбом стены он не может:
-                VK отвечает ошибкой 27 на photos.getWallUploadServer. В браузере карусель получается потому, что вы
-                вошли как админ. Для Студии вставьте пользовательский ключ этого админа с правом «Фотографии». Право
-                photos выдаёт поддержка VK: https://vk.ru/support?act=new&from=api. Не сервисный ключ приложения и не
-                пароль.
+                Как в Lovable: если ключ проходит photos.getWallUploadServer, им же грузим JPEG и пишем wall.post с
+                вложением photo. Это пользовательский ключ админа клуба с правом «Фотографии». Ключ сообщества (Управление
+                → Работа с API) пишет только текст: VK отвечает ошибкой 27 даже с правом «Фотографии». Достаточно одного
+                ключа админа. Второй поле — если хотите оставить ключ клуба для текста отдельно. Не сервисный ключ, не
+                ключ наблюдения и не пароль. Право photos: https://vk.ru/support?act=new&from=api
               </p>
               <form action={vkAction} className="mt-4 grid gap-4">
                 <input type="hidden" name="workspaceId" value={workspaceId} />
                 {existingVk ? <input type="hidden" name="accountId" value={existingVk.id} /> : null}
                 {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
                 <label className="grid gap-2 text-sm font-medium text-ink">
-                  Ключ сообщества
+                  Ключ ВКонтакте
                   <input
                     name="communityToken"
                     type="password"
                     autoComplete="off"
-                    required
+                    placeholder="ключ админа — текст и фото; ключ клуба — только текст"
                     className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
                   />
                 </label>
                 <label className="grid gap-2 text-sm font-medium text-ink">
-                  Пользовательский ключ админа для карусели
+                  Отдельный ключ админа для фото
                   <input
                     name="photoToken"
                     type="password"
                     autoComplete="off"
-                    placeholder="необязательно, без него карусель фото не выйдет"
+                    placeholder="если в поле выше ключ клуба"
                     className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-base font-normal"
                   />
                 </label>

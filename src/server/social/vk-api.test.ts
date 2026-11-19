@@ -3,7 +3,13 @@ import type { AddressInfo } from "node:net";
 
 import { describe, expect, it } from "vitest";
 
-import { createVkTransport, encodeMultipartFile, packVkTokens, unpackVkTokens } from "@/server/social/vk-api";
+import {
+  createVkTransport,
+  encodeMultipartFile,
+  packVkTokens,
+  resolveVkPublishTokens,
+  unpackVkTokens,
+} from "@/server/social/vk-api";
 
 describe("VK token pack", () => {
   it("keeps a community key as-is and unpacks a photo user key", () => {
@@ -11,6 +17,11 @@ describe("VK token pack", () => {
     const packed = packVkTokens("vk1.a.club", "vk1.a.admin");
     expect(packed.startsWith("polka-vk-v2:")).toBe(true);
     expect(unpackVkTokens(packed)).toEqual({ community: "vk1.a.club", photo: "vk1.a.admin" });
+    expect(resolveVkPublishTokens(packed)).toEqual({ wall: "vk1.a.club", photo: "vk1.a.admin" });
+    expect(resolveVkPublishTokens(packVkTokens("vk1.a.admin", "vk1.a.admin"))).toEqual({
+      wall: "vk1.a.admin",
+      photo: "vk1.a.admin",
+    });
   });
 });
 

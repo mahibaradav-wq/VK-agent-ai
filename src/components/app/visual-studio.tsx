@@ -68,7 +68,8 @@ export function VisualStudio({
   const [prepareHint, setPrepareHint] = useState("");
   const [checkState, setCheckState] = useState<AiFormState>(idle);
   const [checkPending, startCheck] = useTransition();
-  const remaining = Math.max(0, limit - used);
+  const unlimited = limit <= 0;
+  const remaining = unlimited ? Number.POSITIVE_INFINITY : Math.max(0, limit - used);
   const live = isVisualKindLive(kind);
   const aspects = visualAspectsByKind[kind];
   const slideCount = parseCarouselCount(carouselCount, kind);
@@ -80,7 +81,7 @@ export function VisualStudio({
   if (!storageReady) {
     missing.push("хранение файлов");
   }
-  if (remaining < needed) {
+  if (!unlimited && remaining < needed) {
     missing.push(`${needed} генерации в лимите этого месяца`);
   }
 
@@ -278,7 +279,8 @@ export function VisualStudio({
         <p className="text-sm font-medium text-ink">{visualKindLabels[kind]}</p>
         <p className="mt-1 text-sm text-ink/60">
           Формат {aspectLabel(aspect)}. Модель отдаёт ближайший кадр ChatGPT, предпросмотр держит выбранные пропорции без
-          обрезки. Агент берёт {needed} генерации из лимита {used}/{limit}
+          обрезки. Агент берёт {needed} генерации
+          {unlimited ? " без лимита" : ` из лимита ${used}/${limit}`}
           {kind === "carousel" ? ` · ${slideCount} карточек` : ""}
           {kind === "video" ? ` · ролик ${videoSeconds} с` : ""}.
         </p>

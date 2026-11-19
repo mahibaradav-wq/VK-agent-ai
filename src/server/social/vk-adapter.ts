@@ -7,11 +7,10 @@ import { decryptToken } from "@/server/crypto/token-cipher";
 import {
   createVkTransport,
   describeVkApiError,
-  extractSavedDoc,
   extractSavedVideo,
   extractSavedWallPhoto,
   isGroupAuthUnavailable,
-  unpackVkTokens,
+  resolveVkPublishTokens,
   type VkApiFailure,
   type VkTransport,
 } from "@/server/social/vk-api";
@@ -19,8 +18,9 @@ import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/socia
 import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
 
 const MAX_VK_WALL_PHOTOS = 10;
-const MAX_VK_WALL_DOCS = 1;
 const POLKA_ALBUM_TITLE = "Polka Social";
+const VK_PHOTO_TOKEN_MESSAGE =
+  "Картинка не вышла на стену как фото. Ключ сообщества не умеет photos.getWallUploadServer (ошибка 27). В Подключениях вставьте ключ админа клуба с правом «Фотографии» — одним ключом, как в Lovable. Тогда wall.post получит photo{owner}_{id}. Право photos: https://vk.ru/support?act=new&from=api";
 
 export function toVkWallText(text: string) {
   return text
@@ -351,96 +351,12 @@ async function attachFromCommunityAlbum(options: {
   return { attachments };
 }
 
-async function attachAsWallDocuments(options: {
-  transport: VkTransport;
-  token: string;
-  groupId: number;
-  title?: string;
-  files: Array<{ bytes: Uint8Array; mimeType: string }>;
-}): Promise<{ attachments: string[]; failure?: PublishOutcome }> {
-  const uploadDocument = options.transport.uploadDocument;
-  if (!uploadDocument) {
-    return {
-      attachments: [],
-      failure: {
-        kind: "permanent_failure",
-        code: "vk_upload_unavailable",
-        message: "Загрузка файлов на стену VK недоступна на этом сервере.",
-      },
-    };
-  }
-
-  const attachments: string[] = [];
-  let enabledDocs = false;
-  // wall.post accepts at most one document; extra slides go through the album path.
-  for (const [index, file] of options.files.slice(0, MAX_VK_WALL_DOCS).entries()) {
-    let uploadServer = await options.transport.call(options.token, "docs.getWallUploadServer", {
-      group_id: options.groupId,
-    });
-    if (!uploadServer.ok && !enabledDocs) {
-      await options.transport.call(options.token, "groups.edit", {
-        group_id: options.groupId,
-        docs: 1,
-      });
-      enabledDocs = true;
-      uploadServer = await options.transport.call(options.token, "docs.getWallUploadServer", {
-        group_id: options.groupId,
-      });
-    }
-    if (!uploadServer.ok) {
-      return {
-        attachments: [],
-        failure: {
-          kind: "permanent_failure",
-          code: `vk_${uploadServer.error_code}`,
-          message:
-            "Ключ сообщества пишет текст на стену, но VK не даёт ему класть фото в альбом стены. В ключе нужны права «Стена» и «Документы».",
-        },
-      };
-    }
-    const uploadUrl = extractUploadUrl(uploadServer.response);
-    if (!uploadUrl) {
-      return {
-        attachments: [],
-        failure: {
-          kind: "permanent_failure",
-          code: "vk_upload_url",
-          message: "VK не выдал адрес загрузки файла на стену. В ключе сообщества нужно право «Документы».",
-        },
-      };
-    }
-
-    const uploaded = await uploadDocument(uploadUrl, {
-      filename: filenameForMime(file.mimeType, index),
-      bytes: file.bytes,
-      mimeType: file.mimeType,
-    });
-    if (!uploaded.ok) {
-      return { attachments: [], failure: mapVkFailure(uploaded, "upload") };
-    }
-
-    const saved = await options.transport.call(options.token, "docs.save", {
-      file: uploaded.response.file,
-      title: `${(options.title?.trim() || `Карточка ${index + 1}`).slice(0, 80)}.jpg`,
-    });
-    if (!saved.ok) {
-      return { attachments: [], failure: mapVkFailure(saved, "upload") };
-    }
-    const doc = extractSavedDoc(saved.response);
-    if (!doc) {
-      return {
-        attachments: [],
-        failure: {
-          kind: "permanent_failure",
-          code: "vk_doc_save",
-          message: "VK принял файл, но не вернул вложение для стены.",
-        },
-      };
-    }
-    attachments.push(`doc${doc.owner_id}_${doc.id}`);
-  }
-
-  return { attachments };
+function nativeWallPhotoFailure(): PublishOutcome {
+  return {
+    kind: "permanent_failure",
+    code: "vk_photo_user_token",
+    message: VK_PHOTO_TOKEN_MESSAGE,
+  };
 }
 
 async function attachWallPhotos(options: {
@@ -449,7 +365,6 @@ async function attachWallPhotos(options: {
   token: string;
   photoToken?: string;
   groupId: number;
-  title?: string;
   mediaKeys: string[];
 }): Promise<{ attachments: string[]; failure?: PublishOutcome }> {
   const keys = options.mediaKeys.slice(0, MAX_VK_WALL_PHOTOS);
@@ -471,6 +386,12 @@ async function attachWallPhotos(options: {
       files: images.files,
     });
     if (!wall.blocked) {
+      if (wall.failure) {
+        return wall;
+      }
+      if (wall.attachments.some((item) => !item.startsWith("photo"))) {
+        return { attachments: [], failure: nativeWallPhotoFailure() };
+      }
       return wall;
     }
     const album = await attachFromCommunityAlbum({
@@ -480,28 +401,17 @@ async function attachWallPhotos(options: {
       files: images.files,
     });
     if (!album.blocked) {
+      if (album.failure) {
+        return album;
+      }
+      if (album.attachments.some((item) => !item.startsWith("photo"))) {
+        return { attachments: [], failure: nativeWallPhotoFailure() };
+      }
       return album;
     }
   }
 
-  const stills = images.files.filter((file) => !isVideoMime(file.mimeType));
-  if (stills.length > 0) {
-    const docs = await attachAsWallDocuments({
-      transport: options.transport,
-      token: options.token,
-      groupId: options.groupId,
-      title: options.title,
-      files: stills.slice(0, MAX_VK_WALL_DOCS),
-    });
-    if (docs.attachments.length > 0) {
-      return docs;
-    }
-  }
-
-  // Community token cannot upload native wall photos (error 27). A JPEG
-  // document is the visible still VK will accept; if even that fails, the
-  // text post still goes out.
-  return { attachments: [] };
+  return { attachments: [], failure: nativeWallPhotoFailure() };
 }
 
 async function attachWallVideo(options: {
@@ -604,7 +514,7 @@ export function createVkAdapter(options: {
           kind: "permanent_failure",
           code: "integration_not_configured",
           message:
-            "Публикация во ВКонтакте недоступна: подключите ключ доступа сообщества с правом «Стена». Сервисный ключ приложения и пароль не подходят.",
+            "Публикация во ВКонтакте недоступна: подключите ключ админа клуба с правом «Фотографии» или ключ сообщества с правом «Стена». Сервисный ключ приложения и пароль не подходят.",
         };
       }
 
@@ -635,8 +545,15 @@ export function createVkAdapter(options: {
           message: "Ключ сообщества не удалось расшифровать. Подключите аккаунт заново.",
         };
       }
-      const tokens = unpackVkTokens(packed);
-      const token = tokens.community || packed;
+      const tokens = resolveVkPublishTokens(packed);
+      const token = tokens.wall;
+      if (!token) {
+        return {
+          kind: "permanent_failure",
+          code: "token_corrupted",
+          message: "Ключ ВКонтакте не удалось разобрать. Подключите аккаунт заново.",
+        };
+      }
 
       const groupId = groupIdFromOwner(ownerId);
       const media = input.mediaKeys.length
@@ -660,11 +577,16 @@ export function createVkAdapter(options: {
             token,
             photoToken: tokens.photo,
             groupId,
-            title: input.title,
             mediaKeys: input.mediaKeys,
           });
       if (attached.failure) {
         return attached.failure;
+      }
+      if (input.mediaKeys.length > 0 && attached.attachments.length === 0) {
+        return nativeWallPhotoFailure();
+      }
+      if (attached.attachments.some((item) => item.startsWith("doc"))) {
+        return nativeWallPhotoFailure();
       }
 
       const attachments = [...attached.attachments];
@@ -698,21 +620,7 @@ export function createVkAdapter(options: {
         params.attachments = attachments.join(",");
       }
 
-      let posted = await transport.call(token, "wall.post", params);
-      if (
-        !posted.ok &&
-        posted.error_code === 100 &&
-        /doc attachments/i.test(posted.error_msg) &&
-        attachments.filter((item) => item.startsWith("doc")).length > MAX_VK_WALL_DOCS
-      ) {
-        const reduced = [
-          ...attachments.filter((item) => !item.startsWith("doc")),
-          ...attachments.filter((item) => item.startsWith("doc")).slice(0, MAX_VK_WALL_DOCS),
-        ];
-        params.attachments = reduced.join(",");
-        posted = await transport.call(token, "wall.post", params);
-      }
-
+      const posted = await transport.call(token, "wall.post", params);
       if (!posted.ok) {
         if (posted.error_code === 5) {
           await options.db.socialAccount.update({

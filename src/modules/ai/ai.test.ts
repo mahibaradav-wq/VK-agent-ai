@@ -460,8 +460,9 @@ describe("AI assistant", () => {
       platforms: ["telegram", "vk"],
       projectId: owner.projectId,
     });
-    expect(provider.prompts.some((item) => item.includes(":telegram:"))).toBe(true);
+    expect(provider.prompts.some((item) => item.includes(":caption:telegram:"))).toBe(true);
     expect(provider.prompts.some((item) => item.includes(":vk:"))).toBe(true);
+    expect(provider.prompts.some((item) => item.includes(":telegram:"))).toBe(true);
     const version = await prisma.postVersion.findFirstOrThrow({
       where: { postId: composed.post.id, supersededAt: null },
     });

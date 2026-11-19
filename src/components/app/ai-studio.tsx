@@ -191,7 +191,8 @@ export function AiStudio({
           </StatusBanner>
         ) : (
           <StatusBanner tone="info">
-            Провайдер {provider} · текст {model} · визуал {imageModel} · лимит {used}/{limit}. Две сети — отдельный
+            Провайдер {provider} · текст {model} · визуал {imageModel} ·{" "}
+            {limit <= 0 ? "без лимита генераций" : `лимит ${used}/${limit}`}. Две сети — отдельный
             текст каждой плюс визуал.
           </StatusBanner>
         )}

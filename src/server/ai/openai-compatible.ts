@@ -34,7 +34,7 @@ function platformRule(platform: string) {
     return "Adapt the copy to the VKontakte community wall. No Markdown asterisks. Plain Russian text and numbered lists.";
   }
   if (platform === "telegram") {
-    return "Adapt the copy to Telegram. Break into short paragraphs, but keep the requested post length. Light Markdown is allowed.";
+    return "Adapt the copy to one Telegram photo post. Light Markdown is allowed. Do not split the post into a follow-up message.";
   }
   return `Adapt the copy to platform: ${platform}.`;
 }

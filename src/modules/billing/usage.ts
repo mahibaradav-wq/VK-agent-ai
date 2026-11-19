@@ -8,6 +8,10 @@ export const USAGE_METRICS = {
   posts: "posts",
 } as const;
 
+export function isUnlimitedUsage(limit: number) {
+  return !Number.isFinite(limit) || limit <= 0;
+}
+
 export async function lockWorkspaceMetric(tx: Prisma.TransactionClient, workspaceId: string, metric: string) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${workspaceId}), hashtext(${metric}))`;
 }
@@ -25,7 +29,7 @@ export async function getUsage(
   });
   return {
     used: row?.used ?? 0,
-    limit: row?.limit ?? fallbackLimit,
+    limit: isUnlimitedUsage(fallbackLimit) ? 0 : (row?.limit ?? fallbackLimit),
     periodStart,
     periodEnd,
   };
@@ -44,6 +48,7 @@ export async function reserveUsage(
     throw new AccessError(400, "Некорректный резерв использования.");
   }
   const { periodStart, periodEnd } = monthBounds(at);
+  const storedLimit = isUnlimitedUsage(limit) ? 0 : limit;
   await db.usageRecord.upsert({
     where: {
       workspaceId_metric_periodStart: { workspaceId, metric, periodStart },
@@ -54,10 +59,20 @@ export async function reserveUsage(
       periodStart,
       periodEnd,
       used: 0,
-      limit,
+      limit: storedLimit,
     },
-    update: { periodEnd, limit },
+    update: { periodEnd, limit: storedLimit },
   });
+  if (isUnlimitedUsage(limit)) {
+    await db.$executeRaw`
+      UPDATE "UsageRecord"
+      SET "used" = "used" + ${units}, "updatedAt" = NOW()
+      WHERE "workspaceId" = ${workspaceId}
+        AND "metric" = ${metric}
+        AND "periodStart" = ${periodStart}
+    `;
+    return periodStart;
+  }
   const reserved = await db.$executeRaw`
     UPDATE "UsageRecord"
     SET "used" = "used" + ${units}, "updatedAt" = NOW()
