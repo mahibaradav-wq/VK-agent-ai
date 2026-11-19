@@ -5,6 +5,7 @@ import {
   TELEGRAM_MESSAGE_LIMIT,
   splitTelegramText,
   telegramCaptionAndRest,
+  telegramPhotoCaption,
 } from "@/server/social/telegram-text";
 
 describe("telegram text limits", () => {
@@ -19,6 +20,7 @@ describe("telegram text limits", () => {
     expect(caption.startsWith("А")).toBe(true);
     expect(rest.startsWith("Б")).toBe(true);
     expect(`${caption}\n\n${rest}`).toBe(text);
+    expect(telegramPhotoCaption(text)).toBe(caption);
   });
 
   it("splits a 5000-character post into Telegram-sized messages", () => {

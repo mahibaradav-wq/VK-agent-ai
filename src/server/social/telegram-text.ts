@@ -23,6 +23,10 @@ export function telegramCaptionAndRest(text: string) {
   return { caption: text.slice(0, cut).trimEnd(), rest: text.slice(cut).trimStart() };
 }
 
+export function telegramPhotoCaption(text: string) {
+  return telegramCaptionAndRest(text).caption;
+}
+
 export function splitTelegramText(text: string, limit = TELEGRAM_MESSAGE_LIMIT) {
   if (!text) {
     return [];

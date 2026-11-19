@@ -485,12 +485,11 @@ describe("social accounts", () => {
     expect(transport.calls.some((item) => item.method === "sendMessage")).toBe(false);
   });
 
-  it("sends the full Telegram body as a message before the photo when the caption would overflow", async () => {
+  it("publishes a long Telegram photo as one sendPhoto with a finished caption", async () => {
     const owner = await registerOwner("soc-tg-long-photo");
     const transport = scriptedTelegram({
       getMe: { ok: true, result: { id: 9, is_bot: true, username: "pub_bot" } },
       getChat: { ok: true, result: { id: -1004392473566, type: "channel", title: "ДОМ по полочкам" } },
-      sendMessage: { ok: true, result: { message_id: 87, chat: { id: -1004392473566 } } },
       sendPhoto: { ok: true, result: { message_id: 88, chat: { id: -1004392473566 } } },
     });
     const social = createSocialService(prisma, { telegram: transport });
@@ -522,13 +521,11 @@ describe("social accounts", () => {
     });
     const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
     await publishing.processJob(job.id, "worker-tg-long-photo");
-    const message = transport.calls.find((item) => item.method === "sendMessage");
     const photo = transport.calls.find((item) => item.method === "sendPhoto");
-    expect(String(message?.body?.text)).toContain("Стол с ящиками.");
-    expect(String(message?.body?.text).length).toBeGreaterThan(1024);
-    expect(String(photo?.body?.caption)).toBe("Длинный стол");
+    expect(String(photo?.body?.caption)).toContain("Длинный стол");
+    expect(String(photo?.body?.caption).length).toBeLessThanOrEqual(1024);
+    expect(transport.calls.some((item) => item.method === "sendMessage")).toBe(false);
     expect(transport.calls.map((item) => item.method).filter((item) => item === "sendMessage" || item === "sendPhoto")).toEqual([
-      "sendMessage",
       "sendPhoto",
     ]);
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
@@ -1208,6 +1205,64 @@ describe("social accounts", () => {
     });
     const job = await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
     expect(job.status).toBe("completed");
+  });
+
+  it("does not publish a VK text-only post when the community key cannot attach the picture", async () => {
+    const owner = await registerOwner("soc-vk-nopic");
+    const transport = scriptedVk({
+      "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
+      "photos.getWallUploadServer": {
+        ok: false,
+        error_code: 27,
+        error_msg: "Group authorization failed: method is unavailable with group auth.",
+      },
+      "photos.getAlbums": {
+        ok: false,
+        error_code: 27,
+        error_msg: "Group authorization failed: method is unavailable with group auth.",
+      },
+      "photos.createAlbum": {
+        ok: false,
+        error_code: 27,
+        error_msg: "Group authorization failed: method is unavailable with group auth.",
+      },
+      "docs.getWallUploadServer": { ok: false, error_code: 15, error_msg: "Access denied: no access to call this method" },
+      "wall.post": (params) => {
+        if (!String(params.message ?? "").trim()) {
+          return { ok: false, error_code: 100, error_msg: "message is empty" };
+        }
+        throw new Error("wall.post must not run without a picture");
+      },
+    });
+    const social = createSocialService(prisma, { vk: transport });
+    await social.connectVk(owner.userId, owner.workspaceId, {
+      token: VK_COMMUNITY_TOKEN,
+      source: "https://vk.com/club242155421",
+    });
+    const media = createMediaService(prisma, createLocalStorage(storageDir));
+    const asset = await media.upload(owner.userId, owner.workspaceId, {
+      filename: "cover.png",
+      declaredType: "image/png",
+      bytes: png,
+    });
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Без картинки");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Без картинки",
+      body: "Текст без визуала недопустим.",
+      platforms: ["vk"],
+      mediaIds: [asset.id],
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createVkAdapter({ db: prisma, transport, storage: createLocalStorage(storageDir) }) },
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-vk-nopic");
+    const attempt = await prisma.publishAttempt.findFirstOrThrow({ where: { jobId: job.id } });
+    expect(attempt.kind).toBe("permanent_failure");
+    expect(attempt.errorCode).toMatch(/vk_/);
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).not.toBe("published");
   });
 
   it("fails a media publish when the community key cannot upload photos", async () => {

@@ -28,6 +28,7 @@ export function aspectRatioCss(aspect: string) {
 }
 
 export const copyLengthSpec = {
+  caption: { min: 500, max: 900, maxTokens: 1200, timeoutMs: 45_000, label: "Подпись Telegram · 500–900 знаков" },
   short: { min: 900, max: 1400, maxTokens: 1800, timeoutMs: 45_000, label: "Короткий · 900–1400 знаков" },
   medium: { min: 1900, max: 2600, maxTokens: 3200, timeoutMs: 70_000, label: "Средний · 1900–2600 знаков" },
   long: { min: 3800, max: 4090, maxTokens: 5000, timeoutMs: 120_000, label: "Длинный · 3800–4090 знаков" },
@@ -36,6 +37,8 @@ export const copyLengthSpec = {
 export type CopyLengthKey = keyof typeof copyLengthSpec;
 
 const copyLengthShape: Record<CopyLengthKey, string> = {
+  caption:
+    "TELEGRAM PHOTO CAPTION: one finished Russian post that is the caption of a single photo. Title under 60 characters. Body 500–900 characters. Opening 2–3 sentences, 3–5 numbered tips, a closing question. Every sentence closed. title + blank line + body must stay under 1020 characters so Telegram can send it as one sendPhoto. Do not write a second part.",
   short:
     "SHORT body: opening 2–3 sentences, why it matters, 4 numbered steps, one closing question. Title under 60 characters. Do not pad with empty adjectives.",
   medium:
@@ -45,7 +48,7 @@ const copyLengthShape: Record<CopyLengthKey, string> = {
 };
 
 export function resolveCopyLength(length?: string): CopyLengthKey {
-  if (length === "short" || length === "long") {
+  if (length === "short" || length === "long" || length === "caption") {
     return length;
   }
   return "medium";

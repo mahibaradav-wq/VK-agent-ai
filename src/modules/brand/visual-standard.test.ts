@@ -27,6 +27,8 @@ describe("house visual standard", () => {
     expect(copySystemRules("post", "short")).toMatch(/900–1400/);
     expect(copySystemRules("post", "medium")).toMatch(/1900–2600/);
     expect(copySystemRules("post", "long")).toMatch(/3800–4090/);
+    expect(copySystemRules("post", "caption")).toMatch(/500–900/);
+    expect(copySystemRules("post", "caption")).toMatch(/sendPhoto/);
     expect(copySystemRules("post", "long")).not.toMatch(/900–1400/);
     expect(copyLengthSpec.long.max).toBe(4090);
     expect(copyMaxTokens("short")).toBe(copyLengthSpec.short.maxTokens);

@@ -426,6 +426,11 @@ async function attachAsWallDocuments(options: {
     if (!saved.ok) {
       return { attachments: [], failure: mapVkFailure(saved, "upload") };
     }
+    const photo = extractSavedWallPhoto(saved.response);
+    if (photo) {
+      attachments.push(`photo${photo.owner_id}_${photo.id}`);
+      continue;
+    }
     const doc = extractSavedDoc(saved.response);
     if (!doc) {
       return {
@@ -493,15 +498,23 @@ async function attachWallPhotos(options: {
       title: options.title,
       files: stills.slice(0, MAX_VK_WALL_DOCS),
     });
+    if (docs.failure) {
+      return docs;
+    }
     if (docs.attachments.length > 0) {
       return docs;
     }
   }
 
-  // Community token cannot upload native wall photos (error 27). A JPEG
-  // document is the visible still VK will accept; if even that fails, the
-  // text post still goes out.
-  return { attachments: [] };
+  return {
+    attachments: [],
+    failure: {
+      kind: "permanent_failure",
+      code: "vk_photo_user_token",
+      message:
+        "Картинка не загрузилась на стену ВК. Ключ сообщества не умеет photos.getWallUploadServer (ошибка 27). В Подключениях нужен пользовательский ключ админа с правом «Фотографии», либо право «Документы» у ключа сообщества.",
+    },
+  };
 }
 
 async function attachWallVideo(options: {

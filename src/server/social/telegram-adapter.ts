@@ -11,7 +11,7 @@ import {
   type TelegramTransport,
 } from "@/server/social/telegram-api";
 import { withProductLink } from "@/modules/products/shop-labels";
-import { TELEGRAM_CAPTION_LIMIT, splitTelegramText, telegramCaptionAndRest } from "@/server/social/telegram-text";
+import { splitTelegramText, telegramPhotoCaption } from "@/server/social/telegram-text";
 import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/social/types";
 import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
 
@@ -179,27 +179,7 @@ export function createTelegramAdapter(options: {
             bytes: still.bytes,
           });
         }
-        const longCopy = text.length > TELEGRAM_CAPTION_LIMIT;
-        let caption = longCopy ? input.title.trim().slice(0, TELEGRAM_CAPTION_LIMIT) : text;
-        let rest = "";
-        if (longCopy) {
-          sent = { ok: false, error_code: 400, description: "empty text" };
-          for (const chunk of splitTelegramText(text)) {
-            sent = await requestTelegram(transport, token, "sendMessage", {
-              chat_id: account.externalId,
-              text: chunk,
-            });
-            if (!sent.ok) {
-              break;
-            }
-            delivered = true;
-          }
-          if (!delivered) {
-            const split = telegramCaptionAndRest(text);
-            caption = split.caption;
-            rest = split.rest;
-          }
-        }
+        const caption = telegramPhotoCaption(text);
         const video = photos.find((item) => isVideoMime(item.mimeType));
         const mediaSent = video
           ? await transport.request(
@@ -240,18 +220,6 @@ export function createTelegramAdapter(options: {
         sent = mediaSent;
         if (mediaSent.ok) {
           delivered = true;
-        }
-        if (sent.ok && rest) {
-          for (const chunk of splitTelegramText(rest)) {
-            const followUp = await requestTelegram(transport, token, "sendMessage", {
-              chat_id: account.externalId,
-              text: chunk,
-            });
-            if (!followUp.ok) {
-              sent = followUp;
-              break;
-            }
-          }
         }
       } else {
         const chunks = splitTelegramText(text);

@@ -531,7 +531,7 @@ export function createAiService(
               kind: "post",
               prompt,
               tone,
-              length,
+              length: target === "telegram" ? "caption" : length,
               platform: target,
             }),
           );
@@ -713,7 +713,7 @@ export function createAiService(
                 kind: "post",
                 prompt: `Текущий заголовок: ${current.title}\nТекущий текст:\n${current.body}\n\nПравка от автора: ${comment}`,
                 tone: "friendly",
-                length: "medium",
+                length: target === "telegram" ? "caption" : "medium",
                 platform: target,
               }),
             );
