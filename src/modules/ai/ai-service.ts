@@ -361,12 +361,24 @@ export function createAiService(
           "Идею в пост отправляйте со страницы наблюдения VK кнопкой «В бриф: пост + визуал». Из истории текст не копируется.",
         );
       }
+      const project = await db.project.findUnique({ where: { id: projectId } });
+      assertWorkspaceBound(workspaceId, project, "Проект");
+      if (!request.projectId || request.projectId !== projectId) {
+        throw new AccessError(403, "AI-запрос принадлежит другому проекту. Выберите проект, для которого выполнялась генерация.");
+      }
       const publicRequest = toPublic(request);
       const linkedPostId = parseLinkedPostId(publicRequest.items);
       if (request.kind === AGENT_KIND && linkedPostId) {
         try {
-          return await posts.get(userId, workspaceId, linkedPostId);
-        } catch {
+          const linkedPost = await posts.get(userId, workspaceId, linkedPostId);
+          if (linkedPost.projectId !== projectId) {
+            throw new AccessError(403, "Черновик из AI-запроса принадлежит другому проекту.");
+          }
+          return linkedPost;
+        } catch (error) {
+          if (error instanceof AccessError && error.status === 403) {
+            throw error;
+          }
           // Черновик удалили — ниже создадим новый из той же генерации.
         }
       }
