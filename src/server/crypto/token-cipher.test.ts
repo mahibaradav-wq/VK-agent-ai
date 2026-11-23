@@ -45,6 +45,16 @@ describe("token cipher", () => {
     expect(() => encryptToken("x")).toThrow(AccessError);
   });
 
+  it("rejects a weak or reused encryption key in production", () => {
+    process.env.NODE_ENV = "production";
+    process.env.AUTH_SECRET = "auth-secret-that-is-long-enough-for-production";
+    process.env.TOKEN_ENCRYPTION_KEY = "too-short";
+    expect(() => encryptToken("x")).toThrow(/не менее 32/);
+
+    process.env.TOKEN_ENCRYPTION_KEY = process.env.AUTH_SECRET;
+    expect(() => encryptToken("x")).toThrow(/отличаться/);
+  });
+
   it("fails closed without any key", () => {
     process.env.NODE_ENV = "test";
     delete process.env.TOKEN_ENCRYPTION_KEY;
