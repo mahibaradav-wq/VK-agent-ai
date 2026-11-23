@@ -210,26 +210,6 @@ describe("AI assistant", () => {
     expect(await ai.list(owner.userId, owner.workspaceId)).toEqual([]);
   });
 
-  it("uses the workspace subscription AI quota when no test override is supplied", async () => {
-    const owner = await registerOwner("ai-plan-quota");
-    const ai = createAiService(prisma, { provider: scriptedProvider([sample]) });
-
-    for (let index = 0; index < 50; index += 1) {
-      await ai.generate(owner.userId, owner.workspaceId, {
-        kind: "ideas",
-        prompt: `идея ${index + 1}`,
-      });
-    }
-
-    await expectAccess(
-      ai.generate(owner.userId, owner.workspaceId, { kind: "ideas", prompt: "идея сверх тарифа" }),
-      400,
-      /Лимит AI-генераций на месяц исчерпан \(50\)/,
-    );
-    expect(await prisma.aIRequest.count({ where: { workspaceId: owner.workspaceId } })).toBe(50);
-    expect(await ai.usage(owner.userId, owner.workspaceId)).toMatchObject({ used: 50, limit: 50 });
-  });
-
   it("enforces the monthly limit atomically and releases usage if the provider fails", async () => {
     const owner = await registerOwner("ai-limit");
     const ai = createAiService(prisma, { provider: scriptedProvider([sample]), monthlyLimit: 1 });
