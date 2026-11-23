@@ -219,7 +219,7 @@ describe("VK watch idea agent", () => {
 
     const post = await watch.applyIdea(owner.userId, owner.workspaceId, collected.request.id, 0, owner.projectId);
     expect(post.targets.map((target) => target.platform)).toEqual(["vk"]);
-    expect(await watch.listIdeas(owner.userId, owner.workspaceId)).toEqual([]);
+    expect(await watch.listIdeas(owner.userId, owner.workspaceId, owner.projectId)).toEqual([]);
     expect((await createAiService(prisma, { provider, storage: createLocalStorage(storageDir) }).list(owner.userId, owner.workspaceId)).every((item) => item.kind !== WATCH_IDEAS_KIND)).toBe(true);
     expect(post.versions[0]?.title).toMatch(/Специи/);
     expect(post.versions[0]?.body).toMatch(/стены ВК/);
@@ -254,14 +254,14 @@ describe("VK watch idea agent", () => {
     await watch.connectToken(owner.userId, owner.workspaceId, { token: VK_TOKEN });
     await watch.addCommunity(owner.userId, owner.workspaceId, "https://vk.com/club33");
     const collected = await watch.collectIdeas(owner.userId, owner.workspaceId, { projectId: owner.projectId });
-    const consumed = await watch.consumeIdea(owner.userId, owner.workspaceId, collected.request.id, 0);
+    const consumed = await watch.consumeIdea(owner.userId, owner.workspaceId, collected.request.id, 0, owner.projectId);
     expect(consumed).toMatch(/Первая/);
-    const afterConsume = await watch.listIdeas(owner.userId, owner.workspaceId);
+    const afterConsume = await watch.listIdeas(owner.userId, owner.workspaceId, owner.projectId);
     expect(afterConsume[0]?.items).toEqual(["Вторая || Почему || Хук"]);
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
 
-    await watch.dismissIdea(owner.userId, owner.workspaceId, collected.request.id, 0);
-    expect(await watch.listIdeas(owner.userId, owner.workspaceId)).toEqual([]);
+    await watch.dismissIdea(owner.userId, owner.workspaceId, collected.request.id, 0, owner.projectId);
+    expect(await watch.listIdeas(owner.userId, owner.workspaceId, owner.projectId)).toEqual([]);
   });
 
   it("does not copy a watch idea into a draft when ChatGPT cannot draw a visual", async () => {
