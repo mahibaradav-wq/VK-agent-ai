@@ -112,7 +112,6 @@ describe("platform admin and email notifications", () => {
     const again = await admin.listPlans(actor.userId);
     expect(again.find((plan) => plan.slug === "start")?.postsPerMonth).toBe(4242);
     await admin.updatePlanLimits(actor.userId, "start", {
-      aiGenerations: current!.aiGenerations,
       projects: current!.projects,
       socialAccounts: current!.socialAccounts,
       members: current!.members,
