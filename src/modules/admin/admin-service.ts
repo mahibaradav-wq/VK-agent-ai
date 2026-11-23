@@ -105,7 +105,6 @@ export function createAdminService(db: PrismaClient) {
       userId: string,
       slug: string,
       input: {
-        aiGenerations: number;
         projects: number;
         socialAccounts: number;
         members: number;
@@ -120,7 +119,6 @@ export function createAdminService(db: PrismaClient) {
       const updated = await db.plan.update({
         where: { id: plan.id },
         data: {
-          aiGenerations: asLimit(input.aiGenerations, "AI"),
           projects: asLimit(input.projects, "проекты"),
           socialAccounts: asLimit(input.socialAccounts, "аккаунты"),
           members: asLimit(input.members, "участники"),
@@ -133,7 +131,7 @@ export function createAdminService(db: PrismaClient) {
           entityType: "plan",
           entityId: updated.id,
           actorId: actor.user.id,
-          details: `${slug}:${updated.aiGenerations}/${updated.projects}/${updated.socialAccounts}/${updated.members}/${updated.postsPerMonth}`,
+          details: `${slug}:${updated.projects}/${updated.socialAccounts}/${updated.members}/${updated.postsPerMonth}`,
         },
       });
       return updated;
