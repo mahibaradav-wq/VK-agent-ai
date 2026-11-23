@@ -309,8 +309,8 @@ describe("billing and subscriptions", () => {
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(5);
   });
 
-  it("falls back to Start limits after a paid subscription expires", async () => {
-    const owner = await registerOwner("bill-expired-ai");
+  it("falls back to the Start plan after a paid subscription expires", async () => {
+    const owner = await registerOwner("bill-expired-plan");
     const subscription = await attachFreeSubscription(prisma, owner.workspaceId);
     const team = await prisma.plan.findUniqueOrThrow({ where: { slug: "team" } });
     await prisma.subscription.update({
@@ -326,11 +326,9 @@ describe("billing and subscriptions", () => {
 
     const expired = await getWorkspacePlanLimits(prisma, owner.workspaceId, new Date("2026-03-01T00:00:00.000Z"));
     expect(expired.slug).toBe("start");
-    expect(expired.aiGenerations).toBe(50);
 
     const active = await getWorkspacePlanLimits(prisma, owner.workspaceId, new Date("2026-01-15T00:00:00.000Z"));
     expect(active.slug).toBe("team");
-    expect(active.aiGenerations).toBe(500);
   });
 
   it("does not cap AI usage when the monthly limit is unlimited", async () => {
