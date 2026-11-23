@@ -851,6 +851,7 @@ describe("social accounts", () => {
     expect(transport.uploads[0]?.filename).toBe("slide-1.jpg");
     expect(transport.methods).toEqual([
       "groups.getById",
+      "groups.getTokenPermissions",
       "photos.getWallUploadServer",
       "photos.getWallUploadServer",
       "uploadWallPhoto",
@@ -1326,46 +1327,38 @@ describe("social accounts", () => {
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).not.toBe("published");
   });
 
-  it("connects without posting to the wall and fails later if the key cannot write", async () => {
+  it("rejects a community key without wall permission without posting or deleting a probe", async () => {
     const owner = await registerOwner("soc-vk-no-wall");
     const transport = scriptedVk({
       "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
+      "groups.getTokenPermissions": {
+        ok: true,
+        response: { permissions: [{ name: "photos", setting: 4 }] },
+      },
       "photos.getWallUploadServer": {
         ok: false,
         error_code: 27,
         error_msg: "Group authorization failed: method is unavailable with group auth.",
       },
-      "wall.post": { ok: false, error_code: 214, error_msg: "Access to adding post denied" },
+      "wall.post": () => {
+        throw new Error("wall.post must not run while connecting VK");
+      },
+      "wall.delete": () => {
+        throw new Error("wall.delete must not run while connecting VK");
+      },
     });
     const social = createSocialService(prisma, { vk: transport });
-    const connected = await social.connectVk(owner.userId, owner.workspaceId, {
-      token: VK_COMMUNITY_TOKEN,
-      source: "https://vk.com/club242155421",
-    });
-    expect(connected.status).toBe("connected");
+    await expectAccess(
+      social.connectVk(owner.userId, owner.workspaceId, {
+        token: VK_COMMUNITY_TOKEN,
+        source: "https://vk.com/club242155421",
+      }),
+      400,
+      /право «Стена»|запись на стену/,
+    );
+    expect(transport.methods).toContain("groups.getTokenPermissions");
     expect(transport.methods).not.toContain("wall.post");
     expect(transport.methods).not.toContain("wall.delete");
-
-    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Стена");
-    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
-      title: "Стена",
-      body: "Текст",
-      platforms: ["vk"],
-      mediaIds: [],
-    });
-    await approveCurrent(owner, post.id);
-    const publishing = createPublishService(prisma, {
-      queue: createInlineQueue(),
-      adapters: { get: () => createVkAdapter({ db: prisma, transport }) },
-    });
-    await publishing.enqueue(owner.userId, owner.workspaceId, post.id).then((job) =>
-      publishing.processJob(job.id, "worker-vk-no-wall"),
-    );
-    const attempt = await prisma.publishAttempt.findFirstOrThrow({
-      where: { target: { postId: post.id } },
-    });
-    expect(attempt.errorCode).toBe("vk_214");
-    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).not.toBe("published");
   });
 
   it("lets the owner mark a manual VK photo post without calling wall.post again", async () => {

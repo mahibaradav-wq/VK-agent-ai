@@ -19,8 +19,10 @@ import {
   createVkTransport,
   describeVkApiError,
   extractVkGroup,
+  isTokenPermissionMethodUnavailable,
   isVkAccessToken,
   packVkTokens,
+  tokenHasWallPermission,
   unpackVkTokens,
   type VkTransport,
 } from "@/server/social/vk-api";
@@ -456,7 +458,7 @@ export function createSocialService(
       const groupLookup = club?.[2] ?? parsed.screenName;
       const groupResult = await vk.call(token, "groups.getById", {
         group_id: groupLookup,
-        fields: "name,screen_name",
+        fields: "name,screen_name,can_post,is_admin",
       });
       const group = groupResult.ok ? extractVkGroup(groupResult.response) : null;
       if (!group?.id) {
@@ -466,6 +468,21 @@ export function createSocialService(
             ? "Не удалось определить сообщество по ссылке. Укажите vk.com/club… того клуба, чей ключ вы вставляете."
             : describeVkApiError(groupResult),
         );
+      }
+
+      const wallDenied =
+        "VK запретил запись на стену. Нужен ключ именно этого сообщества с правом «Стена» или ключ админа клуба. Проверочный пост на стену не отправляем.";
+      const permissionProbe = await vk.call(token, "groups.getTokenPermissions", {});
+      if (permissionProbe.ok) {
+        if (!tokenHasWallPermission(permissionProbe.response)) {
+          throw new AccessError(400, wallDenied);
+        }
+      } else if (permissionProbe.error_code === 0) {
+        throw new AccessError(400, describeVkApiError(permissionProbe));
+      } else if (!isTokenPermissionMethodUnavailable(permissionProbe) && group.can_post !== 1 && group.is_admin !== 1) {
+        throw new AccessError(400, describeVkApiError(permissionProbe));
+      } else if (group.can_post === 0) {
+        throw new AccessError(400, wallDenied);
       }
 
       if (!photoToken && input.accountId) {

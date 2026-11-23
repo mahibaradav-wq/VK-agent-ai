@@ -10,6 +10,7 @@ import {
   encodeMultipartFile,
   packVkTokens,
   resolveVkPublishTokens,
+  tokenHasWallPermission,
   unpackVkTokens,
 } from "@/server/social/vk-api";
 
@@ -24,6 +25,12 @@ describe("VK token pack", () => {
       wall: "vk1.a.admin",
       photo: "vk1.a.admin",
     });
+  });
+
+  it("reads wall permission from groups.getTokenPermissions without posting", () => {
+    expect(tokenHasWallPermission({ permissions: [{ name: "photos" }, { name: "wall" }] })).toBe(true);
+    expect(tokenHasWallPermission({ permissions: [{ name: "photos" }] })).toBe(false);
+    expect(tokenHasWallPermission({})).toBe(false);
   });
 
   it("redacts access tokens from VK error text", () => {

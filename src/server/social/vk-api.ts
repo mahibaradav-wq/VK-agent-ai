@@ -37,6 +37,8 @@ export type VkGroup = {
   name?: string;
   screen_name?: string;
   type?: string;
+  can_post?: number;
+  is_admin?: number;
 };
 
 export type VkWallPost = {
@@ -372,6 +374,26 @@ export function extractSavedDoc(response: unknown): VkSavedDoc | null {
 
 export function isGroupAuthUnavailable(error: VkApiFailure) {
   return error.error_code === 27;
+}
+
+export function tokenHasWallPermission(response: unknown) {
+  if (!response || typeof response !== "object") {
+    return false;
+  }
+  const list = (response as { permissions?: unknown }).permissions;
+  if (!Array.isArray(list)) {
+    return false;
+  }
+  return list.some((item) => {
+    if (!item || typeof item !== "object") {
+      return false;
+    }
+    return (item as { name?: unknown }).name === "wall";
+  });
+}
+
+export function isTokenPermissionMethodUnavailable(error: VkApiFailure) {
+  return error.error_code === 3 || error.error_code === 15 || error.error_code === 27;
 }
 
 export function isPhotoUploadUnavailable(error: VkApiFailure) {
