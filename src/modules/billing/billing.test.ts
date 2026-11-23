@@ -281,7 +281,7 @@ describe("billing and subscriptions", () => {
         description: "Тестовый лимит",
         priceAmount: 0,
         isFree: true,
-        aiGenerations: 1,
+        aiGenerations: 0,
         projects: 1,
         socialAccounts: 1,
         members: 1,
