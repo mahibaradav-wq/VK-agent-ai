@@ -341,11 +341,25 @@ export function createPostService(db: PrismaClient) {
             await tx.postTarget.create({
               data: { postId: post.id, workspaceId, platform, status: "draft", socialAccountId: linked?.id },
             });
-          } else if (linked) {
+          } else {
             await tx.postTarget.updateMany({
-              where: { postId: post.id, platform, socialAccountId: null },
-              data: { socialAccountId: linked.id },
+              where: {
+                postId: post.id,
+                platform,
+                socialAccountId: { not: null },
+                OR: [
+                  { socialAccount: { is: { projectId: null } } },
+                  { socialAccount: { is: { projectId: { not: post.projectId } } } },
+                ],
+              },
+              data: { socialAccountId: null },
             });
+            if (linked) {
+              await tx.postTarget.updateMany({
+                where: { postId: post.id, platform, socialAccountId: null },
+                data: { socialAccountId: linked.id },
+              });
+            }
           }
         }
         await tx.postTarget.deleteMany({
