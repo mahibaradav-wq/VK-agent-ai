@@ -64,7 +64,6 @@ export function SubscriptionBoard({
     highlighted: boolean;
     checkout: "free" | "self" | "contract";
     features: string[];
-    aiGenerations: number;
     projects: number;
     socialAccounts: number;
     members: number;
