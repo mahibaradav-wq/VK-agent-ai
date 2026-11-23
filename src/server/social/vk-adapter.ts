@@ -9,7 +9,7 @@ import {
   describeVkApiError,
   extractSavedVideo,
   extractSavedWallPhoto,
-  isGroupAuthUnavailable,
+  isPhotoUploadUnavailable,
   resolveVkPublishTokens,
   type VkApiFailure,
   type VkTransport,
@@ -194,7 +194,7 @@ async function attachFromWallAlbum(options: {
       group_id: options.groupId,
     });
     if (!uploadServer.ok) {
-      if (index === 0 && isGroupAuthUnavailable(uploadServer)) {
+      if (isPhotoUploadUnavailable(uploadServer)) {
         return { attachments: [], blocked: true };
       }
       return { attachments: [], failure: mapVkFailure(uploadServer) };
@@ -227,6 +227,9 @@ async function attachFromWallAlbum(options: {
       hash: uploaded.response.hash,
     });
     if (!saved.ok) {
+      if (isPhotoUploadUnavailable(saved)) {
+        return { attachments: [], blocked: true };
+      }
       return { attachments: [], failure: mapVkFailure(saved, "upload") };
     }
     const photo = extractSavedWallPhoto(saved.response);
@@ -303,7 +306,7 @@ async function attachFromCommunityAlbum(options: {
       group_id: options.groupId,
     });
     if (!uploadServer.ok) {
-      return isGroupAuthUnavailable(uploadServer)
+      return isPhotoUploadUnavailable(uploadServer)
         ? { attachments: [], blocked: true }
         : { attachments: [], failure: mapVkFailure(uploadServer, "upload") };
     }
@@ -329,7 +332,7 @@ async function attachFromCommunityAlbum(options: {
       hash: uploaded.response.hash,
     });
     if (!saved.ok) {
-      return isGroupAuthUnavailable(saved)
+      return isPhotoUploadUnavailable(saved)
         ? { attachments: [], blocked: true }
         : { attachments: [], failure: mapVkFailure(saved, "upload") };
     }
@@ -438,7 +441,7 @@ async function attachWallVideo(options: {
     wallpost: 0,
   });
   if (!saved.ok) {
-    if (isGroupAuthUnavailable(saved) || saved.error_code === 15 || saved.error_code === 200) {
+    if (isPhotoUploadUnavailable(saved)) {
       return { attachments: [], blocked: true };
     }
     return { attachments: [], failure: mapVkFailure(saved, "upload") };

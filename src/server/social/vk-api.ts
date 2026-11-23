@@ -374,6 +374,10 @@ export function isGroupAuthUnavailable(error: VkApiFailure) {
   return error.error_code === 27;
 }
 
+export function isPhotoUploadUnavailable(error: VkApiFailure) {
+  return error.error_code === 15 || error.error_code === 27 || error.error_code === 200;
+}
+
 export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport {
   async function postUpload(uploadUrl: string, encoded: { body: Uint8Array; headers: Record<string, string> }) {
     if (fetchImpl !== fetch) {

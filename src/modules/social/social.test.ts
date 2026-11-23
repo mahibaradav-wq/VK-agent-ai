@@ -1277,11 +1277,13 @@ describe("social accounts", () => {
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).not.toBe("published");
   });
 
-  it("fails a media publish when the community key cannot upload photos", async () => {
+  it("parks a media publish for a manual VK fallback when photo upload is denied (error 200)", async () => {
     const owner = await registerOwner("soc-vk-nophoto");
     const transport = scriptedVk({
       "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
       "photos.getWallUploadServer": { ok: false, error_code: 200, error_msg: "Access denied" },
+      "photos.getAlbums": { ok: false, error_code: 200, error_msg: "Access denied" },
+      "photos.createAlbum": { ok: false, error_code: 200, error_msg: "Access denied" },
       "wall.post": (params) => {
         if (!String(params.message ?? "").trim()) {
           return { ok: false, error_code: 100, error_msg: "message is empty" };
@@ -1315,9 +1317,12 @@ describe("social accounts", () => {
     const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
     await publishing.processJob(job.id, "worker-vk-nophoto");
     const attempt = await prisma.publishAttempt.findFirstOrThrow({ where: { jobId: job.id } });
-    expect(attempt.kind).toBe("permanent_failure");
-    expect(attempt.errorCode).toBe("vk_200");
-    expect(attempt.errorMessage).toMatch(/Фотографии/);
+    expect(attempt.kind).toBe("unknown");
+    expect(attempt.errorCode).toBe("vk_manual_photo");
+    expect(attempt.errorMessage).toMatch(/вручную|photos\.getWallUploadServer/);
+    expect((await prisma.publishJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("requires_manual_check");
+    expect((await prisma.postTarget.findFirstOrThrow({ where: { postId: post.id } })).status).toBe("requires_manual_check");
+    expect(transport.methods.filter((method) => method === "wall.post")).toHaveLength(0);
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).not.toBe("published");
   });
 
