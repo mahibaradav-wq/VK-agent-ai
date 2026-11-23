@@ -130,6 +130,24 @@ export function createSocialService(
     return account;
   }
 
+  async function detachTargetsOutsideProject(
+    tx: Prisma.TransactionClient,
+    workspaceId: string,
+    accountId: string,
+    platform: "telegram" | "vk",
+    projectId: string | null,
+  ) {
+    await tx.postTarget.updateMany({
+      where: {
+        workspaceId,
+        platform,
+        socialAccountId: accountId,
+        ...(projectId ? { post: { is: { projectId: { not: projectId } } } } : {}),
+      },
+      data: { socialAccountId: null },
+    });
+  }
+
   return {
     toPublic,
 
@@ -255,10 +273,15 @@ export function createSocialService(
           if (existing.platform !== "telegram") {
             throw new AccessError(400, "Этот аккаунт не Telegram.");
           }
+          if (existing.projectId && input.projectId && existing.projectId !== input.projectId) {
+            throw new AccessError(400, "Социальный аккаунт уже закреплён за другим проектом. Создайте отдельное подключение.");
+          }
+          const targetProjectId = input.projectId || existing.projectId;
+          await detachTargetsOutsideProject(tx, workspaceId, existing.id, "telegram", targetProjectId);
           saved = await tx.socialAccount.update({
             where: { id: existing.id },
             data: {
-              projectId: input.projectId || existing.projectId,
+              projectId: targetProjectId,
               displayName,
               externalId,
               status: "connected",
@@ -376,11 +399,16 @@ export function createSocialService(
         destination.title ||
         (destination.username ? `@${destination.username}` : account.displayName);
 
+      if (account.projectId && input.projectId && account.projectId !== input.projectId) {
+        throw new AccessError(400, "Социальный аккаунт уже закреплён за другим проектом. Создайте отдельное подключение.");
+      }
       const saved = await db.$transaction(async (tx) => {
+        const targetProjectId = input.projectId || account.projectId;
+        await detachTargetsOutsideProject(tx, workspaceId, account.id, "telegram", targetProjectId);
         const updated = await tx.socialAccount.update({
           where: { id: account.id },
           data: {
-            projectId: input.projectId || account.projectId,
+            projectId: targetProjectId,
             displayName,
             externalId: destination.externalId,
             status: "connected",
@@ -546,6 +574,11 @@ export function createSocialService(
           if (existing.platform !== "vk") {
             throw new AccessError(400, "Этот аккаунт не ВКонтакте.");
           }
+          if (existing.projectId && input.projectId && existing.projectId !== input.projectId) {
+            throw new AccessError(400, "Социальный аккаунт уже закреплён за другим проектом. Создайте отдельное подключение.");
+          }
+          const targetProjectId = input.projectId || existing.projectId;
+          await detachTargetsOutsideProject(tx, workspaceId, existing.id, "vk", targetProjectId);
           saved = await tx.socialAccount.update({
             where: { id: existing.id },
             data: {
