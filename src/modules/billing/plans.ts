@@ -189,5 +189,15 @@ export async function attachFreeSubscription(db: DbClient, workspaceId: string, 
 export async function getWorkspacePlanLimits(db: DbClient, workspaceId: string, at = new Date()): Promise<PlanLimits> {
   const subscription = await attachFreeSubscription(db, workspaceId, at);
   const plan = "plan" in subscription && subscription.plan ? subscription.plan : await db.plan.findUniqueOrThrow({ where: { id: subscription.planId } });
+  const paidAccess =
+    subscription.status === "active" &&
+    subscription.paidAt !== null &&
+    subscription.currentPeriodEnd >= at;
+
+  if (!plan.isFree && !paidAccess) {
+    const freePlan = await db.plan.findUniqueOrThrow({ where: { slug: "start" } });
+    return toPlanLimits(freePlan);
+  }
+
   return toPlanLimits(plan);
 }
