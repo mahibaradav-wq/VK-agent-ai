@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { consumeRateLimit, resetRateLimits } from "@/server/security/rate-limit";
+import { consumeRateLimit, resetRateLimits, trustedClientAddress } from "@/server/security/rate-limit";
 
 describe("auth rate limit", () => {
   afterEach(() => {
     resetRateLimits();
+  });
+
+  it("uses only the proxy-provided client address and has a local fallback", () => {
+    expect(trustedClientAddress("203.0.113.10")).toBe("203.0.113.10");
+    expect(trustedClientAddress("  203.0.113.10  ")).toBe("203.0.113.10");
+    expect(trustedClientAddress(null)).toBe("local");
+    expect(trustedClientAddress("")).toBe("local");
   });
 
   it("allows requests under the limit and blocks the next", () => {
