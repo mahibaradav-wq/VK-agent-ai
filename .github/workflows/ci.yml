@@ -40,6 +40,8 @@ jobs:
           cache: npm
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Check VPS script syntax
+        run: bash -n scripts/backup-vps.sh scripts/restore-vps.sh scripts/vps-up.sh scripts/vps-pull.sh
       - run: npm ci
       - run: npx prisma generate
       - run: npx prisma migrate deploy
