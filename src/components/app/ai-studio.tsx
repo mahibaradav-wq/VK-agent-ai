@@ -15,7 +15,7 @@ const idle: AiFormState = { status: "idle", message: "" };
 
 function BriefFields({
   defaultPrompt = "",
-  defaultPlatform = "",
+  defaultPlatform: _defaultPlatform = "",
   textareaId,
   highlight = false,
   selected,

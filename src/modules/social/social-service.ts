@@ -19,8 +19,10 @@ import {
   createVkTransport,
   describeVkApiError,
   extractVkGroup,
+  isTokenPermissionMethodUnavailable,
   isVkAccessToken,
   packVkTokens,
+  tokenHasWallPermission,
   unpackVkTokens,
   type VkTransport,
 } from "@/server/social/vk-api";
@@ -456,7 +458,7 @@ export function createSocialService(
       const groupLookup = club?.[2] ?? parsed.screenName;
       const groupResult = await vk.call(token, "groups.getById", {
         group_id: groupLookup,
-        fields: "name,screen_name",
+        fields: "name,screen_name,can_post,is_admin",
       });
       const group = groupResult.ok ? extractVkGroup(groupResult.response) : null;
       if (!group?.id) {
@@ -468,26 +470,19 @@ export function createSocialService(
         );
       }
 
-      const ownerId = -Math.abs(group.id);
-      const probe = await vk.call(token, "wall.post", {
-        owner_id: ownerId,
-        from_group: 1,
-        message: "",
-        guid: `probe:${workspaceId}:${group.id}`,
-      });
-      if (probe.ok) {
-        const posted = probe.response as { post_id?: number } | number;
-        const postId = typeof posted === "number" ? posted : posted?.post_id;
-        if (postId) {
-          await vk.call(token, "wall.delete", { owner_id: ownerId, post_id: postId });
+      const wallDenied =
+        "VK запретил запись на стену. Нужен ключ именно этого сообщества с правом «Стена» или ключ админа клуба. Проверочный пост на стену не отправляем.";
+      const permissionProbe = await vk.call(token, "groups.getTokenPermissions", {});
+      if (permissionProbe.ok) {
+        if (!tokenHasWallPermission(permissionProbe.response)) {
+          throw new AccessError(400, wallDenied);
         }
-      } else if (probe.error_code !== 100) {
-        throw new AccessError(
-          400,
-          probe.error_code === 15 || probe.error_code === 27 || probe.error_code === 214
-            ? "Этот ключ не умеет писать на стену. В настройках сообщества создайте ключ с правом «Стена». Сервисный ключ приложения только читает."
-            : describeVkApiError(probe),
-        );
+      } else if (permissionProbe.error_code === 0) {
+        throw new AccessError(400, describeVkApiError(permissionProbe));
+      } else if (!isTokenPermissionMethodUnavailable(permissionProbe) && group.can_post !== 1 && group.is_admin !== 1) {
+        throw new AccessError(400, describeVkApiError(permissionProbe));
+      } else if (group.can_post === 0) {
+        throw new AccessError(400, wallDenied);
       }
 
       if (!photoToken && input.accountId) {
@@ -525,6 +520,9 @@ export function createSocialService(
       const encryptedToken = encryptToken(packVkTokens(token, photoToken));
       const displayName = input.displayName?.trim() || group.name?.trim() || parsed.screenName;
       const externalId = String(group.id);
+      const lastError = photoToken
+        ? null
+        : "Ключ клуба пишет текст. Картинка из Студии уйдёт в Telegram; во ВК её нужно скачать и выложить вручную, пока нет ключа админа с photos.getWallUploadServer.";
 
       const account = await db.$transaction(async (tx) => {
         let saved;
@@ -542,7 +540,7 @@ export function createSocialService(
               externalId,
               status: "connected",
               encryptedToken,
-              lastError: null,
+              lastError,
             },
             include: accountInclude,
           });
@@ -564,7 +562,7 @@ export function createSocialService(
               externalId,
               status: "connected",
               encryptedToken,
-              lastError: null,
+              lastError,
             },
             include: accountInclude,
           });

@@ -14,10 +14,12 @@ import { createCollaborationService } from "@/modules/collaboration/collaboratio
 import { createMediaService } from "@/modules/media/media-service";
 import { createPostService } from "@/modules/posts/post-service";
 import { createPublishService } from "@/modules/publishing/publish-service";
+import { copyForPlatform } from "@/modules/posts/variants";
 import { prisma } from "@/server/db/prisma";
 import { storage } from "@/server/storage";
+import { vkWallCopy } from "@/modules/social/vk-wall-text";
 
-const lockedStatuses = ["queued", "publishing", "published", "cancelled"];
+const lockedStatuses = ["queued", "publishing", "published", "cancelled", "requires_manual_check"];
 
 export default async function PostEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -49,7 +51,7 @@ export default async function PostEditorPage({ params }: { params: Promise<{ id:
     const canPublishNow =
       hasPermission(activeMembership.role, "post.approve") &&
       hasPermission(activeMembership.role, "post.update") &&
-      ["draft", "pending_approval", "approved", "scheduled", "failed"].includes(post.status);
+      ["draft", "pending_approval", "approved", "scheduled", "failed", "requires_manual_check"].includes(post.status);
 
     return (
       <>
@@ -76,6 +78,11 @@ export default async function PostEditorPage({ params }: { params: Promise<{ id:
             postStatus={post.status}
             canEnqueue={canEnqueue}
             canPublishNow={canPublishNow}
+            vkManualCopy={
+              version ? vkWallCopy(copyForPlatform(version, "vk").title, copyForPlatform(version, "vk").body) : ""
+            }
+            mediaIds={post.media.map((item) => item.mediaId)}
+            canConfirmManualVk={hasPermission(activeMembership.role, "post.update")}
             targets={post.targets.map((target) => ({
               platform: target.platform,
               status: target.status,

@@ -13,7 +13,7 @@ export function parseVkCommunitySource(raw: string) {
     throw new AccessError(400, "Укажите ссылку или короткое имя сообщества ВКонтакте.");
   }
 
-  let value = source
+  const value = source
     .replace(/^https?:\/\//i, "")
     .replace(/^(?:m\.)?vk\.(?:com|ru)\//i, "")
     .replace(/^@/, "")

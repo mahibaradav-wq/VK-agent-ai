@@ -40,7 +40,13 @@ function fingerprint(input: {
 
 const approvalStatuses: Array<PostStatus | PostTargetStatus> = ["pending_approval", "approved"];
 const studioClearableStatuses: PostStatus[] = ["draft", "pending_approval", "approved", "failed"];
-const studioWorkingStatuses: PostStatus[] = [...studioClearableStatuses, "queued", "publishing"];
+const studioManualStatuses: PostStatus[] = ["requires_manual_check"];
+const studioWorkingStatuses: PostStatus[] = [
+  ...studioClearableStatuses,
+  ...studioManualStatuses,
+  "queued",
+  "publishing",
+];
 const studioInFlightStatuses: PostStatus[] = ["queued", "publishing"];
 
 export function createPostService(db: PrismaClient) {
@@ -100,6 +106,20 @@ export function createPostService(db: PrismaClient) {
       });
       if (inflight.length) {
         return inflight;
+      }
+      const parked = await db.post.findMany({
+        where: {
+          workspaceId,
+          projectId,
+          status: { in: studioManualStatuses },
+          schedule: null,
+        },
+        include: postInclude,
+        orderBy: { updatedAt: "desc" },
+        take: 1,
+      });
+      if (parked.length) {
+        return parked;
       }
       return db.post.findMany({
         where: this.studioCardWhere(workspaceId, projectId),

@@ -82,7 +82,7 @@ export function SocialAccountsBoard({
               <p className="text-sm text-ink/70">
                 {account.capabilities.some((item) => item.name === "publish_carousel" && item.enabled)
                   ? "Фото на стене: ключ админа умеет photos.getWallUploadServer. Картинка из Студии уйдёт как photo, не как файл."
-                  : "Фото на стене: ключ клуба пишет текст, но не грузит новое фото (ошибка 27). Вставьте ключ админа клуба с правом «Фотографии» — одним ключом, как в Lovable."}
+                  : "Фото на стене: ключ клуба пишет текст, но не грузит новое фото. Telegram выходит сам. Во ВК скачайте JPEG и выложите пост вручную либо вставьте ключ админа клуба."}
               </p>
             ) : null}
             {account.lastError ? <p className="text-sm text-ink/60">{account.lastError}</p> : null}
@@ -190,11 +190,10 @@ export function SocialAccountsBoard({
                 {existingVk ? "Обновить ключи ВКонтакте" : "Подключить ВКонтакте"}
               </h2>
               <p className="mt-2 text-sm text-ink/70">
-                Как в Lovable: если ключ проходит photos.getWallUploadServer, им же грузим JPEG и пишем wall.post с
-                вложением photo. Это пользовательский ключ админа клуба с правом «Фотографии». Ключ сообщества (Управление
-                → Работа с API) пишет только текст: VK отвечает ошибкой 27 даже с правом «Фотографии». Достаточно одного
-                ключа админа. Второй поле — если хотите оставить ключ клуба для текста отдельно. Не сервисный ключ, не
-                ключ наблюдения и не пароль. Право photos: https://vk.ru/support?act=new&from=api
+                Если ключ проходит photos.getWallUploadServer, им же грузим JPEG и пишем wall.post с вложением photo —
+                пользовательский ключ админа клуба. Ключ сообщества (Управление → Работа с API) пишет только текст: VK
+                отвечает ошибкой 27 даже с правом «Фотографии». Без ключа админа Telegram выходит сам, а ВК вы кладёте
+                руками из Студии. Не сервисный ключ, не ключ наблюдения и не пароль. При подключении стену не трогаем.
               </p>
               <form action={vkAction} className="mt-4 grid gap-4">
                 <input type="hidden" name="workspaceId" value={workspaceId} />

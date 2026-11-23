@@ -9,29 +9,18 @@ import {
   describeVkApiError,
   extractSavedVideo,
   extractSavedWallPhoto,
-  isGroupAuthUnavailable,
+  isPhotoUploadUnavailable,
   resolveVkPublishTokens,
   type VkApiFailure,
   type VkTransport,
 } from "@/server/social/vk-api";
+import { VK_MANUAL_PHOTO_CODE, VK_MANUAL_PHOTO_MESSAGE } from "@/modules/social/vk-manual";
+import { toVkWallText } from "@/modules/social/vk-wall-text";
 import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/social/types";
 import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
 
 const MAX_VK_WALL_PHOTOS = 10;
 const POLKA_ALBUM_TITLE = "Polka Social";
-const VK_PHOTO_TOKEN_MESSAGE =
-  "Картинка не вышла на стену как фото. Ключ сообщества не умеет photos.getWallUploadServer (ошибка 27). В Подключениях вставьте ключ админа клуба с правом «Фотографии» — одним ключом, как в Lovable. Тогда wall.post получит photo{owner}_{id}. Право photos: https://vk.ru/support?act=new&from=api";
-
-export function toVkWallText(text: string) {
-  return text
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/__(.+?)__/g, "$1")
-    .replace(/\*(.+?)\*/g, "$1")
-    .replace(/`(.+?)`/g, "$1")
-    .replace(/\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g, "$1 $2")
-    .replace(/[ \t]+\n/g, "\n")
-    .trim();
-}
 
 function composeText(input: PublishInput, includeLink: boolean) {
   const parts = [toVkWallText(input.title), toVkWallText(input.body)].filter(Boolean);
@@ -195,7 +184,7 @@ async function attachFromWallAlbum(options: {
       group_id: options.groupId,
     });
     if (!uploadServer.ok) {
-      if (index === 0 && isGroupAuthUnavailable(uploadServer)) {
+      if (isPhotoUploadUnavailable(uploadServer)) {
         return { attachments: [], blocked: true };
       }
       return { attachments: [], failure: mapVkFailure(uploadServer) };
@@ -228,6 +217,9 @@ async function attachFromWallAlbum(options: {
       hash: uploaded.response.hash,
     });
     if (!saved.ok) {
+      if (isPhotoUploadUnavailable(saved)) {
+        return { attachments: [], blocked: true };
+      }
       return { attachments: [], failure: mapVkFailure(saved, "upload") };
     }
     const photo = extractSavedWallPhoto(saved.response);
@@ -304,7 +296,7 @@ async function attachFromCommunityAlbum(options: {
       group_id: options.groupId,
     });
     if (!uploadServer.ok) {
-      return isGroupAuthUnavailable(uploadServer)
+      return isPhotoUploadUnavailable(uploadServer)
         ? { attachments: [], blocked: true }
         : { attachments: [], failure: mapVkFailure(uploadServer, "upload") };
     }
@@ -330,7 +322,7 @@ async function attachFromCommunityAlbum(options: {
       hash: uploaded.response.hash,
     });
     if (!saved.ok) {
-      return isGroupAuthUnavailable(saved)
+      return isPhotoUploadUnavailable(saved)
         ? { attachments: [], blocked: true }
         : { attachments: [], failure: mapVkFailure(saved, "upload") };
     }
@@ -353,9 +345,9 @@ async function attachFromCommunityAlbum(options: {
 
 function nativeWallPhotoFailure(): PublishOutcome {
   return {
-    kind: "permanent_failure",
-    code: "vk_photo_user_token",
-    message: VK_PHOTO_TOKEN_MESSAGE,
+    kind: "unknown",
+    code: VK_MANUAL_PHOTO_CODE,
+    message: VK_MANUAL_PHOTO_MESSAGE,
   };
 }
 
@@ -439,7 +431,7 @@ async function attachWallVideo(options: {
     wallpost: 0,
   });
   if (!saved.ok) {
-    if (isGroupAuthUnavailable(saved) || saved.error_code === 15 || saved.error_code === 200) {
+    if (isPhotoUploadUnavailable(saved)) {
       return { attachments: [], blocked: true };
     }
     return { attachments: [], failure: mapVkFailure(saved, "upload") };

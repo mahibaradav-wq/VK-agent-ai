@@ -10,6 +10,7 @@ import { copyForPlatform } from "@/modules/posts/variants";
 import { aggregatePostStatus } from "@/modules/publishing/aggregate";
 import { defaultBackoffMs, nextBackoffMs } from "@/modules/publishing/backoff";
 import { createDefaultAdapters, type AdapterRegistry, type PublishOutcome } from "@/server/social";
+import { isVkManualPhoto } from "@/modules/social/vk-manual";
 import { getPublishQueue, type QueueDriver } from "@/server/queue";
 
 const STALE_CLAIM_MS = 2 * 60 * 1000;
@@ -272,6 +273,73 @@ export function createPublishService(
       return db.publishJob.findUniqueOrThrow({ where: { id: job.id }, include: jobInclude });
     },
 
+    async confirmManualVk(userId: string, workspaceId: string, postId: string) {
+      await access.requirePermission(userId, workspaceId, "post.update");
+      const post = await loadBoundPost(workspaceId, postId);
+      const target = post.targets.find((item) => item.platform === "vk");
+      if (!target) {
+        throw new AccessError(400, "У этой публикации нет цели ВКонтакте.");
+      }
+      const alreadyPublished = target.status === "published";
+      if (
+        !alreadyPublished &&
+        target.status !== "requires_manual_check" &&
+        !(target.status === "failed" && isVkManualPhoto(null, target.lastError))
+      ) {
+        throw new AccessError(
+          400,
+          "Отметить ручную выкладку можно, только если ВК ждал картинку и не ушёл на стену автоматически.",
+        );
+      }
+
+      await db.$transaction(async (tx) => {
+        if (!alreadyPublished) {
+          await tx.postTarget.update({
+            where: { id: target.id },
+            data: {
+              status: "published",
+              externalId: target.externalId || "manual",
+              lastError: null,
+            },
+          });
+          await tx.auditLog.create({
+            data: {
+              action: "CONFIRM_MANUAL_VK",
+              entityType: "post_target",
+              entityId: target.id,
+              actorId: userId,
+              details: postId,
+            },
+          });
+        }
+
+        const updated = await tx.post.findUniqueOrThrow({
+          where: { id: post.id },
+          include: { targets: true },
+        });
+        const postStatus = aggregatePostStatus(updated.targets);
+        await tx.post.update({
+          where: { id: post.id },
+          data: { status: postStatus },
+        });
+        const job = await tx.publishJob.findFirst({
+          where: { postId: post.id },
+          orderBy: { createdAt: "desc" },
+        });
+        if (job && (job.status === "requires_manual_check" || job.status === "failed")) {
+          await tx.publishJob.update({
+            where: { id: job.id },
+            data: {
+              status: postStatus === "published" ? "completed" : job.status,
+              lastError: postStatus === "published" ? null : job.lastError,
+            },
+          });
+        }
+      });
+
+      return loadBoundPost(workspaceId, postId);
+    },
+
     async publishNow(userId: string, workspaceId: string, postId: string) {
       const membership = await access.requirePermission(userId, workspaceId, "post.update");
       if (membership.role !== "Owner" && membership.role !== "Admin") {
@@ -305,7 +373,7 @@ export function createPublishService(
       }
 
       const job = await this.enqueue(userId, workspaceId, post.id);
-      let processed = await this.processJob(job.id, `publish-now:${userId}`);
+      const processed = await this.processJob(job.id, `publish-now:${userId}`);
       if (processed.skipped && processed.job && isActiveJob(processed.job.status)) {
         for (let attempt = 0; attempt < 40; attempt += 1) {
           await new Promise((resolve) => setTimeout(resolve, 250));
@@ -546,7 +614,12 @@ export function createPublishService(
         }
       } else if (hasUnknown) {
         jobStatus = "requires_manual_check";
-        lastError = "Неопределённый результат публикации. Повторная отправка заблокирована.";
+        const vkManual = post.targets.find(
+          (target) => target.platform === "vk" && target.status === "requires_manual_check" && isVkManualPhoto(null, target.lastError),
+        );
+        lastError = vkManual
+          ? "Telegram мог выйти по расписанию. ВКонтакте: скачайте картинку и выложите пост вручную. Повтор на стену не отправляем."
+          : "Неопределённый результат публикации. Повторная отправка заблокирована.";
         await db.post.update({ where: { id: post.id }, data: { status: postStatus } });
       } else {
         jobStatus = "failed";

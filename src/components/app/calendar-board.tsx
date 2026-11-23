@@ -21,7 +21,25 @@ export type CalendarEvent = {
   projectName: string;
   projectColor: string;
   platforms: string[];
+  mediaIds: string[];
+  vkManual: boolean;
 };
+
+function statusLabel(status: string) {
+  if (status === "requires_manual_check") {
+    return "вручную ВК";
+  }
+  if (status === "failed") {
+    return "ошибка";
+  }
+  if (status === "published") {
+    return "вышло";
+  }
+  if (status === "scheduled") {
+    return "слот";
+  }
+  return status;
+}
 
 const weekdayLabels = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
@@ -41,11 +59,22 @@ function EventCard({
   return (
     <article className="rounded-2xl bg-white p-3 ring-1 ring-ink/10">
       <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: event.projectColor }}>
-        {event.status} · {event.displayTime}
+        {statusLabel(event.status)} · {event.displayTime}
       </p>
       <h3 className="mt-1 text-sm font-black text-ink">{event.title}</h3>
       <p className="text-xs text-ink/60">{event.projectName}</p>
       <p className="text-xs text-ink/50">{event.platforms.join(", ") || "без цели"}</p>
+      {event.vkManual
+        ? event.mediaIds.map((id, index) => (
+            <a
+              key={id}
+              href={`/api/media/${id}?download=1`}
+              className="mt-1 inline-block text-xs font-semibold text-brand-dark"
+            >
+              Скачать картинку{event.mediaIds.length > 1 ? ` ${index + 1}` : ""}
+            </a>
+          ))
+        : null}
       <Link href={`/app/posts/${event.postId}`} className="mt-1 inline-block text-xs font-semibold text-brand-dark">
         Редактор
       </Link>
@@ -54,7 +83,7 @@ function EventCard({
         postId={event.postId}
         localDateTime={event.localInput}
         timezone={event.timezone}
-        canEdit={canEdit}
+        canEdit={canEdit && event.status !== "requires_manual_check" && event.status !== "published"}
       />
     </article>
   );

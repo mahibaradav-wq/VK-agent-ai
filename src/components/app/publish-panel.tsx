@@ -1,5 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { EnqueueForm } from "@/components/app/enqueue-form";
+import { VkManualFallback } from "@/components/app/vk-manual-fallback";
+import { isVkManualPhoto } from "@/modules/social/vk-manual";
 
 export function PublishPanel({
   workspaceId,
@@ -9,6 +11,9 @@ export function PublishPanel({
   canPublishNow,
   targets,
   job,
+  vkManualCopy,
+  mediaIds,
+  canConfirmManualVk,
 }: {
   workspaceId: string;
   postId: string;
@@ -23,7 +28,16 @@ export function PublishPanel({
     lastError: string | null;
     attempts: Array<{ platform: string; kind: string; attemptNumber: number; errorCode: string | null }>;
   } | null;
+  vkManualCopy?: string;
+  mediaIds?: string[];
+  canConfirmManualVk?: boolean;
 }) {
+  const vkTarget = targets.find((target) => target.platform === "vk");
+  const vkManual = Boolean(
+    vkTarget &&
+      (vkTarget.status === "requires_manual_check" || isVkManualPhoto(null, vkTarget.lastError)),
+  );
+
   return (
     <Card className="grid gap-3">
       <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">Публикация</p>
@@ -31,6 +45,15 @@ export function PublishPanel({
         Статус поста: {postStatus}. «Опубликовать сейчас» отправляет на отмеченные живые цели: Telegram и/или стену
         ВК. Без ключа сообщества ВК успех не имитируется.
       </p>
+      {vkManual ? (
+        <VkManualFallback
+          workspaceId={workspaceId}
+          postId={postId}
+          copy={vkManualCopy ?? ""}
+          mediaIds={mediaIds ?? []}
+          canConfirm={Boolean(canConfirmManualVk)}
+        />
+      ) : null}
       <p className="text-sm text-ink/70">
         Цели: {targets.map((target) => `${target.platform}:${target.status}`).join(", ") || "не выбраны"}
       </p>

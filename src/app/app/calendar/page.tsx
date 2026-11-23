@@ -119,6 +119,8 @@ export default async function CalendarPage({
             {" · "}
             Вышло: {events.filter((item) => item.status === "published").length}
             {" · "}
+            Вручную ВК: {events.filter((item) => item.status === "requires_manual_check" || item.vkManual).length}
+            {" · "}
             Красные: {events.filter((item) => item.status === "failed").length}
           </p>
         </Card>

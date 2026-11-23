@@ -76,6 +76,25 @@ export async function enqueuePost(_prev: PublishFormState, formData: FormData): 
   }
 }
 
+export async function confirmManualVkPost(_prev: PublishFormState, formData: FormData): Promise<PublishFormState> {
+  const postId = readField(formData, "postId");
+  try {
+    await createPublishService(prisma).confirmManualVk(
+      await requireUserId(),
+      readField(formData, "workspaceId"),
+      postId,
+    );
+    revalidatePublish(postId);
+    return {
+      status: "success",
+      message: "ВКонтакте отмечен как выложенный вручную. Стенку VK API больше не трогаем.",
+    };
+  } catch (error) {
+    const message = error instanceof AccessError ? error.message : "Не удалось отметить ручную выкладку ВК.";
+    return { status: "invalid", message };
+  }
+}
+
 export async function processDueJobs(_prev: PublishFormState, formData: FormData): Promise<PublishFormState> {
   try {
     const userId = await requireUserId();

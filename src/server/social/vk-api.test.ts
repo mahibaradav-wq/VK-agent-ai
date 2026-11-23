@@ -3,11 +3,14 @@ import type { AddressInfo } from "node:net";
 
 import { describe, expect, it } from "vitest";
 
+import { redactVkSecrets } from "@/modules/social/vk-manual";
 import {
   createVkTransport,
+  describeVkApiError,
   encodeMultipartFile,
   packVkTokens,
   resolveVkPublishTokens,
+  tokenHasWallPermission,
   unpackVkTokens,
 } from "@/server/social/vk-api";
 
@@ -22,6 +25,25 @@ describe("VK token pack", () => {
       wall: "vk1.a.admin",
       photo: "vk1.a.admin",
     });
+  });
+
+  it("reads wall permission from groups.getTokenPermissions without posting", () => {
+    expect(tokenHasWallPermission({ permissions: [{ name: "photos" }, { name: "wall" }] })).toBe(true);
+    expect(tokenHasWallPermission({ permissions: [{ name: "photos" }] })).toBe(false);
+    expect(tokenHasWallPermission({})).toBe(false);
+  });
+
+  it("redacts access tokens from VK error text", () => {
+    const token = `vk1.a.${"S".repeat(80)}`;
+    expect(redactVkSecrets(`token ${token} leaked`)).not.toContain(token);
+    expect(redactVkSecrets(packVkTokens(token, token))).toBe("polka-vk-v2:[redacted]");
+    expect(
+      describeVkApiError({
+        ok: false,
+        error_code: 5,
+        error_msg: `invalid access_token ${token}`,
+      }),
+    ).not.toContain(token);
   });
 });
 

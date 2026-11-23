@@ -14,7 +14,7 @@ export const socialPlatformCatalog = [
     label: "ВКонтакте",
     first: false,
     officialAuth:
-      "Ключ доступа сообщества с правом «Стена» (Управление → Настройки → Работа с API). Сервисный ключ приложения только читает стены. Пароль не принимается.",
+      "Ключ админа клуба с photos.getWallUploadServer — текст и фото. Ключ сообщества с правом «Стена» — только текст, картинку выкладываете вручную. Сервисный ключ приложения только читает стены. Пароль не принимается.",
     passwordAllowed: false,
     docsUrl: "https://dev.vk.com/en/api/access-token/getting-started",
   },

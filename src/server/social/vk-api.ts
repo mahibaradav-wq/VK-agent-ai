@@ -2,6 +2,8 @@ import dns from "node:dns";
 import http from "node:http";
 import https from "node:https";
 
+import { redactVkSecrets } from "@/modules/social/vk-manual";
+
 // VK API is reachable directly from the host. Do not send it through the
 // Telegram/OpenAI CONNECT proxy: that tunnel fails with api.vk.ru.
 dns.setDefaultResultOrder("ipv4first");
@@ -35,6 +37,8 @@ export type VkGroup = {
   name?: string;
   screen_name?: string;
   type?: string;
+  can_post?: number;
+  is_admin?: number;
 };
 
 export type VkWallPost = {
@@ -372,6 +376,30 @@ export function isGroupAuthUnavailable(error: VkApiFailure) {
   return error.error_code === 27;
 }
 
+export function tokenHasWallPermission(response: unknown) {
+  if (!response || typeof response !== "object") {
+    return false;
+  }
+  const list = (response as { permissions?: unknown }).permissions;
+  if (!Array.isArray(list)) {
+    return false;
+  }
+  return list.some((item) => {
+    if (!item || typeof item !== "object") {
+      return false;
+    }
+    return (item as { name?: unknown }).name === "wall";
+  });
+}
+
+export function isTokenPermissionMethodUnavailable(error: VkApiFailure) {
+  return error.error_code === 3 || error.error_code === 15 || error.error_code === 27;
+}
+
+export function isPhotoUploadUnavailable(error: VkApiFailure) {
+  return error.error_code === 15 || error.error_code === 27 || error.error_code === 200;
+}
+
 export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport {
   async function postUpload(uploadUrl: string, encoded: { body: Uint8Array; headers: Record<string, string> }) {
     if (fetchImpl !== fetch) {
@@ -516,11 +544,12 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
 }
 
 export function describeVkApiError(error: VkApiFailure) {
+  const detail = redactVkSecrets(error.error_msg);
   if (error.error_code === 0) {
-    return error.error_msg;
+    return detail;
   }
   if (error.error_code === 5 || error.error_code === 15) {
-    return `VK отклонил ключ: ${error.error_msg}`;
+    return `VK отклонил ключ: ${detail}`;
   }
   if (error.error_code === 27) {
     return "VK отклонил ключ сообщества. Для стены нужен ключ именно этого клуба с правом «Стена»; для чтения чужих стен — сервисный ключ приложения.";
@@ -534,5 +563,5 @@ export function describeVkApiError(error: VkApiFailure) {
   if (error.error_code === 200) {
     return "VK запретил загрузку фото. В ключе сообщества нужны права «Стена» и «Фотографии».";
   }
-  return `VK API: ${error.error_msg}`;
+  return `VK API: ${detail}`;
 }

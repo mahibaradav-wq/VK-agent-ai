@@ -12,6 +12,8 @@ describe("production hosting stack", () => {
   const envExample = read(".env.production.example");
   const deploy = read("docs/deploy.md");
   const upScript = read("scripts/vps-up.sh");
+  const ci = read(".github/workflows/ci.yml");
+  const deployWorkflow = read(".github/workflows/deploy-vps.yml");
 
   it("builds the app image and applies migrations before start", () => {
     expect(dockerfile).toContain("npx prisma generate && npm run build");
@@ -49,7 +51,20 @@ describe("production hosting stack", () => {
   it("documents VPS + DNS instead of a fake cloud deploy", () => {
     expect(deploy).toContain("SITE_DOMAIN");
     expect(deploy).toContain("A-запись");
-    expect(deploy).toContain("docker compose -f docker-compose.prod.yml");
+    expect(deploy).toContain("bash scripts/vps-up.sh");
     expect(deploy).not.toMatch(/успешно задеплоено на Vercel/i);
+  });
+
+  it("runs test, typecheck and lint on a pull request without deploying", () => {
+    expect(ci).toContain("pull_request:");
+    expect(ci).toContain("npm run typecheck");
+    expect(ci).toContain("npm run lint");
+    expect(ci).toContain("npm test");
+    expect(ci).not.toContain("appleboy/ssh-action");
+    expect(ci).not.toContain("docker compose");
+    expect(ci).not.toContain("VPS_HOST");
+    expect(deployWorkflow).toContain("workflow_dispatch:");
+    expect(deployWorkflow).not.toContain("pull_request:");
+    expect(deployWorkflow).not.toContain("npm test");
   });
 });

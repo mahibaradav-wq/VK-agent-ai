@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { AccessError } from "@/modules/access/permissions";
+import type { AccessError } from "@/modules/access/permissions";
 import { AI_UNAVAILABLE_MESSAGE } from "@/server/ai/errors";
 import { probeAiApiKey } from "@/server/ai/probe";
 
