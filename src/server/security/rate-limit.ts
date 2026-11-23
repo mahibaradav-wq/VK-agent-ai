@@ -9,6 +9,10 @@ export const AUTH_RATE_LIMITS = {
   contact: { limit: 8, windowMs: 15 * 60 * 1000 },
 } as const;
 
+export function trustedClientAddress(realIp: string | null | undefined) {
+  return realIp?.trim() || "local";
+}
+
 export function consumeRateLimit(key: string, limit: number, windowMs: number, now = Date.now()) {
   const current = buckets.get(key);
   if (!current || current.resetAt <= now) {
