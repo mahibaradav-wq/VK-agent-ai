@@ -29,10 +29,6 @@ export type ParsedShopUrl = {
   titleGuess: string;
 };
 
-function hostnameOf(url: URL) {
-  return url.hostname.replace(/^www\./, "").toLowerCase();
-}
-
 function guessTitle(pathname: string) {
   const parts = pathname
     .split("/")

@@ -373,7 +373,7 @@ export function createPublishService(
       }
 
       const job = await this.enqueue(userId, workspaceId, post.id);
-      let processed = await this.processJob(job.id, `publish-now:${userId}`);
+      const processed = await this.processJob(job.id, `publish-now:${userId}`);
       if (processed.skipped && processed.job && isActiveJob(processed.job.status)) {
         for (let attempt = 0; attempt < 40; attempt += 1) {
           await new Promise((resolve) => setTimeout(resolve, 250));
