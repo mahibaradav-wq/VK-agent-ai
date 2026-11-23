@@ -303,10 +303,17 @@ export function createSocialService(
             create: { socialAccountId: saved.id, name: "publish_media", enabled: true },
           });
         }
-        await tx.postTarget.updateMany({
-          where: { workspaceId, platform: "telegram", socialAccountId: null },
-          data: { socialAccountId: saved.id },
-        });
+        if (saved.projectId) {
+          await tx.postTarget.updateMany({
+            where: {
+              workspaceId,
+              platform: "telegram",
+              socialAccountId: null,
+              post: { is: { projectId: saved.projectId } },
+            },
+            data: { socialAccountId: saved.id },
+          });
+        }
         await tx.auditLog.create({
           data: {
             action: "CONNECT_SOCIAL_ACCOUNT",
@@ -391,10 +398,17 @@ export function createSocialService(
           update: { enabled: true },
           create: { socialAccountId: updated.id, name: "publish_media", enabled: true },
         });
-        await tx.postTarget.updateMany({
-          where: { workspaceId, platform: "telegram", socialAccountId: null },
-          data: { socialAccountId: updated.id },
-        });
+        if (updated.projectId) {
+          await tx.postTarget.updateMany({
+            where: {
+              workspaceId,
+              platform: "telegram",
+              socialAccountId: null,
+              post: { is: { projectId: updated.projectId } },
+            },
+            data: { socialAccountId: updated.id },
+          });
+        }
         await tx.auditLog.create({
           data: {
             action: "BIND_TELEGRAM_CHANNEL",
@@ -583,10 +597,17 @@ export function createSocialService(
           update: { enabled: Boolean(photoToken) },
           create: { socialAccountId: saved.id, name: "publish_carousel", enabled: Boolean(photoToken) },
         });
-        await tx.postTarget.updateMany({
-          where: { workspaceId, platform: "vk", socialAccountId: null },
-          data: { socialAccountId: saved.id },
-        });
+        if (saved.projectId) {
+          await tx.postTarget.updateMany({
+            where: {
+              workspaceId,
+              platform: "vk",
+              socialAccountId: null,
+              post: { is: { projectId: saved.projectId } },
+            },
+            data: { socialAccountId: saved.id },
+          });
+        }
         await tx.auditLog.create({
           data: {
             action: "CONNECT_SOCIAL_ACCOUNT",
