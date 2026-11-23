@@ -210,6 +210,30 @@ describe("social accounts", () => {
     expect(firstTarget.socialAccountId).toBe(account.id);
     expect(secondTarget.socialAccountId).toBeNull();
 
+    await prisma.postTarget.update({
+      where: { id: secondTarget.id },
+      data: { socialAccountId: account.id },
+    });
+    await social.connectTelegram(owner.userId, owner.workspaceId, {
+      token: BOT_TOKEN,
+      chatId: "@project_a",
+      projectId: owner.projectId,
+      accountId: account.id,
+    });
+    expect(
+      (await prisma.postTarget.findUniqueOrThrow({ where: { id: secondTarget.id } })).socialAccountId,
+    ).toBeNull();
+    await expectAccess(
+      social.connectTelegram(owner.userId, owner.workspaceId, {
+        token: BOT_TOKEN,
+        chatId: "@project_a",
+        projectId: otherProject.id,
+        accountId: account.id,
+      }),
+      400,
+      /закреплён за другим проектом/,
+    );
+
     const laterPost = await posts.create(owner.userId, owner.workspaceId, otherProject.id, "Новый проект B");
     await posts.saveDraft(owner.userId, owner.workspaceId, laterPost.id, {
       title: "Новый проект B",
