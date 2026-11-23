@@ -232,6 +232,56 @@ describe("VK watch idea agent", () => {
     expect(await prisma.mediaAsset.count({ where: { workspaceId: owner.workspaceId } })).toBe(2);
   });
 
+  it("isolates watch ideas by project and prevents concurrent double consumption", async () => {
+    const owner = await registerOwner("watch-project-scope");
+    const otherProject = await projects.create(owner.userId, owner.workspaceId, { name: "Другой проект" });
+    const vk = scriptedVk({
+      "groups.getById": { ok: true, response: { groups: [{ id: 33, name: "Тест", type: "group" }] } },
+      "wall.get": {
+        ok: true,
+        response: { count: 1, items: [{ id: 1, owner_id: -33, date: 1731600000, text: "Организация специй" }] },
+      },
+    });
+    const watch = createWatchService(prisma, {
+      vk,
+      ai: createAiService(prisma, {
+        provider: scriptedAi({
+          title: "Идеи",
+          body: "Идеи для проекта",
+          items: ["Первая идея || Почему || Хук", "Вторая идея || Почему || Хук"],
+          raw: "",
+          provider: "scripted",
+          model: "test",
+        }),
+      }),
+    });
+
+    await watch.connectToken(owner.userId, owner.workspaceId, { token: VK_TOKEN });
+    await watch.addCommunity(owner.userId, owner.workspaceId, "https://vk.com/club33");
+    const collected = await watch.collectIdeas(owner.userId, owner.workspaceId, { projectId: owner.projectId });
+
+    expect(await watch.listIdeas(owner.userId, owner.workspaceId, otherProject.id)).toEqual([]);
+    await expectAccess(
+      watch.consumeIdea(owner.userId, owner.workspaceId, collected.request.id, 0, otherProject.id),
+      403,
+      /другому проекту/,
+    );
+    await expectAccess(
+      watch.applyIdea(owner.userId, owner.workspaceId, collected.request.id, 0, otherProject.id),
+      403,
+      /другому проекту/,
+    );
+
+    const attempts = await Promise.allSettled([
+      watch.consumeIdea(owner.userId, owner.workspaceId, collected.request.id, 0, owner.projectId),
+      watch.consumeIdea(owner.userId, owner.workspaceId, collected.request.id, 0, owner.projectId),
+    ]);
+    expect(attempts.filter((item) => item.status === "fulfilled")).toHaveLength(1);
+    expect(attempts.filter((item) => item.status === "rejected")).toHaveLength(1);
+    const remaining = await watch.listIdeas(owner.userId, owner.workspaceId, owner.projectId);
+    expect(remaining[0]?.items).toEqual(["Вторая идея || Почему || Хук"]);
+  });
+
   it("removes an idea when it goes to Studio and when it is dismissed", async () => {
     const owner = await registerOwner("watch-consume");
     const vk = scriptedVk({
