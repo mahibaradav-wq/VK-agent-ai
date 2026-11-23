@@ -290,12 +290,30 @@ export function createBillingService(
         if (!event.checkoutSessionId) {
           throw new AccessError(400, "В webhook нет checkoutSessionId.");
         }
-        const checkout = await db.checkoutSession.findUnique({ where: { id: event.checkoutSessionId } });
+        const checkout = await db.checkoutSession.findUnique({
+          where: { id: event.checkoutSessionId },
+          include: { plan: true },
+        });
         if (!checkout) {
           throw new AccessError(400, "Сессия оплаты не найдена.");
         }
-        if (event.workspaceId && event.workspaceId !== checkout.workspaceId) {
-          throw new AccessError(400, "workspaceId webhook не совпадает с сессией оплаты.");
+        if (event.provider !== checkout.provider) {
+          throw new AccessError(400, "Провайдер webhook не совпадает с провайдером сессии оплаты.");
+        }
+        if (!event.workspaceId || event.workspaceId !== checkout.workspaceId) {
+          throw new AccessError(400, "workspaceId webhook отсутствует или не совпадает с сессией оплаты.");
+        }
+        if (!event.planSlug || event.planSlug !== checkout.plan.slug) {
+          throw new AccessError(400, "Тариф webhook отсутствует или не совпадает с сессией оплаты.");
+        }
+        if (event.amount !== checkout.plan.priceAmount) {
+          throw new AccessError(400, "Сумма webhook не совпадает с ценой тарифа.");
+        }
+        if (!event.currency || event.currency !== checkout.plan.currency) {
+          throw new AccessError(400, "Валюта webhook не совпадает с валютой тарифа.");
+        }
+        if (checkout.provider === "yookassa" && checkout.providerRef !== event.eventId) {
+          throw new AccessError(400, "Идентификатор платежа ЮKassa не совпадает с checkout.");
         }
       }
 
@@ -332,6 +350,16 @@ export function createBillingService(
             where: { id: event.checkoutSessionId },
             include: { plan: true, subscription: true },
           });
+          if (checkout.status !== "pending") {
+            throw new AccessError(400, "Сессия оплаты уже обработана или не ожидает оплату.");
+          }
+          const claimedCheckout = await tx.checkoutSession.updateMany({
+            where: { id: checkout.id, status: "pending" },
+            data: { status: "completed", completedAt: checkout.completedAt ?? now() },
+          });
+          if (claimedCheckout.count !== 1) {
+            throw new AccessError(409, "Сессия оплаты уже была обработана.");
+          }
           const period = monthBounds(now());
           const subscription = await tx.subscription.update({
             where: { id: checkout.subscriptionId },
@@ -346,10 +374,6 @@ export function createBillingService(
               cancelAtPeriodEnd: false,
               paidAt: checkout.subscription.paidAt ?? now(),
             },
-          });
-          await tx.checkoutSession.update({
-            where: { id: checkout.id },
-            data: { status: "completed", completedAt: checkout.completedAt ?? now() },
           });
           await tx.paymentEvent.update({
             where: {
