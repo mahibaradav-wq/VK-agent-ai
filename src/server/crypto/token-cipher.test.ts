@@ -26,7 +26,7 @@ describe("token cipher", () => {
   });
 
   it("decrypts legacy tokens encrypted with AUTH_SECRET after a dedicated key is configured", () => {
-    process.env.NODE_ENV = "test";
+    vi.stubEnv("NODE_ENV", "test");
     delete process.env.TOKEN_ENCRYPTION_KEY;
     process.env.AUTH_SECRET = "legacy-auth-secret";
     const legacy = encryptToken("legacy-social-token");
@@ -44,7 +44,7 @@ describe("token cipher", () => {
   });
 
   it("rejects a weak or reused encryption key in production", () => {
-    process.env.NODE_ENV = "production";
+    vi.stubEnv("NODE_ENV", "production");
     process.env.AUTH_SECRET = "auth-secret-that-is-long-enough-for-production";
     process.env.TOKEN_ENCRYPTION_KEY = "too-short";
     expect(() => encryptToken("x")).toThrow(/не менее 32/);
@@ -54,7 +54,7 @@ describe("token cipher", () => {
   });
 
   it("fails closed without any key", () => {
-    process.env.NODE_ENV = "test";
+    vi.stubEnv("NODE_ENV", "test");
     delete process.env.TOKEN_ENCRYPTION_KEY;
     delete process.env.AUTH_SECRET;
     expect(() => encryptToken("x")).toThrow(AccessError);
