@@ -171,7 +171,7 @@ export function createBillingService(
         },
         limits,
         usage: {
-          ai: { used: ai.used, limit: ai.limit },
+          ai: { used: ai.used, limit: 0 },
           posts: { used: posts.used, limit: limits.postsPerMonth },
           projects: { used: projects, limit: limits.projects },
           members: { used: members, limit: limits.members },
