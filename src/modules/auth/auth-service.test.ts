@@ -178,5 +178,34 @@ describe("auth service", () => {
     expect(mailRequest.ok).toBe(true);
     expect(reset.ok).toBe(true);
     expect(login.ok).toBe(true);
+    const reused = await auth.resetPassword(token, "anotherpassword123");
+    expect(reused.ok).toBe(false);
+  });
+
+  it("allows only one concurrent password reset to consume a token", async () => {
+    const address = email("reset-race");
+    await auth.register(address, "password123");
+    const verifyMail = await prisma.devMailMessage.findFirstOrThrow({
+      where: { to: address, kind: "verify_email" },
+      orderBy: { createdAt: "desc" },
+    });
+    await auth.verifyEmail(mailboxToken(verifyMail.url));
+    await auth.requestPasswordReset(address);
+    const resetMail = await prisma.devMailMessage.findFirstOrThrow({
+      where: { to: address, kind: "reset_password" },
+      orderBy: { createdAt: "desc" },
+    });
+    const token = mailboxToken(resetMail.url);
+
+    const results = await Promise.all([
+      auth.resetPassword(token, "first-password-123"),
+      auth.resetPassword(token, "second-password-123"),
+    ]);
+
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    expect(results.filter((result) => !result.ok)).toHaveLength(1);
+    const firstLogin = await auth.authenticate(address, "first-password-123");
+    const secondLogin = await auth.authenticate(address, "second-password-123");
+    expect(Number(firstLogin.ok) + Number(secondLogin.ok)).toBe(1);
   });
 });
