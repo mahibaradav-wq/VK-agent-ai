@@ -19,7 +19,7 @@ import { prisma } from "@/server/db/prisma";
 import { storage } from "@/server/storage";
 import { toVkWallText } from "@/server/social/vk-adapter";
 
-const lockedStatuses = ["queued", "publishing", "published", "cancelled"];
+const lockedStatuses = ["queued", "publishing", "published", "cancelled", "requires_manual_check"];
 
 export default async function PostEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -51,7 +51,7 @@ export default async function PostEditorPage({ params }: { params: Promise<{ id:
     const canPublishNow =
       hasPermission(activeMembership.role, "post.approve") &&
       hasPermission(activeMembership.role, "post.update") &&
-      ["draft", "pending_approval", "approved", "scheduled", "failed"].includes(post.status);
+      ["draft", "pending_approval", "approved", "scheduled", "failed", "requires_manual_check"].includes(post.status);
 
     return (
       <>

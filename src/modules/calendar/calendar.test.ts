@@ -99,6 +99,59 @@ describe("content calendar", () => {
     expect(empty).toHaveLength(0);
   });
 
+  it("lists a mixed Telegram/VK slot as requires_manual_check with a JPEG download", async () => {
+    const owner = await registerOwner("cal-vk-manual");
+    const created = await calendar.createOnDate(owner.userId, owner.workspaceId, owner.projectId, {
+      date: "2026-10-18",
+      timezone: "Europe/Moscow",
+      title: "Смешанный слот",
+    });
+    await posts.saveDraft(owner.userId, owner.workspaceId, created.id, {
+      title: "Смешанный слот",
+      body: "Telegram вышел, ВК вручную",
+      platforms: ["vk", "telegram"],
+      mediaIds: [],
+    });
+    const media = await prisma.mediaAsset.create({
+      data: {
+        workspaceId: owner.workspaceId,
+        uploadedById: owner.userId,
+        originalName: "cover.jpg",
+        mimeType: "image/jpeg",
+        sizeBytes: 12,
+        storageKey: `cal-vk-manual-${created.id}`,
+        storageDriver: "local",
+      },
+    });
+    await prisma.postMedia.create({
+      data: { postId: created.id, mediaId: media.id, sortOrder: 0 },
+    });
+    await prisma.postTarget.update({
+      where: { postId_platform: { postId: created.id, platform: "telegram" } },
+      data: { status: "published", lastError: null },
+    });
+    await prisma.postTarget.update({
+      where: { postId_platform: { postId: created.id, platform: "vk" } },
+      data: { status: "requires_manual_check", lastError: "vk_manual_photo: скачайте JPEG" },
+    });
+    await prisma.post.update({
+      where: { id: created.id },
+      data: { status: "requires_manual_check" },
+    });
+
+    const listed = await calendar.list(owner.userId, owner.workspaceId, {
+      from: new Date("2026-10-12T00:00:00.000Z"),
+      to: new Date("2026-10-20T00:00:00.000Z"),
+      timezone: "Europe/Moscow",
+      status: "requires_manual_check",
+    });
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.status).toBe("requires_manual_check");
+    expect(listed[0]?.vkManual).toBe(true);
+    expect(listed[0]?.mediaIds).toEqual([media.id]);
+    expect(listed[0]?.platforms).toEqual(expect.arrayContaining(["vk", "telegram"]));
+  });
+
   it("blocks a Viewer from rescheduling and rejects a spoofed postId", async () => {
     const owner = await registerOwner("cal-acl");
     const other = await registerOwner("cal-other");

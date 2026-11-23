@@ -147,7 +147,7 @@ export function StudioWorkingCard({
           {card.lastError ? ` ${card.lastError}` : ""}
         </StatusBanner>
       ) : null}
-      {card.status === "failed" && card.lastError ? (
+      {(card.status === "failed" || card.status === "requires_manual_check") && card.lastError ? (
         <StatusBanner tone="warning">{card.lastError}</StatusBanner>
       ) : null}
       {platforms.includes("vk") && card.mediaIds.length > 0 && !vkCarouselReady && !card.vkManual ? (

@@ -164,6 +164,7 @@ enum PostStatus {
   published
   failed
   cancelled
+  requires_manual_check
 }
 
 enum PostTargetStatus {

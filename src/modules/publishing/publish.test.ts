@@ -92,7 +92,9 @@ describe("publish aggregation helpers", () => {
     expect(aggregatePostStatus([{ status: "published" }, { status: "published" }])).toBe("published");
     expect(aggregatePostStatus([{ status: "published" }, { status: "queued" }])).toBe("queued");
     expect(aggregatePostStatus([{ status: "published" }, { status: "failed" }])).toBe("failed");
-    expect(aggregatePostStatus([{ status: "published" }, { status: "requires_manual_check" }])).toBe("failed");
+    expect(aggregatePostStatus([{ status: "published" }, { status: "requires_manual_check" }])).toBe(
+      "requires_manual_check",
+    );
     expect(nextBackoffMs(1, [10, 20, 40])).toBe(10);
     expect(nextBackoffMs(3, [10, 20, 40])).toBe(40);
     expect(nextBackoffMs(9, [10, 20, 40])).toBe(40);
@@ -244,6 +246,7 @@ describe("publishing queue", () => {
       where: { id: post.id },
       include: { targets: true },
     });
+    expect(stored.status).toBe("requires_manual_check");
     expect(stored.targets.find((target) => target.platform === "telegram")?.status).toBe("published");
     expect(stored.targets.find((target) => target.platform === "vk")?.status).toBe("requires_manual_check");
     expect((await prisma.publishJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("requires_manual_check");

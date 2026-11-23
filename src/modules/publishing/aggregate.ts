@@ -17,5 +17,8 @@ export function aggregatePostStatus(targets: Array<{ status: PostTargetStatus }>
   if (active.some((target) => target.status === "scheduled")) {
     return "scheduled";
   }
+  if (active.some((target) => target.status === "requires_manual_check")) {
+    return "requires_manual_check";
+  }
   return "failed";
 }

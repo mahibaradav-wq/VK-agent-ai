@@ -6,6 +6,8 @@ import { createAccessService } from "@/modules/access/access-service";
 import { localDateTimeToUtc, parseTimezone, utcToDisplay, utcToLocalInput } from "@/modules/calendar/timezone";
 import { parsePlatforms } from "@/modules/posts/platforms";
 import { createPostService } from "@/modules/posts/post-service";
+import { copyForPlatform } from "@/modules/posts/variants";
+import { isVkManualPhoto } from "@/modules/social/vk-manual";
 
 const postStatuses = [
   "draft",
@@ -17,9 +19,16 @@ const postStatuses = [
   "published",
   "failed",
   "cancelled",
+  "requires_manual_check",
 ] as const satisfies readonly PostStatus[];
 
-const blockedScheduleStatuses: PostStatus[] = ["queued", "publishing", "published", "cancelled"];
+const blockedScheduleStatuses: PostStatus[] = [
+  "queued",
+  "publishing",
+  "published",
+  "cancelled",
+  "requires_manual_check",
+];
 
 function parseStatus(value: string | undefined): PostStatus | undefined {
   if (!value) {
@@ -91,6 +100,7 @@ export function createCalendarService(db: PrismaClient) {
             include: {
               project: true,
               targets: true,
+              media: { orderBy: { sortOrder: "asc" } },
               versions: { where: { supersededAt: null }, take: 1, orderBy: { number: "desc" } },
             },
           },
@@ -98,22 +108,34 @@ export function createCalendarService(db: PrismaClient) {
         orderBy: { startsAt: "asc" },
       });
 
-      return rows.map((row) => ({
-        id: row.id,
-        postId: row.postId,
-        workspaceId: row.workspaceId,
-        startsAt: row.startsAt,
-        timezone: row.timezone,
-        localInput: utcToLocalInput(row.startsAt, row.timezone),
-        viewDay: utcToLocalInput(row.startsAt, viewTimezone).slice(0, 10),
-        displayTime: utcToDisplay(row.startsAt, viewTimezone),
-        status: row.post.status,
-        title: row.post.versions[0]?.title ?? "Без названия",
-        projectId: row.post.projectId,
-        projectName: row.post.project.name,
-        projectColor: row.post.project.color,
-        platforms: row.post.targets.map((target) => target.platform),
-      }));
+      return rows.map((row) => {
+        const version = row.post.versions[0];
+        const vkCopy = version ? copyForPlatform(version, "vk") : { title: "", body: "" };
+        const vkTarget = row.post.targets.find((target) => target.platform === "vk");
+        const vkManual = Boolean(
+          vkTarget &&
+            (vkTarget.status === "requires_manual_check" || isVkManualPhoto(null, vkTarget.lastError)),
+        );
+        return {
+          id: row.id,
+          postId: row.postId,
+          workspaceId: row.workspaceId,
+          startsAt: row.startsAt,
+          timezone: row.timezone,
+          localInput: utcToLocalInput(row.startsAt, row.timezone),
+          viewDay: utcToLocalInput(row.startsAt, viewTimezone).slice(0, 10),
+          displayTime: utcToDisplay(row.startsAt, viewTimezone),
+          status: row.post.status,
+          title: row.post.versions[0]?.title ?? "Без названия",
+          projectId: row.post.projectId,
+          projectName: row.post.project.name,
+          projectColor: row.post.project.color,
+          platforms: row.post.targets.map((target) => target.platform),
+          mediaIds: row.post.media.map((item) => item.mediaId),
+          vkManual,
+          vkManualCopy: [vkCopy.title, vkCopy.body].filter(Boolean).join("\n\n"),
+        };
+      });
     },
 
     async schedule(
