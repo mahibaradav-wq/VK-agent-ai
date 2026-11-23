@@ -49,6 +49,9 @@ export function createProjectService(db: PrismaClient) {
   async function loadBoundProject(workspaceId: string, projectId: string) {
     const project = await db.project.findUnique({ where: { id: projectId } });
     assertWorkspaceBound(workspaceId, project, "Проект");
+    if (project.archivedAt) {
+      throw new AccessError(409, "Архивный проект нельзя открыть или изменить. Выберите активный проект.");
+    }
     return project;
   }
 
