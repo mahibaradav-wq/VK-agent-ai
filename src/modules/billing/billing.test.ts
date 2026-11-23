@@ -134,6 +134,64 @@ describe("billing and subscriptions", () => {
     expect(paid.limits.aiGenerations).toBe(500);
   });
 
+  it("rejects mismatched provider, workspace, plan, amount, or currency before activating a checkout", async () => {
+    const owner = await registerOwner("bill-mismatch");
+    const secret = "mismatch-billing-secret";
+    const billing = createBillingService(prisma, { provider: createHmacBillingProvider({ secret }) });
+    const started = await billing.startCheckout(owner.userId, owner.workspaceId, "team");
+    const invalidEvents = [
+      { id: "wrong-provider", provider: "other", workspaceId: owner.workspaceId, planSlug: "team", amount: 490000, currency: "RUB" },
+      { id: "wrong-workspace", provider: "hmac", workspaceId: "foreign-workspace", planSlug: "team", amount: 490000, currency: "RUB" },
+      { id: "wrong-plan", provider: "hmac", workspaceId: owner.workspaceId, planSlug: "business", amount: 490000, currency: "RUB" },
+      { id: "wrong-amount", provider: "hmac", workspaceId: owner.workspaceId, planSlug: "team", amount: 100, currency: "RUB" },
+      { id: "wrong-currency", provider: "hmac", workspaceId: owner.workspaceId, planSlug: "team", amount: 490000, currency: "USD" },
+    ];
+
+    for (const invalid of invalidEvents) {
+      const signed = signedBody(secret, {
+        id: invalid.id,
+        type: "payment.succeeded",
+        data: {
+          checkoutSessionId: started.checkoutId,
+          workspaceId: invalid.workspaceId,
+          planSlug: invalid.planSlug,
+          amount: invalid.amount,
+          currency: invalid.currency,
+        },
+      });
+      await expectAccess(billing.handleWebhook(signed.rawBody, signed.signature), 400, /провайдер|workspaceId|Тариф|Сумма|Валюта/);
+    }
+
+    const state = await billing.getState(owner.userId, owner.workspaceId);
+    expect(state.paid).toBe(false);
+    expect(state.subscription.status).toBe("pending_payment");
+    expect(await prisma.paymentEvent.count({ where: { checkoutId: started.checkoutId } })).toBe(0);
+  });
+
+  it("does not activate a completed checkout from a second distinct payment event", async () => {
+    const owner = await registerOwner("bill-double");
+    const secret = "double-billing-secret";
+    const billing = createBillingService(prisma, { provider: createHmacBillingProvider({ secret }) });
+    const started = await billing.startCheckout(owner.userId, owner.workspaceId, "team");
+    const makeEvent = (id: string) => signedBody(secret, {
+      id,
+      type: "payment.succeeded",
+      data: {
+        checkoutSessionId: started.checkoutId,
+        workspaceId: owner.workspaceId,
+        planSlug: "team",
+        amount: 490000,
+        currency: "RUB",
+      },
+    });
+    const first = makeEvent("first-payment-event");
+    await billing.handleWebhook(first.rawBody, first.signature);
+    const second = makeEvent("second-payment-event");
+    await expectAccess(billing.handleWebhook(second.rawBody, second.signature), 400, /уже обработана|не ожидает/);
+    expect((await billing.getState(owner.userId, owner.workspaceId)).subscription.plan.slug).toBe("team");
+    expect(await prisma.paymentEvent.count({ where: { checkoutId: started.checkoutId, processed: true } })).toBe(1);
+  });
+
   it("activates Team only after ЮKassa API confirms the payment", async () => {
     const owner = await registerOwner("bill-yk");
     let checkoutId = "";
