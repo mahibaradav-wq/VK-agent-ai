@@ -571,7 +571,7 @@ export function createWatchService(
 
     async applyIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number, projectId: string) {
       const taken = await this.takeIdea(userId, workspaceId, requestId, itemIndex, projectId, "post.create");
-      let composed;
+      let composed: Awaited<ReturnType<typeof ai.composeAgentPost>>;
       try {
         composed = await ai.composeAgentPost(userId, workspaceId, {
           prompt: ideaToAgentPrompt(taken.item),
