@@ -139,7 +139,7 @@ export function createBillingService(
       const limits = toPlanLimits(subscription.plan);
       const at = now();
       const [ai, posts, projects, members, socialAccounts] = await Promise.all([
-        getUsage(db, workspaceId, USAGE_METRICS.ai, at, limits.aiGenerations),
+        getUsage(db, workspaceId, USAGE_METRICS.ai, at, 0),
         getUsage(db, workspaceId, USAGE_METRICS.posts, at, limits.postsPerMonth),
         db.project.count({ where: { workspaceId, archivedAt: null } }),
         db.workspaceMember.count({ where: { workspaceId } }),

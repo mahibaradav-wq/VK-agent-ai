@@ -62,7 +62,6 @@ describe("platform admin and email notifications", () => {
     await expectAccess(admin.listWorkspaces(owner.userId), 403, /Недостаточно прав для админки/);
     await expectAccess(admin.listAudit(owner.userId), 403, /Недостаточно прав для админки/);
     await expectAccess(admin.updatePlanLimits(owner.userId, "start", {
-      aiGenerations: 1,
       projects: 1,
       socialAccounts: 1,
       members: 1,
@@ -83,7 +82,6 @@ describe("platform admin and email notifications", () => {
     await admin.grantAdmin(actor.userId, target.address, "Support");
     await expectAccess(admin.grantAdmin(actor.userId, target.address, "Support"), 400, /уже является администратором/);
     await expectAccess(admin.updatePlanLimits(target.userId, "start", {
-      aiGenerations: 12,
       projects: 3,
       socialAccounts: 2,
       members: 4,
@@ -105,7 +103,6 @@ describe("platform admin and email notifications", () => {
     const current = (await admin.listPlans(actor.userId)).find((plan) => plan.slug === "start");
     expect(current).toBeTruthy();
     const updated = await admin.updatePlanLimits(actor.userId, "start", {
-      aiGenerations: current!.aiGenerations,
       projects: current!.projects,
       socialAccounts: current!.socialAccounts,
       members: current!.members,
@@ -115,7 +112,6 @@ describe("platform admin and email notifications", () => {
     const again = await admin.listPlans(actor.userId);
     expect(again.find((plan) => plan.slug === "start")?.postsPerMonth).toBe(4242);
     await admin.updatePlanLimits(actor.userId, "start", {
-      aiGenerations: current!.aiGenerations,
       projects: current!.projects,
       socialAccounts: current!.socialAccounts,
       members: current!.members,
@@ -126,7 +122,7 @@ describe("platform admin and email notifications", () => {
       orderBy: { createdAt: "desc" },
     });
     expect(audit?.details).toBe(
-      `start:${current!.aiGenerations}/${current!.projects}/${current!.socialAccounts}/${current!.members}/${current!.postsPerMonth}`,
+      `start:${current!.projects}/${current!.socialAccounts}/${current!.members}/${current!.postsPerMonth}`,
     );
   });
 

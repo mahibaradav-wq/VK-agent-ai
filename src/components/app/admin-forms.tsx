@@ -53,14 +53,12 @@ export function RevokeAdminForm({ userId }: { userId: string }) {
 
 export function PlanLimitsForm({
   slug,
-  aiGenerations,
   projects,
   socialAccounts,
   members,
   postsPerMonth,
 }: {
   slug: string;
-  aiGenerations: number;
   projects: number;
   socialAccounts: number;
   members: number;
@@ -72,7 +70,6 @@ export function PlanLimitsForm({
       <input type="hidden" name="slug" value={slug} />
       {(
         [
-          ["aiGenerations", "AI в месяц", aiGenerations],
           ["projects", "Проекты", projects],
           ["socialAccounts", "Аккаунты", socialAccounts],
           ["members", "Участники", members],

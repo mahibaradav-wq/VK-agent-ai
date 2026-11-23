@@ -69,7 +69,6 @@ export async function updatePlanLimits(
 ): Promise<AdminFormState> {
   try {
     await admin().updatePlanLimits(await requireUserId(), readField(formData, "slug"), {
-      aiGenerations: readInt(formData, "aiGenerations"),
       projects: readInt(formData, "projects"),
       socialAccounts: readInt(formData, "socialAccounts"),
       members: readInt(formData, "members"),

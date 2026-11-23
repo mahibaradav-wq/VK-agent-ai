@@ -11,7 +11,7 @@ import { prisma } from "@/server/db/prisma";
 
 export const metadata = createPageMetadata({
   title: "Тарифы",
-  description: "Лимиты тарифов. Изменение доступно Superadmin и пишется в audit.",
+  description: "Ресурсные лимиты тарифов. Изменение доступно Superadmin и пишется в audit.",
   path: "/admin/plans",
 });
 
@@ -28,7 +28,7 @@ export default async function AdminPlansPage() {
       <PageHeader
         eyebrow="Админка"
         title="Тарифы"
-        description="Лимиты в БД не затираются каталогом после правки. Superadmin меняет их с записью в audit."
+        description="Ресурсные лимиты в БД не затираются каталогом после правки. Superadmin меняет их с записью в audit."
       />
       <Container className="grid gap-5 pb-20 lg:grid-cols-3">
         {data.map((plan) => (
@@ -41,7 +41,6 @@ export default async function AdminPlansPage() {
             {canMutate ? (
               <PlanLimitsForm
                 slug={plan.slug}
-                aiGenerations={plan.aiGenerations}
                 projects={plan.projects}
                 socialAccounts={plan.socialAccounts}
                 members={plan.members}
@@ -49,7 +48,7 @@ export default async function AdminPlansPage() {
               />
             ) : (
               <p className="text-sm text-ink/70">
-                AI {plan.aiGenerations} · проекты {plan.projects} · аккаунты {plan.socialAccounts} · участники{" "}
+                Проекты {plan.projects} · аккаунты {plan.socialAccounts} · участники{" "}
                 {plan.members} · посты {plan.postsPerMonth}
               </p>
             )}

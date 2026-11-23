@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AccessError } from "@/modules/access/permissions";
 import { createAuthService } from "@/modules/auth/auth-service";
 import { createBillingService } from "@/modules/billing/billing-service";
-import { attachFreeSubscription, ensureCanonicalPlans } from "@/modules/billing/plans";
+import { attachFreeSubscription, ensureCanonicalPlans, getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { getUsage, reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
 import { createProjectService } from "@/modules/projects/project-service";
 import { createWorkspaceService } from "@/modules/workspaces/workspace-service";
@@ -131,7 +131,9 @@ describe("billing and subscriptions", () => {
     const afterReplay = await billing.getState(owner.userId, owner.workspaceId);
     expect(afterReplay.subscription.paidAt?.toISOString()).toBe(paidAt?.toISOString());
     expect(await prisma.paymentEvent.count({ where: { providerEventId: payload.id } })).toBe(1);
-    expect(paid.limits.aiGenerations).toBe(500);
+    expect(paid.usage.ai).toMatchObject({ used: 0, limit: 0 });
+    expect("aiGenerations" in paid.limits).toBe(false);
+    expect(paid.plans.find((plan) => plan.slug === "team")?.features.join(" ")).not.toMatch(/AI-генераций/);
   });
 
   it("rejects mismatched provider, workspace, plan, amount, or currency before activating a checkout", async () => {
@@ -279,7 +281,7 @@ describe("billing and subscriptions", () => {
         description: "Тестовый лимит",
         priceAmount: 0,
         isFree: true,
-        aiGenerations: 1,
+        aiGenerations: 0,
         projects: 1,
         socialAccounts: 1,
         members: 1,
@@ -307,6 +309,28 @@ describe("billing and subscriptions", () => {
     );
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(3);
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(5);
+  });
+
+  it("falls back to the Start plan after a paid subscription expires", async () => {
+    const owner = await registerOwner("bill-expired-plan");
+    const subscription = await attachFreeSubscription(prisma, owner.workspaceId);
+    const team = await prisma.plan.findUniqueOrThrow({ where: { slug: "team" } });
+    await prisma.subscription.update({
+      where: { id: subscription.id },
+      data: {
+        planId: team.id,
+        status: "active",
+        paidAt: new Date("2026-01-01T00:00:00.000Z"),
+        currentPeriodStart: new Date("2026-01-01T00:00:00.000Z"),
+        currentPeriodEnd: new Date("2026-02-01T00:00:00.000Z"),
+      },
+    });
+
+    const expired = await getWorkspacePlanLimits(prisma, owner.workspaceId, new Date("2026-03-01T00:00:00.000Z"));
+    expect(expired.slug).toBe("start");
+
+    const active = await getWorkspacePlanLimits(prisma, owner.workspaceId, new Date("2026-01-15T00:00:00.000Z"));
+    expect(active.slug).toBe("team");
   });
 
   it("does not cap AI usage when the monthly limit is unlimited", async () => {
