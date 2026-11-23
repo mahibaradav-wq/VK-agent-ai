@@ -14,13 +14,12 @@ import {
   type VkApiFailure,
   type VkTransport,
 } from "@/server/social/vk-api";
+import { VK_MANUAL_PHOTO_CODE, VK_MANUAL_PHOTO_MESSAGE } from "@/modules/social/vk-manual";
 import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/social/types";
 import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
 
 const MAX_VK_WALL_PHOTOS = 10;
 const POLKA_ALBUM_TITLE = "Polka Social";
-const VK_PHOTO_TOKEN_MESSAGE =
-  "Картинка не вышла на стену как фото. Ключ сообщества не умеет photos.getWallUploadServer (ошибка 27). В Подключениях вставьте ключ админа клуба с правом «Фотографии» — одним ключом, как в Lovable. Тогда wall.post получит photo{owner}_{id}. Право photos: https://vk.ru/support?act=new&from=api";
 
 export function toVkWallText(text: string) {
   return text
@@ -353,9 +352,9 @@ async function attachFromCommunityAlbum(options: {
 
 function nativeWallPhotoFailure(): PublishOutcome {
   return {
-    kind: "permanent_failure",
-    code: "vk_photo_user_token",
-    message: VK_PHOTO_TOKEN_MESSAGE,
+    kind: "unknown",
+    code: VK_MANUAL_PHOTO_CODE,
+    message: VK_MANUAL_PHOTO_MESSAGE,
   };
 }
 

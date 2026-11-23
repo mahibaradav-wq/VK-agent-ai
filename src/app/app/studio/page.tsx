@@ -15,6 +15,8 @@ import { displayTimezones, parseTimezone, TIMEZONE_COOKIE } from "@/modules/cale
 import { createPostService } from "@/modules/posts/post-service";
 import { parseVariants } from "@/modules/posts/variants";
 import { prisma } from "@/server/db/prisma";
+import { toVkWallText } from "@/server/social/vk-adapter";
+import { isVkManualPhoto } from "@/modules/social/vk-manual";
 
 export const metadata = createPageMetadata({
   title: "Студия",
@@ -84,6 +86,9 @@ export default async function StudioPage({
             </StatusBanner>
             {studioPosts.map((post) => {
               const version = posts.currentVersion(post);
+              const variants = parseVariants(version?.variantsJson);
+              const vkCopy = variants.vk ?? { title: version?.title ?? "", body: version?.body ?? "" };
+              const vkTarget = post.targets.find((target) => target.platform === "vk");
               return (
                 <StudioWorkingCard
                   key={post.id}
@@ -104,7 +109,13 @@ export default async function StudioPage({
                     platforms: post.targets.map((target) => target.platform),
                     mediaIds: post.media.map((item) => item.mediaId),
                     mediaTypes: post.media.map((item) => item.media.mimeType),
-                    variants: parseVariants(version?.variantsJson),
+                    variants,
+                    vkManual: Boolean(
+                      vkTarget &&
+                        (vkTarget.status === "requires_manual_check" ||
+                          isVkManualPhoto(null, vkTarget.lastError)),
+                    ),
+                    vkManualCopy: [toVkWallText(vkCopy.title), toVkWallText(vkCopy.body)].filter(Boolean).join("\n\n"),
                   }}
                 />
               );

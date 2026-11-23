@@ -706,7 +706,8 @@ describe("social accounts", () => {
     const stored = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, include: { targets: true } });
     expect(stored.status).toBe("published");
     expect(stored.targets[0]?.externalId).toBe("77");
-    expect(transport.methods.filter((method) => method === "wall.post")).toHaveLength(2);
+    expect(transport.methods.filter((method) => method === "wall.post")).toHaveLength(1);
+    expect(transport.methods.filter((method) => method === "wall.delete")).toHaveLength(0);
   });
 
   it("attaches a VK market item for a shop post and falls back to a text link", async () => {
@@ -812,6 +813,7 @@ describe("social accounts", () => {
           return { ok: false, error_code: 100, error_msg: "message is empty" };
         }
         expect(params.attachments).toBe("photo-242155421_501");
+        expect(String(params.guid ?? "")).not.toBe("");
         expect(String(params.message)).toContain("Разложили специи.");
         expect(String(params.message)).not.toMatch(/не прикреплено|publish_media/);
         return { ok: true, response: { post_id: 88 } };
@@ -849,7 +851,6 @@ describe("social accounts", () => {
     expect(transport.uploads[0]?.filename).toBe("slide-1.jpg");
     expect(transport.methods).toEqual([
       "groups.getById",
-      "wall.post",
       "photos.getWallUploadServer",
       "photos.getWallUploadServer",
       "uploadWallPhoto",
@@ -1204,14 +1205,17 @@ describe("social accounts", () => {
       adapters: { get: () => createVkAdapter({ db: prisma, transport, storage: createLocalStorage(storageDir) }) },
     });
     const job = await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
-    expect(job.status).toBe("failed");
+    expect(job.status).toBe("requires_manual_check");
     const attempt = await prisma.publishAttempt.findFirstOrThrow({ where: { jobId: job.id } });
-    expect(attempt.kind).toBe("permanent_failure");
-    expect(attempt.errorCode).toBe("vk_photo_user_token");
-    expect(attempt.errorMessage).toMatch(/photo\{owner\}_\{id\}|файлом-ссылкой|Фотографии/);
+    expect(attempt.kind).toBe("unknown");
+    expect(attempt.errorCode).toBe("vk_manual_photo");
+    expect(attempt.errorMessage).toMatch(/вручную|photos\.getWallUploadServer/);
     expect(transport.methods).not.toContain("docs.getWallUploadServer");
     expect(transport.methods).not.toContain("docs.save");
-    expect(transport.methods.filter((method) => method === "wall.post")).toHaveLength(1);
+    expect(transport.methods.filter((method) => method === "wall.post")).toHaveLength(0);
+    expect((await prisma.postTarget.findFirstOrThrow({ where: { postId: post.id } })).status).toBe(
+      "requires_manual_check",
+    );
   });
 
   it("does not publish a VK text-only post when the community key cannot attach the picture", async () => {
@@ -1267,8 +1271,8 @@ describe("social accounts", () => {
     const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
     await publishing.processJob(job.id, "worker-vk-nopic");
     const attempt = await prisma.publishAttempt.findFirstOrThrow({ where: { jobId: job.id } });
-    expect(attempt.kind).toBe("permanent_failure");
-    expect(attempt.errorCode).toBe("vk_photo_user_token");
+    expect(attempt.kind).toBe("unknown");
+    expect(attempt.errorCode).toBe("vk_manual_photo");
     expect(transport.methods).not.toContain("docs.getWallUploadServer");
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).not.toBe("published");
   });
@@ -1317,20 +1321,102 @@ describe("social accounts", () => {
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).not.toBe("published");
   });
 
-  it("rejects a VK key that cannot write the community wall", async () => {
+  it("connects without posting to the wall and fails later if the key cannot write", async () => {
     const owner = await registerOwner("soc-vk-no-wall");
     const transport = scriptedVk({
       "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
+      "photos.getWallUploadServer": {
+        ok: false,
+        error_code: 27,
+        error_msg: "Group authorization failed: method is unavailable with group auth.",
+      },
       "wall.post": { ok: false, error_code: 214, error_msg: "Access to adding post denied" },
     });
     const social = createSocialService(prisma, { vk: transport });
-    await expectAccess(
-      social.connectVk(owner.userId, owner.workspaceId, {
-        token: VK_COMMUNITY_TOKEN,
-        source: "https://vk.com/club242155421",
-      }),
-      400,
-      /не умеет писать на стену/,
+    const connected = await social.connectVk(owner.userId, owner.workspaceId, {
+      token: VK_COMMUNITY_TOKEN,
+      source: "https://vk.com/club242155421",
+    });
+    expect(connected.status).toBe("connected");
+    expect(transport.methods).not.toContain("wall.post");
+    expect(transport.methods).not.toContain("wall.delete");
+
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Стена");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Стена",
+      body: "Текст",
+      platforms: ["vk"],
+      mediaIds: [],
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createVkAdapter({ db: prisma, transport }) },
+    });
+    await publishing.enqueue(owner.userId, owner.workspaceId, post.id).then((job) =>
+      publishing.processJob(job.id, "worker-vk-no-wall"),
     );
+    const attempt = await prisma.publishAttempt.findFirstOrThrow({
+      where: { target: { postId: post.id } },
+    });
+    expect(attempt.errorCode).toBe("vk_214");
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).not.toBe("published");
+  });
+
+  it("lets the owner mark a manual VK photo post without calling wall.post again", async () => {
+    const owner = await registerOwner("soc-vk-manual-confirm");
+    const transport = scriptedVk({
+      "groups.getById": { ok: true, response: [{ id: 242155421, name: "ДОМ по полочкам", screen_name: "club242155421" }] },
+      "photos.getWallUploadServer": {
+        ok: false,
+        error_code: 27,
+        error_msg: "Group authorization failed: method is unavailable with group auth.",
+      },
+      "photos.getAlbums": {
+        ok: false,
+        error_code: 27,
+        error_msg: "Group authorization failed: method is unavailable with group auth.",
+      },
+      "photos.createAlbum": {
+        ok: false,
+        error_code: 27,
+        error_msg: "Group authorization failed: method is unavailable with group auth.",
+      },
+      "wall.post": () => {
+        throw new Error("wall.post must not run for a manual VK fallback");
+      },
+    });
+    const social = createSocialService(prisma, { vk: transport });
+    await social.connectVk(owner.userId, owner.workspaceId, {
+      token: VK_COMMUNITY_TOKEN,
+      source: "https://vk.com/club242155421",
+    });
+    const media = createMediaService(prisma, createLocalStorage(storageDir));
+    const asset = await media.upload(owner.userId, owner.workspaceId, {
+      filename: "cover.png",
+      declaredType: "image/png",
+      bytes: png,
+    });
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Вручную");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Вручную",
+      body: "Картинка руками.",
+      platforms: ["vk"],
+      mediaIds: [asset.id],
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createVkAdapter({ db: prisma, transport, storage: createLocalStorage(storageDir) }) },
+    });
+    const job = await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
+    expect(job.status).toBe("requires_manual_check");
+    const wallCalls = transport.methods.filter((method) => method === "wall.post").length;
+    const confirmed = await publishing.confirmManualVk(owner.userId, owner.workspaceId, post.id);
+    expect(confirmed.targets[0]?.status).toBe("published");
+    expect(confirmed.targets[0]?.externalId).toBe("manual");
+    expect(confirmed.status).toBe("published");
+    await publishing.confirmManualVk(owner.userId, owner.workspaceId, post.id);
+    expect(transport.methods.filter((method) => method === "wall.post")).toHaveLength(wallCalls);
   });
 });

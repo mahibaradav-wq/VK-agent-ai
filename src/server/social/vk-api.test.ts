@@ -3,8 +3,10 @@ import type { AddressInfo } from "node:net";
 
 import { describe, expect, it } from "vitest";
 
+import { redactVkSecrets } from "@/modules/social/vk-manual";
 import {
   createVkTransport,
+  describeVkApiError,
   encodeMultipartFile,
   packVkTokens,
   resolveVkPublishTokens,
@@ -22,6 +24,19 @@ describe("VK token pack", () => {
       wall: "vk1.a.admin",
       photo: "vk1.a.admin",
     });
+  });
+
+  it("redacts access tokens from VK error text", () => {
+    const token = `vk1.a.${"S".repeat(80)}`;
+    expect(redactVkSecrets(`token ${token} leaked`)).not.toContain(token);
+    expect(redactVkSecrets(packVkTokens(token, token))).toBe("polka-vk-v2:[redacted]");
+    expect(
+      describeVkApiError({
+        ok: false,
+        error_code: 5,
+        error_msg: `invalid access_token ${token}`,
+      }),
+    ).not.toContain(token);
   });
 });
 

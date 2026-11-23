@@ -14,8 +14,10 @@ import { createCollaborationService } from "@/modules/collaboration/collaboratio
 import { createMediaService } from "@/modules/media/media-service";
 import { createPostService } from "@/modules/posts/post-service";
 import { createPublishService } from "@/modules/publishing/publish-service";
+import { copyForPlatform } from "@/modules/posts/variants";
 import { prisma } from "@/server/db/prisma";
 import { storage } from "@/server/storage";
+import { toVkWallText } from "@/server/social/vk-adapter";
 
 const lockedStatuses = ["queued", "publishing", "published", "cancelled"];
 
@@ -76,6 +78,15 @@ export default async function PostEditorPage({ params }: { params: Promise<{ id:
             postStatus={post.status}
             canEnqueue={canEnqueue}
             canPublishNow={canPublishNow}
+            vkManualCopy={
+              version
+                ? [toVkWallText(copyForPlatform(version, "vk").title), toVkWallText(copyForPlatform(version, "vk").body)]
+                    .filter(Boolean)
+                    .join("\n\n")
+                : ""
+            }
+            mediaIds={post.media.map((item) => item.mediaId)}
+            canConfirmManualVk={hasPermission(activeMembership.role, "post.update")}
             targets={post.targets.map((target) => ({
               platform: target.platform,
               status: target.status,

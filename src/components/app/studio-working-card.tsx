@@ -10,7 +10,9 @@ import { reviseStudioCard, type AiFormState } from "@/modules/ai/actions";
 import { reschedulePost, type CalendarFormState } from "@/modules/calendar/actions";
 import { discardStudioCard, savePostDraft, type PostFormState } from "@/modules/posts/actions";
 import { previewPlatforms, type PreviewPlatformId } from "@/modules/posts/platforms";
+import { VkManualFallback } from "@/components/app/vk-manual-fallback";
 import { publishNowPost, type PublishFormState } from "@/modules/publishing/actions";
+import { isVkManualPhoto } from "@/modules/social/vk-manual";
 import type { PlatformCopy, PlatformVariants } from "@/modules/posts/variants";
 
 const calendarIdle: CalendarFormState = { status: "idle", message: "" };
@@ -28,6 +30,8 @@ export type StudioCardView = {
   mediaIds: string[];
   mediaTypes?: string[];
   variants?: PlatformVariants;
+  vkManual?: boolean;
+  vkManualCopy?: string;
 };
 
 function copiesFromCard(card: StudioCardView): Record<PreviewPlatformId, PlatformCopy> {
@@ -146,11 +150,20 @@ export function StudioWorkingCard({
       {card.status === "failed" && card.lastError ? (
         <StatusBanner tone="warning">{card.lastError}</StatusBanner>
       ) : null}
-      {platforms.includes("vk") && card.mediaIds.length > 0 && !vkCarouselReady ? (
+      {platforms.includes("vk") && card.mediaIds.length > 0 && !vkCarouselReady && !card.vkManual ? (
         <StatusBanner tone="warning">
-          Ключ клуба не грузит новое фото на стену (ошибка 27). Пост в Telegram уйдёт, во ВК публикация остановится,
-          пока в Подключениях нет ключа админа с правом «Фотографии» — одним ключом, как в Lovable.
+          Ключ клуба не грузит новое фото на стену. Telegram уйдёт по расписанию с картинкой. Во ВК после отправки
+          скачайте JPEG и выложите пост вручную — текст без картинки на стену не отправим.
         </StatusBanner>
+      ) : null}
+      {card.vkManual || isVkManualPhoto(null, card.lastError) ? (
+        <VkManualFallback
+          workspaceId={workspaceId}
+          postId={card.id}
+          copy={card.vkManualCopy || `${copies.vk.title}\n\n${copies.vk.body}`.trim()}
+          mediaIds={card.mediaIds}
+          canConfirm={canEdit && !inFlight}
+        />
       ) : null}
       {message ? <StatusBanner tone={tone}>{message}</StatusBanner> : null}
 

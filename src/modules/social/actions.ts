@@ -77,7 +77,7 @@ export async function connectVk(_prev: SocialFormState, formData: FormData): Pro
       status: "success",
       message: account.capabilities.some((item) => item.name === "publish_carousel" && item.enabled)
         ? `ВКонтакте подключено как ${account.displayName}. Ключ сохранён в зашифрованном виде. Текст и картинка уйдут одним wall.post с вложением photo, не файлом.`
-        : `ВКонтакте подключено как ${account.displayName}. Ключ сообщества пишет текст. Чтобы картинка была фото, вставьте ключ админа клуба с правом «Фотографии» — тот же, которым пользуется Lovable: photos.getWallUploadServer.`,
+        : `ВКонтакте подключено как ${account.displayName}. Ключ сообщества пишет текст. Картинка из Студии уйдёт в Telegram; во ВК скачайте JPEG и выложите пост вручную, пока нет ключа админа с photos.getWallUploadServer.`,
     };
   } catch (error) {
     const message = error instanceof AccessError ? error.message : "Не удалось подключить ВКонтакте.";

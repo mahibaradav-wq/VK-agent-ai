@@ -468,28 +468,6 @@ export function createSocialService(
         );
       }
 
-      const ownerId = -Math.abs(group.id);
-      const probe = await vk.call(token, "wall.post", {
-        owner_id: ownerId,
-        from_group: 1,
-        message: "",
-        guid: `probe:${workspaceId}:${group.id}`,
-      });
-      if (probe.ok) {
-        const posted = probe.response as { post_id?: number } | number;
-        const postId = typeof posted === "number" ? posted : posted?.post_id;
-        if (postId) {
-          await vk.call(token, "wall.delete", { owner_id: ownerId, post_id: postId });
-        }
-      } else if (probe.error_code !== 100) {
-        throw new AccessError(
-          400,
-          probe.error_code === 15 || probe.error_code === 27 || probe.error_code === 214
-            ? "Этот ключ не умеет писать на стену. В настройках сообщества создайте ключ с правом «Стена». Сервисный ключ приложения только читает."
-            : describeVkApiError(probe),
-        );
-      }
-
       if (!photoToken && input.accountId) {
         const existing = await db.socialAccount.findUnique({ where: { id: input.accountId } });
         if (existing?.encryptedToken) {
@@ -525,6 +503,9 @@ export function createSocialService(
       const encryptedToken = encryptToken(packVkTokens(token, photoToken));
       const displayName = input.displayName?.trim() || group.name?.trim() || parsed.screenName;
       const externalId = String(group.id);
+      const lastError = photoToken
+        ? null
+        : "Ключ клуба пишет текст. Картинка из Студии уйдёт в Telegram; во ВК её нужно скачать и выложить вручную, пока нет ключа админа с photos.getWallUploadServer.";
 
       const account = await db.$transaction(async (tx) => {
         let saved;
@@ -542,7 +523,7 @@ export function createSocialService(
               externalId,
               status: "connected",
               encryptedToken,
-              lastError: null,
+              lastError,
             },
             include: accountInclude,
           });
@@ -564,7 +545,7 @@ export function createSocialService(
               externalId,
               status: "connected",
               encryptedToken,
-              lastError: null,
+              lastError,
             },
             include: accountInclude,
           });

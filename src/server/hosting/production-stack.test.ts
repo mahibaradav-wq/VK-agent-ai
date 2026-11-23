@@ -49,7 +49,7 @@ describe("production hosting stack", () => {
   it("documents VPS + DNS instead of a fake cloud deploy", () => {
     expect(deploy).toContain("SITE_DOMAIN");
     expect(deploy).toContain("A-запись");
-    expect(deploy).toContain("docker compose -f docker-compose.prod.yml");
+    expect(deploy).toContain("bash scripts/vps-up.sh");
     expect(deploy).not.toMatch(/успешно задеплоено на Vercel/i);
   });
 });

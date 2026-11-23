@@ -2,6 +2,8 @@ import dns from "node:dns";
 import http from "node:http";
 import https from "node:https";
 
+import { redactVkSecrets } from "@/modules/social/vk-manual";
+
 // VK API is reachable directly from the host. Do not send it through the
 // Telegram/OpenAI CONNECT proxy: that tunnel fails with api.vk.ru.
 dns.setDefaultResultOrder("ipv4first");
@@ -516,11 +518,12 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
 }
 
 export function describeVkApiError(error: VkApiFailure) {
+  const detail = redactVkSecrets(error.error_msg);
   if (error.error_code === 0) {
-    return error.error_msg;
+    return detail;
   }
   if (error.error_code === 5 || error.error_code === 15) {
-    return `VK отклонил ключ: ${error.error_msg}`;
+    return `VK отклонил ключ: ${detail}`;
   }
   if (error.error_code === 27) {
     return "VK отклонил ключ сообщества. Для стены нужен ключ именно этого клуба с правом «Стена»; для чтения чужих стен — сервисный ключ приложения.";
@@ -534,5 +537,5 @@ export function describeVkApiError(error: VkApiFailure) {
   if (error.error_code === 200) {
     return "VK запретил загрузку фото. В ключе сообщества нужны права «Стена» и «Фотографии».";
   }
-  return `VK API: ${error.error_msg}`;
+  return `VK API: ${detail}`;
 }

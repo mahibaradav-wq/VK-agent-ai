@@ -10,6 +10,7 @@ import { copyForPlatform } from "@/modules/posts/variants";
 import { aggregatePostStatus } from "@/modules/publishing/aggregate";
 import { defaultBackoffMs, nextBackoffMs } from "@/modules/publishing/backoff";
 import { createDefaultAdapters, type AdapterRegistry, type PublishOutcome } from "@/server/social";
+import { isVkManualPhoto } from "@/modules/social/vk-manual";
 import { getPublishQueue, type QueueDriver } from "@/server/queue";
 
 const STALE_CLAIM_MS = 2 * 60 * 1000;
@@ -270,6 +271,71 @@ export function createPublishService(
         await dispatch(job.id);
       }
       return db.publishJob.findUniqueOrThrow({ where: { id: job.id }, include: jobInclude });
+    },
+
+    async confirmManualVk(userId: string, workspaceId: string, postId: string) {
+      await access.requirePermission(userId, workspaceId, "post.update");
+      const post = await loadBoundPost(workspaceId, postId);
+      const target = post.targets.find((item) => item.platform === "vk");
+      if (!target) {
+        throw new AccessError(400, "У этой публикации нет цели ВКонтакте.");
+      }
+      if (target.status === "published") {
+        return loadBoundPost(workspaceId, postId);
+      }
+      if (
+        target.status !== "requires_manual_check" &&
+        !(target.status === "failed" && isVkManualPhoto(null, target.lastError))
+      ) {
+        throw new AccessError(
+          400,
+          "Отметить ручную выкладку можно, только если ВК ждал картинку и не ушёл на стену автоматически.",
+        );
+      }
+
+      await db.$transaction(async (tx) => {
+        await tx.postTarget.update({
+          where: { id: target.id },
+          data: {
+            status: "published",
+            externalId: target.externalId || "manual",
+            lastError: null,
+          },
+        });
+        await tx.auditLog.create({
+          data: {
+            action: "CONFIRM_MANUAL_VK",
+            entityType: "post_target",
+            entityId: target.id,
+            actorId: userId,
+            details: postId,
+          },
+        });
+      });
+
+      const updated = await db.post.findUniqueOrThrow({
+        where: { id: post.id },
+        include: { targets: true },
+      });
+      const postStatus = aggregatePostStatus(updated.targets);
+      await db.post.update({
+        where: { id: post.id },
+        data: { status: postStatus },
+      });
+      const job = await db.publishJob.findFirst({
+        where: { postId: post.id },
+        orderBy: { createdAt: "desc" },
+      });
+      if (job && (job.status === "requires_manual_check" || job.status === "failed")) {
+        await db.publishJob.update({
+          where: { id: job.id },
+          data: {
+            status: postStatus === "published" ? "completed" : job.status,
+            lastError: postStatus === "published" ? null : job.lastError,
+          },
+        });
+      }
+      return loadBoundPost(workspaceId, postId);
     },
 
     async publishNow(userId: string, workspaceId: string, postId: string) {
@@ -546,7 +612,12 @@ export function createPublishService(
         }
       } else if (hasUnknown) {
         jobStatus = "requires_manual_check";
-        lastError = "Неопределённый результат публикации. Повторная отправка заблокирована.";
+        const vkManual = post.targets.find(
+          (target) => target.platform === "vk" && target.status === "requires_manual_check" && isVkManualPhoto(null, target.lastError),
+        );
+        lastError = vkManual
+          ? "Telegram мог выйти по расписанию. ВКонтакте: скачайте картинку и выложите пост вручную. Повтор на стену не отправляем."
+          : "Неопределённый результат публикации. Повторная отправка заблокирована.";
         await db.post.update({ where: { id: post.id }, data: { status: postStatus } });
       } else {
         jobStatus = "failed";

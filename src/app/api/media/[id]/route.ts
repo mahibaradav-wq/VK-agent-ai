@@ -4,7 +4,7 @@ import { createMediaService } from "@/modules/media/media-service";
 import { prisma } from "@/server/db/prisma";
 import { storage } from "@/server/storage";
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user?.id) {
     return new Response("Нужна авторизация.", { status: 401 });
@@ -18,11 +18,13 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 
   try {
     const file = await createMediaService(prisma, storage).readFile(session.user.id, media.workspaceId, media.id);
+    const download = new URL(request.url).searchParams.get("download") === "1";
+    const filename = encodeURIComponent(file.media.originalName);
     return new Response(Buffer.from(file.bytes), {
       headers: {
         "Content-Type": file.media.mimeType,
         "Content-Length": String(file.media.sizeBytes),
-        "Content-Disposition": `inline; filename="${encodeURIComponent(file.media.originalName)}"`,
+        "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${filename}"`,
         "Cache-Control": "private, max-age=3600",
       },
     });

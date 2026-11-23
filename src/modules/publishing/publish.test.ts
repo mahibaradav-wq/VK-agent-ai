@@ -111,8 +111,8 @@ describe("publish aggregation helpers", () => {
       attempts: [{ kind: "success", errorCode: null, errorMessage: null }],
     });
     expect(mixed.status).toBe("invalid");
-    expect(mixed.message).toMatch(/Telegram уже вышли/);
-    expect(mixed.message).toMatch(/Не ушло: ВКонтакте/);
+    expect(mixed.message).toMatch(/Telegram уже выш/);
+    expect(mixed.message).toMatch(/ВКонтакте/);
   });
 });
 
@@ -224,6 +224,47 @@ describe("publishing queue", () => {
       /неопределённые цели повторно не отправляются/,
     );
     expect(vk.calls).toBe(1);
+  });
+
+  it("keeps Telegram published and parks VK for a manual photo without retrying either", async () => {
+    const owner = await registerOwner("pub-vk-manual");
+    const post = await draftWithTargets(owner, ["vk", "telegram"], "Ручной ВК");
+    await approveCurrent(owner, post.id);
+    const vk = scripted("vk", [
+      { kind: "unknown", code: "vk_manual_photo", message: "Скачайте JPEG и выложите пост во ВКонтакте вручную." },
+    ]);
+    const telegram = scripted("telegram", [{ kind: "success", externalId: "tg-7" }]);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: createAdapterRegistry([vk, telegram]),
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-manual");
+    const stored = await prisma.post.findUniqueOrThrow({
+      where: { id: post.id },
+      include: { targets: true },
+    });
+    expect(stored.targets.find((target) => target.platform === "telegram")?.status).toBe("published");
+    expect(stored.targets.find((target) => target.platform === "vk")?.status).toBe("requires_manual_check");
+    expect((await prisma.publishJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("requires_manual_check");
+    expect(vk.calls).toBe(1);
+    expect(telegram.calls).toBe(1);
+
+    await expectAccess(
+      publishing.enqueue(owner.userId, owner.workspaceId, post.id),
+      400,
+      /неопределённые цели повторно не отправляются/,
+    );
+    expect(vk.calls).toBe(1);
+    expect(telegram.calls).toBe(1);
+
+    const confirmed = await publishing.confirmManualVk(owner.userId, owner.workspaceId, post.id);
+    expect(confirmed.status).toBe("published");
+    expect(confirmed.targets.every((target) => target.status === "published")).toBe(true);
+    expect((await prisma.publishJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("completed");
+    await publishing.confirmManualVk(owner.userId, owner.workspaceId, post.id);
+    expect(vk.calls).toBe(1);
+    expect(telegram.calls).toBe(1);
   });
 
   it("lets an Owner republish from Studio after a requires_manual_check result", async () => {

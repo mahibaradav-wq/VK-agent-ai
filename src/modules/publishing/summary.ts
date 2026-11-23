@@ -1,3 +1,5 @@
+import { isVkManualPhoto } from "@/modules/social/vk-manual";
+
 const platformLabels: Record<string, string> = {
   telegram: "Telegram",
   vk: "ВКонтакте",
@@ -20,6 +22,12 @@ export function publishNowMessage(job: {
       message: sent.length ? `Пост ушёл: ${sent.join(" и ")}.` : "Пост опубликован.",
     };
   }
+  const vkManual = failed.some(
+    (target) =>
+      target.platform === "vk" &&
+      (target.status === "requires_manual_check" || target.status === "failed") &&
+      isVkManualPhoto(null, target.lastError),
+  );
   const targetError = failed.find((target) => target.lastError)?.lastError;
   const attempt = job.attempts.find((item) => item.kind !== "success");
   const detail =
@@ -27,6 +35,18 @@ export function publishNowMessage(job: {
     targetError ||
     attempt?.errorMessage ||
     "VK или Telegram отклонили публикацию.";
+  if (vkManual && sent.includes("Telegram")) {
+    return {
+      status: "invalid" as const,
+      message: `Telegram уже вышел. ВКонтакте скачайте картинку и выложите пост вручную. ${detail}`,
+    };
+  }
+  if (vkManual && !sent.length) {
+    return {
+      status: "invalid" as const,
+      message: `ВКонтакте не ушёл автоматически: скачайте картинку и выложите пост вручную. ${detail}`,
+    };
+  }
   if (sent.length) {
     const missed = failed.map((target) => platformLabels[target.platform] ?? target.platform);
     return {
