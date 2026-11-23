@@ -333,15 +333,10 @@ export function createPostService(db: PrismaClient) {
 
         const existingPlatforms = new Set(post.targets.map((target) => target.platform));
         for (const platform of platforms) {
-          const linked =
-            (await tx.socialAccount.findFirst({
-              where: { workspaceId, platform, status: "connected", projectId: post.projectId },
-              orderBy: { updatedAt: "desc" },
-            })) ??
-            (await tx.socialAccount.findFirst({
-              where: { workspaceId, platform, status: "connected" },
-              orderBy: { updatedAt: "desc" },
-            }));
+          const linked = await tx.socialAccount.findFirst({
+            where: { workspaceId, platform, status: "connected", projectId: post.projectId },
+            orderBy: { updatedAt: "desc" },
+          });
           if (!existingPlatforms.has(platform)) {
             await tx.postTarget.create({
               data: { postId: post.id, workspaceId, platform, status: "draft", socialAccountId: linked?.id },
