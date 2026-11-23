@@ -10,7 +10,18 @@ function deriveKey(material: string) {
 
 function configuredEncryptionMaterial() {
   const dedicated = process.env.TOKEN_ENCRYPTION_KEY?.trim();
-  if (dedicated) return dedicated;
+  if (dedicated) {
+    if (process.env.NODE_ENV === "production") {
+      const authSecret = process.env.AUTH_SECRET?.trim();
+      if (dedicated.length < 32) {
+        throw new AccessError(400, "TOKEN_ENCRYPTION_KEY должен содержать не менее 32 символов.");
+      }
+      if (authSecret && dedicated === authSecret) {
+        throw new AccessError(400, "TOKEN_ENCRYPTION_KEY должен отличаться от AUTH_SECRET.");
+      }
+    }
+    return dedicated;
+  }
 
   if (process.env.NODE_ENV !== "production") {
     const developmentFallback = process.env.AUTH_SECRET?.trim();
