@@ -15,8 +15,8 @@ import { displayTimezones, parseTimezone, TIMEZONE_COOKIE } from "@/modules/cale
 import { createPostService } from "@/modules/posts/post-service";
 import { parseVariants } from "@/modules/posts/variants";
 import { prisma } from "@/server/db/prisma";
-import { toVkWallText } from "@/server/social/vk-adapter";
 import { isVkManualPhoto } from "@/modules/social/vk-manual";
+import { vkWallCopy } from "@/modules/social/vk-wall-text";
 
 export const metadata = createPageMetadata({
   title: "Студия",
@@ -115,7 +115,7 @@ export default async function StudioPage({
                         (vkTarget.status === "requires_manual_check" ||
                           isVkManualPhoto(null, vkTarget.lastError)),
                     ),
-                    vkManualCopy: [toVkWallText(vkCopy.title), toVkWallText(vkCopy.body)].filter(Boolean).join("\n\n"),
+                    vkManualCopy: vkWallCopy(vkCopy.title, vkCopy.body),
                   }}
                 />
               );

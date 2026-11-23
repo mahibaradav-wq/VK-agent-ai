@@ -8,6 +8,7 @@ import { parsePlatforms } from "@/modules/posts/platforms";
 import { createPostService } from "@/modules/posts/post-service";
 import { copyForPlatform } from "@/modules/posts/variants";
 import { isVkManualPhoto } from "@/modules/social/vk-manual";
+import { vkWallCopy } from "@/modules/social/vk-wall-text";
 
 const postStatuses = [
   "draft",
@@ -133,7 +134,7 @@ export function createCalendarService(db: PrismaClient) {
           platforms: row.post.targets.map((target) => target.platform),
           mediaIds: row.post.media.map((item) => item.mediaId),
           vkManual,
-          vkManualCopy: [vkCopy.title, vkCopy.body].filter(Boolean).join("\n\n"),
+          vkManualCopy: vkWallCopy(vkCopy.title, vkCopy.body),
         };
       });
     },

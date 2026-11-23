@@ -15,22 +15,12 @@ import {
   type VkTransport,
 } from "@/server/social/vk-api";
 import { VK_MANUAL_PHOTO_CODE, VK_MANUAL_PHOTO_MESSAGE } from "@/modules/social/vk-manual";
+import { toVkWallText } from "@/modules/social/vk-wall-text";
 import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/social/types";
 import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
 
 const MAX_VK_WALL_PHOTOS = 10;
 const POLKA_ALBUM_TITLE = "Polka Social";
-
-export function toVkWallText(text: string) {
-  return text
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/__(.+?)__/g, "$1")
-    .replace(/\*(.+?)\*/g, "$1")
-    .replace(/`(.+?)`/g, "$1")
-    .replace(/\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g, "$1 $2")
-    .replace(/[ \t]+\n/g, "\n")
-    .trim();
-}
 
 function composeText(input: PublishInput, includeLink: boolean) {
   const parts = [toVkWallText(input.title), toVkWallText(input.body)].filter(Boolean);

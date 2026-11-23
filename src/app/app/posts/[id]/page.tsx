@@ -17,7 +17,7 @@ import { createPublishService } from "@/modules/publishing/publish-service";
 import { copyForPlatform } from "@/modules/posts/variants";
 import { prisma } from "@/server/db/prisma";
 import { storage } from "@/server/storage";
-import { toVkWallText } from "@/server/social/vk-adapter";
+import { vkWallCopy } from "@/modules/social/vk-wall-text";
 
 const lockedStatuses = ["queued", "publishing", "published", "cancelled", "requires_manual_check"];
 
@@ -79,11 +79,7 @@ export default async function PostEditorPage({ params }: { params: Promise<{ id:
             canEnqueue={canEnqueue}
             canPublishNow={canPublishNow}
             vkManualCopy={
-              version
-                ? [toVkWallText(copyForPlatform(version, "vk").title), toVkWallText(copyForPlatform(version, "vk").body)]
-                    .filter(Boolean)
-                    .join("\n\n")
-                : ""
+              version ? vkWallCopy(copyForPlatform(version, "vk").title, copyForPlatform(version, "vk").body) : ""
             }
             mediaIds={post.media.map((item) => item.mediaId)}
             canConfirmManualVk={hasPermission(activeMembership.role, "post.update")}
