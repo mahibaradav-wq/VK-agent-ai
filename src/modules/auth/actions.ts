@@ -8,7 +8,7 @@ import { createAuthService } from "@/modules/auth/auth-service";
 import { storeDevMail } from "@/server/mail/dev-mailbox";
 import { prisma } from "@/server/db/prisma";
 import { publicSiteUrl } from "@/lib/public-url";
-import { AUTH_RATE_LIMITS, consumeRateLimit } from "@/server/security/rate-limit";
+import { AUTH_RATE_LIMITS, consumeRateLimit, trustedClientAddress } from "@/server/security/rate-limit";
 
 export type AuthFormState = {
   status: "idle" | "invalid" | "success";
@@ -33,10 +33,9 @@ const rateLimited: AuthFormState = {
 
 async function clientKey(kind: string, extra = "") {
   const requestHeaders = await headers();
-  const ip =
-    requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    requestHeaders.get("x-real-ip") ||
-    "local";
+  // X-Real-IP is overwritten by the trusted Caddy reverse proxy.
+  // Do not trust X-Forwarded-For: clients can supply spoofed values there.
+  const ip = trustedClientAddress(requestHeaders.get("x-real-ip"));
   return extra ? `${kind}:${ip}:${extra}` : `${kind}:${ip}`;
 }
 
