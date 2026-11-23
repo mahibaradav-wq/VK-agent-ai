@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AccessError } from "@/modules/access/permissions";
 import { decryptToken, encryptToken } from "@/server/crypto/token-cipher";
@@ -6,19 +6,17 @@ import { decryptToken, encryptToken } from "@/server/crypto/token-cipher";
 describe("token cipher", () => {
   const previousKey = process.env.TOKEN_ENCRYPTION_KEY;
   const previousSecret = process.env.AUTH_SECRET;
-  const previousNodeEnv = process.env.NODE_ENV;
 
   afterEach(() => {
     if (previousKey === undefined) delete process.env.TOKEN_ENCRYPTION_KEY;
     else process.env.TOKEN_ENCRYPTION_KEY = previousKey;
     if (previousSecret === undefined) delete process.env.AUTH_SECRET;
     else process.env.AUTH_SECRET = previousSecret;
-    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
-    else process.env.NODE_ENV = previousNodeEnv;
+    vi.unstubAllEnvs();
   });
 
   it("round-trips a bot token with the dedicated key", () => {
-    process.env.NODE_ENV = "test";
+    vi.stubEnv("NODE_ENV", "test");
     process.env.TOKEN_ENCRYPTION_KEY = "stage8-test-key";
     process.env.AUTH_SECRET = "different-auth-secret";
     const packed = encryptToken("123456:AA-secret-bot-token");
@@ -39,7 +37,7 @@ describe("token cipher", () => {
   });
 
   it("requires a dedicated key for encryption in production", () => {
-    process.env.NODE_ENV = "production";
+    vi.stubEnv("NODE_ENV", "production");
     delete process.env.TOKEN_ENCRYPTION_KEY;
     process.env.AUTH_SECRET = "auth-secret-that-is-present";
     expect(() => encryptToken("x")).toThrow(AccessError);
