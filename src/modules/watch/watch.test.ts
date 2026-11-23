@@ -343,6 +343,9 @@ describe("VK watch idea agent", () => {
     );
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
     expect(await prisma.mediaAsset.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
+    expect((await watch.listIdeas(owner.userId, owner.workspaceId, owner.projectId))[0]?.items).toEqual([
+      "Полка || Нужна тема || Хук",
+    ]);
   });
 
   it("accepts a hex service key and falls back to club id when groups.getById is unavailable", async () => {
