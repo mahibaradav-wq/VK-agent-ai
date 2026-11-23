@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AccessError } from "@/modules/access/permissions";
 import { createAuthService } from "@/modules/auth/auth-service";
 import { createBillingService } from "@/modules/billing/billing-service";
-import { attachFreeSubscription, ensureCanonicalPlans } from "@/modules/billing/plans";
+import { attachFreeSubscription, ensureCanonicalPlans, getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { getUsage, reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
 import { createProjectService } from "@/modules/projects/project-service";
 import { createWorkspaceService } from "@/modules/workspaces/workspace-service";
@@ -307,6 +307,30 @@ describe("billing and subscriptions", () => {
     );
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(3);
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(5);
+  });
+
+  it("falls back to Start limits after a paid subscription expires", async () => {
+    const owner = await registerOwner("bill-expired-ai");
+    const subscription = await attachFreeSubscription(prisma, owner.workspaceId);
+    const team = await prisma.plan.findUniqueOrThrow({ where: { slug: "team" } });
+    await prisma.subscription.update({
+      where: { id: subscription.id },
+      data: {
+        planId: team.id,
+        status: "active",
+        paidAt: new Date("2026-01-01T00:00:00.000Z"),
+        currentPeriodStart: new Date("2026-01-01T00:00:00.000Z"),
+        currentPeriodEnd: new Date("2026-02-01T00:00:00.000Z"),
+      },
+    });
+
+    const expired = await getWorkspacePlanLimits(prisma, owner.workspaceId, new Date("2026-03-01T00:00:00.000Z"));
+    expect(expired.slug).toBe("start");
+    expect(expired.aiGenerations).toBe(50);
+
+    const active = await getWorkspacePlanLimits(prisma, owner.workspaceId, new Date("2026-01-15T00:00:00.000Z"));
+    expect(active.slug).toBe("team");
+    expect(active.aiGenerations).toBe(500);
   });
 
   it("does not cap AI usage when the monthly limit is unlimited", async () => {
