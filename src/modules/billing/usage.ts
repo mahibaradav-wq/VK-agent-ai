@@ -29,7 +29,7 @@ export async function getUsage(
   });
   return {
     used: row?.used ?? 0,
-    limit: isUnlimitedUsage(fallbackLimit) ? 0 : (row?.limit ?? fallbackLimit),
+    limit: isUnlimitedUsage(fallbackLimit) ? 0 : (row?.limit && row.limit > 0 ? row.limit : fallbackLimit),
     periodStart,
     periodEnd,
   };
