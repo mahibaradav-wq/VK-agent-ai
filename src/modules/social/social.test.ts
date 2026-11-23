@@ -214,6 +214,20 @@ describe("social accounts", () => {
       where: { id: secondTarget.id },
       data: { socialAccountId: account.id },
     });
+    await posts.saveDraft(owner.userId, owner.workspaceId, secondPost.id, {
+      title: "Проект B",
+      body: "Исправленный текст B",
+      platforms: ["telegram"],
+      mediaIds: [],
+    });
+    expect(
+      (await prisma.postTarget.findUniqueOrThrow({ where: { id: secondTarget.id } })).socialAccountId,
+    ).toBeNull();
+
+    await prisma.postTarget.update({
+      where: { id: secondTarget.id },
+      data: { socialAccountId: account.id },
+    });
     await social.connectTelegram(owner.userId, owner.workspaceId, {
       token: BOT_TOKEN,
       chatId: "@project_a",
