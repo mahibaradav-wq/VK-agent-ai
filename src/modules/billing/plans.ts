@@ -21,7 +21,6 @@ export type PlanDefinition = {
 };
 
 export type PlanLimits = {
-  aiGenerations: number;
   projects: number;
   socialAccounts: number;
   members: number;
@@ -141,7 +140,6 @@ export async function ensureCanonicalPlans(db: DbClient) {
         socialAccounts: plan.socialAccounts,
         members: plan.members,
         postsPerMonth: plan.postsPerMonth,
-        aiGenerations: 0,
         featuresJson: JSON.stringify(plan.features),
       },
       update: {
