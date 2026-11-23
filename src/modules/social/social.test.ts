@@ -1119,6 +1119,50 @@ describe("social accounts", () => {
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
   });
 
+  it("keeps VK account binding inside its project", async () => {
+    const owner = await registerOwner("soc-vk-project-scope");
+    const otherProject = await projects.create(owner.userId, owner.workspaceId, { name: "Другой проект" });
+
+    const firstPost = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "VK проект A");
+    await posts.saveDraft(owner.userId, owner.workspaceId, firstPost.id, {
+      title: "VK проект A",
+      body: "Текст A",
+      platforms: ["vk"],
+      mediaIds: [],
+    });
+    const secondPost = await posts.create(owner.userId, owner.workspaceId, otherProject.id, "VK проект B");
+    await posts.saveDraft(owner.userId, owner.workspaceId, secondPost.id, {
+      title: "VK проект B",
+      body: "Текст B",
+      platforms: ["vk"],
+      mediaIds: [],
+    });
+
+    const transport = scriptedVk({
+      "groups.getById": {
+        ok: true,
+        response: [{ id: 242155421, name: "Проект A", screen_name: "club242155421", can_post: 1 }],
+      },
+      "groups.getTokenPermissions": { ok: false, error_code: 3, error_msg: "Unknown method" },
+      "photos.getWallUploadServer": {
+        ok: false,
+        error_code: 27,
+        error_msg: "Group authorization failed",
+      },
+    });
+    const social = createSocialService(prisma, { vk: transport });
+    const account = await social.connectVk(owner.userId, owner.workspaceId, {
+      token: VK_COMMUNITY_TOKEN,
+      source: "https://vk.com/club242155421",
+      projectId: owner.projectId,
+    });
+
+    const firstTarget = await prisma.postTarget.findFirstOrThrow({ where: { postId: firstPost.id } });
+    const secondTarget = await prisma.postTarget.findFirstOrThrow({ where: { postId: secondPost.id } });
+    expect(firstTarget.socialAccountId).toBe(account.id);
+    expect(secondTarget.socialAccountId).toBeNull();
+  });
+
   it("connects with only the admin photo key", async () => {
     const owner = await registerOwner("soc-vk-photo-only");
     const transport = scriptedVk({
