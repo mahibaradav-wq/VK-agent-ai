@@ -131,7 +131,9 @@ describe("billing and subscriptions", () => {
     const afterReplay = await billing.getState(owner.userId, owner.workspaceId);
     expect(afterReplay.subscription.paidAt?.toISOString()).toBe(paidAt?.toISOString());
     expect(await prisma.paymentEvent.count({ where: { providerEventId: payload.id } })).toBe(1);
-    expect(paid.limits.aiGenerations).toBe(500);
+    expect(paid.usage.ai).toMatchObject({ used: 0, limit: 0 });
+    expect("aiGenerations" in paid.limits).toBe(false);
+    expect(paid.plans.find((plan) => plan.slug === "team")?.features.join(" ")).not.toMatch(/AI-генераций/);
   });
 
   it("rejects mismatched provider, workspace, plan, amount, or currency before activating a checkout", async () => {
