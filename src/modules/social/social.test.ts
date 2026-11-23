@@ -406,6 +406,7 @@ describe("social accounts", () => {
     const account = await social.connectTelegram(owner.userId, owner.workspaceId, {
       token: BOT_TOKEN,
       chatId: "77",
+      projectId: owner.projectId,
     });
     const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "В канал");
     await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
