@@ -22,6 +22,7 @@ npm run worker
 | Задача висит в `pending` | Запущен ли worker. Для Redis — `redis-cli ping` и `QUEUE_DRIVER=redis` |
 | `failed` + `integration_not_configured` | Это штатный отказ без токена Telegram, не сбой очереди |
 | `requires_manual_check` | Адаптер не подтвердил результат. Нельзя слепо ретраить |
+| `requires_manual_check` после зависшей задачи | Внешний результат неизвестен. Проверьте площадку вручную; автоматический повтор заблокирован, чтобы не создать дубль |
 | `failed` + `rate_limit` | Платформа вернула 429. Будет backoff, успешные цели не дублируются |
 | Админка «Очередь» пустая или ошибка | Смотрите PostgreSQL `PublishJob`. Redis down не должен помечаться как успешная доставка |
 
