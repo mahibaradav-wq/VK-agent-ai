@@ -313,8 +313,9 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
         return { ok: false, message: "Проверьте токен и пароль. Пароль должен содержать минимум 8 символов." };
       }
 
+      const tokenHash = hashToken(token);
       const record = await db.passwordResetToken.findUnique({
-        where: { tokenHash: hashToken(token) },
+        where: { tokenHash },
       });
 
       if (!record || record.expires < new Date()) {
@@ -322,17 +323,36 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
       }
 
       const passwordHash = await bcrypt.hash(password, 12);
-      await db.$transaction([
-        db.user.update({
+      const consumed = await db.$transaction(async (tx) => {
+        // Claim the token inside the same transaction as the password update.
+        // Concurrent requests may both read the token above, but only one can delete it.
+        const claimed = await tx.passwordResetToken.deleteMany({
+          where: {
+            tokenHash,
+            userId: record.userId,
+            expires: { gt: new Date() },
+          },
+        });
+        if (claimed.count !== 1) {
+          return false;
+        }
+
+        await tx.user.update({
           where: { id: record.userId },
           data: { passwordHash },
-        }),
-        db.passwordResetToken.deleteMany({
+        });
+        // A successful reset invalidates every other outstanding reset link for this user.
+        await tx.passwordResetToken.deleteMany({
           where: { userId: record.userId },
-        }),
-      ]);
-      await writeAudit("RESET_PASSWORD", record.userId, record.userId);
+        });
+        return true;
+      });
 
+      if (!consumed) {
+        return { ok: false, message: "Токен сброса пароля недействителен или просрочен." };
+      }
+
+      await writeAudit("RESET_PASSWORD", record.userId, record.userId);
       return { ok: true, message: "Пароль обновлён. Войдите с новым паролем." };
     },
 
