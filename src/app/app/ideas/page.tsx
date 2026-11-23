@@ -36,7 +36,7 @@ export default async function IdeasPage() {
   const [credential, communities, ideas, aiStatus, studioCards] = await Promise.all([
     watch.credential(session.user.id, activeMembership.workspaceId),
     watch.listCommunities(session.user.id, activeMembership.workspaceId),
-    watch.listIdeas(session.user.id, activeMembership.workspaceId),
+    watch.listIdeas(session.user.id, activeMembership.workspaceId, activeProject?.id ?? null),
     createAiService(prisma).workspaceStatus(session.user.id, activeMembership.workspaceId),
     posts.listStudioCards(session.user.id, activeMembership.workspaceId, activeProject?.id),
   ]);
