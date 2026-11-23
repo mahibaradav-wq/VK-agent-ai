@@ -267,6 +267,36 @@ describe("publishing queue", () => {
     expect(telegram.calls).toBe(1);
   });
 
+  it("finishes a leftover publish job when VK was already marked published by hand", async () => {
+    const owner = await registerOwner("pub-vk-manual-replay");
+    const post = await draftWithTargets(owner, ["vk", "telegram"], "Повторный confirm");
+    await approveCurrent(owner, post.id);
+    const vk = scripted("vk", [{ kind: "unknown", code: "vk_manual_photo", message: "вручную" }]);
+    const telegram = scripted("telegram", [{ kind: "success", externalId: "tg-8" }]);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: createAdapterRegistry([vk, telegram]),
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-manual-replay");
+    const vkTarget = await prisma.postTarget.findFirstOrThrow({ where: { postId: post.id, platform: "vk" } });
+    await prisma.postTarget.update({
+      where: { id: vkTarget.id },
+      data: { status: "published", externalId: "manual", lastError: null },
+    });
+    await prisma.post.update({ where: { id: post.id }, data: { status: "failed" } });
+    await prisma.publishJob.update({
+      where: { id: job.id },
+      data: { status: "requires_manual_check", lastError: "застряла после ручной отметки" },
+    });
+
+    const confirmed = await publishing.confirmManualVk(owner.userId, owner.workspaceId, post.id);
+    expect(confirmed.status).toBe("published");
+    expect((await prisma.publishJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("completed");
+    expect(vk.calls).toBe(1);
+    expect(telegram.calls).toBe(1);
+  });
+
   it("lets an Owner republish from Studio after a requires_manual_check result", async () => {
     const owner = await registerOwner("pub-now-retry");
     const post = await draftWithTargets(owner, ["vk"], "Повтор");

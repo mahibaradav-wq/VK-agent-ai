@@ -280,10 +280,9 @@ export function createPublishService(
       if (!target) {
         throw new AccessError(400, "У этой публикации нет цели ВКонтакте.");
       }
-      if (target.status === "published") {
-        return loadBoundPost(workspaceId, postId);
-      }
+      const alreadyPublished = target.status === "published";
       if (
+        !alreadyPublished &&
         target.status !== "requires_manual_check" &&
         !(target.status === "failed" && isVkManualPhoto(null, target.lastError))
       ) {
@@ -294,47 +293,50 @@ export function createPublishService(
       }
 
       await db.$transaction(async (tx) => {
-        await tx.postTarget.update({
-          where: { id: target.id },
-          data: {
-            status: "published",
-            externalId: target.externalId || "manual",
-            lastError: null,
-          },
+        if (!alreadyPublished) {
+          await tx.postTarget.update({
+            where: { id: target.id },
+            data: {
+              status: "published",
+              externalId: target.externalId || "manual",
+              lastError: null,
+            },
+          });
+          await tx.auditLog.create({
+            data: {
+              action: "CONFIRM_MANUAL_VK",
+              entityType: "post_target",
+              entityId: target.id,
+              actorId: userId,
+              details: postId,
+            },
+          });
+        }
+
+        const updated = await tx.post.findUniqueOrThrow({
+          where: { id: post.id },
+          include: { targets: true },
         });
-        await tx.auditLog.create({
-          data: {
-            action: "CONFIRM_MANUAL_VK",
-            entityType: "post_target",
-            entityId: target.id,
-            actorId: userId,
-            details: postId,
-          },
+        const postStatus = aggregatePostStatus(updated.targets);
+        await tx.post.update({
+          where: { id: post.id },
+          data: { status: postStatus },
         });
+        const job = await tx.publishJob.findFirst({
+          where: { postId: post.id },
+          orderBy: { createdAt: "desc" },
+        });
+        if (job && (job.status === "requires_manual_check" || job.status === "failed")) {
+          await tx.publishJob.update({
+            where: { id: job.id },
+            data: {
+              status: postStatus === "published" ? "completed" : job.status,
+              lastError: postStatus === "published" ? null : job.lastError,
+            },
+          });
+        }
       });
 
-      const updated = await db.post.findUniqueOrThrow({
-        where: { id: post.id },
-        include: { targets: true },
-      });
-      const postStatus = aggregatePostStatus(updated.targets);
-      await db.post.update({
-        where: { id: post.id },
-        data: { status: postStatus },
-      });
-      const job = await db.publishJob.findFirst({
-        where: { postId: post.id },
-        orderBy: { createdAt: "desc" },
-      });
-      if (job && (job.status === "requires_manual_check" || job.status === "failed")) {
-        await db.publishJob.update({
-          where: { id: job.id },
-          data: {
-            status: postStatus === "published" ? "completed" : job.status,
-            lastError: postStatus === "published" ? null : job.lastError,
-          },
-        });
-      }
       return loadBoundPost(workspaceId, postId);
     },
 
