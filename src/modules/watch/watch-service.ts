@@ -461,12 +461,22 @@ export function createWatchService(
       };
     },
 
-    async takeIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number, permission: "post.create" | "ai.generate") {
+    async takeIdea(
+      userId: string,
+      workspaceId: string,
+      requestId: string,
+      itemIndex: number,
+      projectId: string,
+      permission: "post.create" | "ai.generate",
+    ) {
       await access.requirePermission(userId, workspaceId, permission);
       const request = await db.aIRequest.findUnique({ where: { id: requestId } });
       assertWorkspaceBound(workspaceId, request, "AI-запрос");
       if (request.kind !== WATCH_IDEAS_KIND) {
         throw new AccessError(400, "Это не идеи агента наблюдения VK.");
+      }
+      if (!request.projectId || request.projectId !== projectId) {
+        throw new AccessError(403, "Эта идея принадлежит другому проекту. Соберите идеи для активного проекта.");
       }
       let items: string[] = [];
       try {
@@ -482,15 +492,24 @@ export function createWatchService(
         throw new AccessError(400, "Идея не найдена.");
       }
       const remaining = items.filter((_, index) => index !== itemIndex);
-      await db.aIRequest.update({
-        where: { id: request.id },
+      const updated = await db.aIRequest.updateMany({
+        where: {
+          id: request.id,
+          workspaceId,
+          projectId,
+          kind: WATCH_IDEAS_KIND,
+          itemsJson: request.itemsJson,
+        },
         data: { itemsJson: JSON.stringify(remaining) },
       });
+      if (updated.count !== 1) {
+        throw new AccessError(409, "Эту идею уже обработали в другом действии. Обновите страницу.");
+      }
       return { request, item, remaining };
     },
 
-    async consumeIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number) {
-      const taken = await this.takeIdea(userId, workspaceId, requestId, itemIndex, "post.create");
+    async consumeIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number, projectId: string) {
+      const taken = await this.takeIdea(userId, workspaceId, requestId, itemIndex, projectId, "post.create");
       await db.auditLog.create({
         data: {
           action: "CONSUME_VK_WATCH_IDEA",
@@ -503,8 +522,8 @@ export function createWatchService(
       return taken.item;
     },
 
-    async dismissIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number) {
-      const taken = await this.takeIdea(userId, workspaceId, requestId, itemIndex, "ai.generate");
+    async dismissIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number, projectId: string) {
+      const taken = await this.takeIdea(userId, workspaceId, requestId, itemIndex, projectId, "ai.generate");
       await db.auditLog.create({
         data: {
           action: "DISMISS_VK_WATCH_IDEA",
@@ -526,6 +545,9 @@ export function createWatchService(
       }
       const project = await db.project.findUnique({ where: { id: projectId } });
       assertWorkspaceBound(workspaceId, project, "Проект");
+      if (!request.projectId || request.projectId !== projectId) {
+        throw new AccessError(403, "Эта идея принадлежит другому проекту. Соберите идеи для активного проекта.");
+      }
       let items: string[] = [];
       try {
         const parsed = JSON.parse(request.itemsJson) as unknown;
@@ -565,10 +587,10 @@ export function createWatchService(
       return composed.post;
     },
 
-    async listIdeas(userId: string, workspaceId: string) {
+    async listIdeas(userId: string, workspaceId: string, projectId: string | null) {
       await access.requirePermission(userId, workspaceId, "ai.view");
       const rows = await db.aIRequest.findMany({
-        where: { workspaceId, kind: WATCH_IDEAS_KIND },
+        where: { workspaceId, projectId, kind: WATCH_IDEAS_KIND },
         orderBy: { createdAt: "desc" },
         take: 10,
       });
