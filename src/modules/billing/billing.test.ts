@@ -137,14 +137,22 @@ describe("billing and subscriptions", () => {
   it("rejects mismatched provider, workspace, plan, amount, or currency before activating a checkout", async () => {
     const owner = await registerOwner("bill-mismatch");
     const secret = "mismatch-billing-secret";
-    const billing = createBillingService(prisma, { provider: createHmacBillingProvider({ secret }) });
+    const hmacProvider = createHmacBillingProvider({ secret });
+    const provider = {
+      ...hmacProvider,
+      async verifyWebhook(rawBody: string, signatureHeader: string) {
+        const verified = await hmacProvider.verifyWebhook(rawBody, signatureHeader);
+        return { ...verified, provider: verified.eventId === "wrong-provider" ? "other" : verified.provider };
+      },
+    };
+    const billing = createBillingService(prisma, { provider });
     const started = await billing.startCheckout(owner.userId, owner.workspaceId, "team");
     const invalidEvents = [
-      { id: "wrong-provider", provider: "other", workspaceId: owner.workspaceId, planSlug: "team", amount: 490000, currency: "RUB" },
-      { id: "wrong-workspace", provider: "hmac", workspaceId: "foreign-workspace", planSlug: "team", amount: 490000, currency: "RUB" },
-      { id: "wrong-plan", provider: "hmac", workspaceId: owner.workspaceId, planSlug: "business", amount: 490000, currency: "RUB" },
-      { id: "wrong-amount", provider: "hmac", workspaceId: owner.workspaceId, planSlug: "team", amount: 100, currency: "RUB" },
-      { id: "wrong-currency", provider: "hmac", workspaceId: owner.workspaceId, planSlug: "team", amount: 490000, currency: "USD" },
+      { id: "wrong-provider", workspaceId: owner.workspaceId, planSlug: "team", amount: 490000, currency: "RUB" },
+      { id: "wrong-workspace", workspaceId: "foreign-workspace", planSlug: "team", amount: 490000, currency: "RUB" },
+      { id: "wrong-plan", workspaceId: owner.workspaceId, planSlug: "business", amount: 490000, currency: "RUB" },
+      { id: "wrong-amount", workspaceId: owner.workspaceId, planSlug: "team", amount: 100, currency: "RUB" },
+      { id: "wrong-currency", workspaceId: owner.workspaceId, planSlug: "team", amount: 490000, currency: "USD" },
     ];
 
     for (const invalid of invalidEvents) {
