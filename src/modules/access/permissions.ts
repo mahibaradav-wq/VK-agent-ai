@@ -163,7 +163,7 @@ export function parseWorkspaceRole(value: string): WorkspaceRole {
 
 export class AccessError extends Error {
   constructor(
-    public status: 400 | 403 | 404,
+    public status: 400 | 403 | 404 | 409,
     message: string,
   ) {
     super(message);
