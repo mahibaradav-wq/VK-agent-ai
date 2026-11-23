@@ -13,7 +13,6 @@ export type PlanDefinition = {
   highlighted: boolean;
   isFree: boolean;
   checkout: "free" | "self" | "contract";
-  aiGenerations: number;
   projects: number;
   socialAccounts: number;
   members: number;
@@ -43,7 +42,6 @@ export const PLAN_CATALOG: PlanDefinition[] = [
     highlighted: false,
     isFree: true,
     checkout: "free",
-    aiGenerations: 50,
     projects: 50,
     socialAccounts: 20,
     members: 50,
@@ -60,12 +58,11 @@ export const PLAN_CATALOG: PlanDefinition[] = [
     highlighted: true,
     isFree: false,
     checkout: "self",
-    aiGenerations: 500,
     projects: 20,
     socialAccounts: 20,
     members: 30,
     postsPerMonth: 2000,
-    features: ["роли команды", "approval", "медиатека", "аналитика", "500 AI-генераций"],
+    features: ["роли команды", "approval", "медиатека", "аналитика"],
   },
   {
     slug: "business",
@@ -77,7 +74,6 @@ export const PLAN_CATALOG: PlanDefinition[] = [
     highlighted: false,
     isFree: false,
     checkout: "contract",
-    aiGenerations: 5000,
     projects: 100,
     socialAccounts: 50,
     members: 100,
@@ -117,7 +113,6 @@ export function marketingPlans() {
 
 export function toPlanLimits(plan: Plan): PlanLimits {
   return {
-    aiGenerations: plan.aiGenerations,
     projects: plan.projects,
     socialAccounts: plan.socialAccounts,
     members: plan.members,
@@ -141,11 +136,12 @@ export async function ensureCanonicalPlans(db: DbClient) {
         interval: plan.interval,
         highlighted: plan.highlighted,
         isFree: plan.isFree,
-        aiGenerations: plan.aiGenerations,
+        aiGenerations: 0,
         projects: plan.projects,
         socialAccounts: plan.socialAccounts,
         members: plan.members,
         postsPerMonth: plan.postsPerMonth,
+        aiGenerations: 0,
         featuresJson: JSON.stringify(plan.features),
       },
       update: {
@@ -156,6 +152,7 @@ export async function ensureCanonicalPlans(db: DbClient) {
         interval: plan.interval,
         highlighted: plan.highlighted,
         isFree: plan.isFree,
+        aiGenerations: 0,
         featuresJson: JSON.stringify(plan.features),
       },
     });
