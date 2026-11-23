@@ -173,6 +173,54 @@ describe("social accounts", () => {
     expect(JSON.stringify(account)).not.toMatch(/encryptedToken|AAExampleToken/);
   });
 
+  it("keeps Telegram account binding inside its project", async () => {
+    const owner = await registerOwner("soc-project-scope");
+    const otherProject = await projects.create(owner.userId, owner.workspaceId, {
+      name: "Другой проект",
+    });
+
+    const firstPost = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Проект A");
+    await posts.saveDraft(owner.userId, owner.workspaceId, firstPost.id, {
+      title: "Проект A",
+      body: "Текст A",
+      platforms: ["telegram"],
+      mediaIds: [],
+    });
+    const secondPost = await posts.create(owner.userId, owner.workspaceId, otherProject.id, "Проект B");
+    await posts.saveDraft(owner.userId, owner.workspaceId, secondPost.id, {
+      title: "Проект B",
+      body: "Текст B",
+      platforms: ["telegram"],
+      mediaIds: [],
+    });
+
+    const transport = scriptedTelegram({
+      getMe: { ok: true, result: { id: 897, is_bot: true, username: "project_bot" } },
+      getChat: { ok: true, result: { id: -100123, type: "channel", title: "Проект A" } },
+    });
+    const social = createSocialService(prisma, { telegram: transport });
+    const account = await social.connectTelegram(owner.userId, owner.workspaceId, {
+      token: BOT_TOKEN,
+      chatId: "@project_a",
+      projectId: owner.projectId,
+    });
+
+    const firstTarget = await prisma.postTarget.findFirstOrThrow({ where: { postId: firstPost.id } });
+    const secondTarget = await prisma.postTarget.findFirstOrThrow({ where: { postId: secondPost.id } });
+    expect(firstTarget.socialAccountId).toBe(account.id);
+    expect(secondTarget.socialAccountId).toBeNull();
+
+    const laterPost = await posts.create(owner.userId, owner.workspaceId, otherProject.id, "Новый проект B");
+    await posts.saveDraft(owner.userId, owner.workspaceId, laterPost.id, {
+      title: "Новый проект B",
+      body: "Текст B2",
+      platforms: ["telegram"],
+      mediaIds: [],
+    });
+    const laterTarget = await prisma.postTarget.findFirstOrThrow({ where: { postId: laterPost.id } });
+    expect(laterTarget.socialAccountId).toBeNull();
+  });
+
   it("connects a bot token without a channel and does not call getChat", async () => {
     const owner = await registerOwner("soc-bot-only");
     const transport = scriptedTelegram({
