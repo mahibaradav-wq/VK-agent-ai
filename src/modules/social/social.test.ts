@@ -173,6 +173,92 @@ describe("social accounts", () => {
     expect(JSON.stringify(account)).not.toMatch(/encryptedToken|AAExampleToken/);
   });
 
+  it("keeps Telegram account binding inside its project", async () => {
+    const owner = await registerOwner("soc-project-scope");
+    const otherProject = await projects.create(owner.userId, owner.workspaceId, {
+      name: "Другой проект",
+    });
+
+    const firstPost = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Проект A");
+    await posts.saveDraft(owner.userId, owner.workspaceId, firstPost.id, {
+      title: "Проект A",
+      body: "Текст A",
+      platforms: ["telegram"],
+      mediaIds: [],
+    });
+    const secondPost = await posts.create(owner.userId, owner.workspaceId, otherProject.id, "Проект B");
+    await posts.saveDraft(owner.userId, owner.workspaceId, secondPost.id, {
+      title: "Проект B",
+      body: "Текст B",
+      platforms: ["telegram"],
+      mediaIds: [],
+    });
+
+    const transport = scriptedTelegram({
+      getMe: { ok: true, result: { id: 897, is_bot: true, username: "project_bot" } },
+      getChat: { ok: true, result: { id: -100123, type: "channel", title: "Проект A" } },
+    });
+    const social = createSocialService(prisma, { telegram: transport });
+    const account = await social.connectTelegram(owner.userId, owner.workspaceId, {
+      token: BOT_TOKEN,
+      chatId: "@project_a",
+      projectId: owner.projectId,
+    });
+
+    const firstTarget = await prisma.postTarget.findFirstOrThrow({ where: { postId: firstPost.id } });
+    const secondTarget = await prisma.postTarget.findFirstOrThrow({ where: { postId: secondPost.id } });
+    expect(firstTarget.socialAccountId).toBe(account.id);
+    expect(secondTarget.socialAccountId).toBeNull();
+
+    await prisma.postTarget.update({
+      where: { id: secondTarget.id },
+      data: { socialAccountId: account.id },
+    });
+    await posts.saveDraft(owner.userId, owner.workspaceId, secondPost.id, {
+      title: "Проект B",
+      body: "Исправленный текст B",
+      platforms: ["telegram"],
+      mediaIds: [],
+    });
+    expect(
+      (await prisma.postTarget.findUniqueOrThrow({ where: { id: secondTarget.id } })).socialAccountId,
+    ).toBeNull();
+
+    await prisma.postTarget.update({
+      where: { id: secondTarget.id },
+      data: { socialAccountId: account.id },
+    });
+    await social.connectTelegram(owner.userId, owner.workspaceId, {
+      token: BOT_TOKEN,
+      chatId: "@project_a",
+      projectId: owner.projectId,
+      accountId: account.id,
+    });
+    expect(
+      (await prisma.postTarget.findUniqueOrThrow({ where: { id: secondTarget.id } })).socialAccountId,
+    ).toBeNull();
+    await expectAccess(
+      social.connectTelegram(owner.userId, owner.workspaceId, {
+        token: BOT_TOKEN,
+        chatId: "@project_a",
+        projectId: otherProject.id,
+        accountId: account.id,
+      }),
+      400,
+      /закреплён за другим проектом/,
+    );
+
+    const laterPost = await posts.create(owner.userId, owner.workspaceId, otherProject.id, "Новый проект B");
+    await posts.saveDraft(owner.userId, owner.workspaceId, laterPost.id, {
+      title: "Новый проект B",
+      body: "Текст B2",
+      platforms: ["telegram"],
+      mediaIds: [],
+    });
+    const laterTarget = await prisma.postTarget.findFirstOrThrow({ where: { postId: laterPost.id } });
+    expect(laterTarget.socialAccountId).toBeNull();
+  });
+
   it("connects a bot token without a channel and does not call getChat", async () => {
     const owner = await registerOwner("soc-bot-only");
     const transport = scriptedTelegram({
@@ -320,6 +406,7 @@ describe("social accounts", () => {
     const account = await social.connectTelegram(owner.userId, owner.workspaceId, {
       token: BOT_TOKEN,
       chatId: "77",
+      projectId: owner.projectId,
     });
     const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "В канал");
     await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
@@ -1069,6 +1156,50 @@ describe("social accounts", () => {
     const job = await publishing.publishNow(owner.userId, owner.workspaceId, post.id);
     expect(job.status).toBe("completed");
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("published");
+  });
+
+  it("keeps VK account binding inside its project", async () => {
+    const owner = await registerOwner("soc-vk-project-scope");
+    const otherProject = await projects.create(owner.userId, owner.workspaceId, { name: "Другой проект" });
+
+    const firstPost = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "VK проект A");
+    await posts.saveDraft(owner.userId, owner.workspaceId, firstPost.id, {
+      title: "VK проект A",
+      body: "Текст A",
+      platforms: ["vk"],
+      mediaIds: [],
+    });
+    const secondPost = await posts.create(owner.userId, owner.workspaceId, otherProject.id, "VK проект B");
+    await posts.saveDraft(owner.userId, owner.workspaceId, secondPost.id, {
+      title: "VK проект B",
+      body: "Текст B",
+      platforms: ["vk"],
+      mediaIds: [],
+    });
+
+    const transport = scriptedVk({
+      "groups.getById": {
+        ok: true,
+        response: [{ id: 242155421, name: "Проект A", screen_name: "club242155421", can_post: 1 }],
+      },
+      "groups.getTokenPermissions": { ok: false, error_code: 3, error_msg: "Unknown method" },
+      "photos.getWallUploadServer": {
+        ok: false,
+        error_code: 27,
+        error_msg: "Group authorization failed",
+      },
+    });
+    const social = createSocialService(prisma, { vk: transport });
+    const account = await social.connectVk(owner.userId, owner.workspaceId, {
+      token: VK_COMMUNITY_TOKEN,
+      source: "https://vk.com/club242155421",
+      projectId: owner.projectId,
+    });
+
+    const firstTarget = await prisma.postTarget.findFirstOrThrow({ where: { postId: firstPost.id } });
+    const secondTarget = await prisma.postTarget.findFirstOrThrow({ where: { postId: secondPost.id } });
+    expect(firstTarget.socialAccountId).toBe(account.id);
+    expect(secondTarget.socialAccountId).toBeNull();
   });
 
   it("connects with only the admin photo key", async () => {

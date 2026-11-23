@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
 import { AccessError } from "@/modules/access/permissions";
+import { getAppContext } from "@/modules/access/app-context";
 import { parseIdeaIndex } from "@/modules/watch/parse";
 import { watchIdeaAgentHref } from "@/modules/watch/prompt";
 import { createWatchService } from "@/modules/watch/watch-service";
@@ -120,11 +121,17 @@ export async function collectWatchIdeas(_prev: WatchFormState, formData: FormDat
 }
 
 export async function sendWatchIdeaToStudio(formData: FormData) {
+  const userId = await requireUserId();
+  const { activeProject } = await getAppContext(userId);
+  if (!activeProject) {
+    throw new AccessError(400, "Сначала выберите активный проект.");
+  }
   const item = await createWatchService(prisma).consumeIdea(
-    await requireUserId(),
+    userId,
     readField(formData, "workspaceId"),
     readField(formData, "requestId"),
     parseIdeaIndex(readField(formData, "itemIndex")),
+    activeProject.id,
   );
   revalidateWatch();
   revalidatePath("/app/studio");
@@ -133,11 +140,17 @@ export async function sendWatchIdeaToStudio(formData: FormData) {
 
 export async function dismissWatchIdea(formData: FormData) {
   try {
+    const userId = await requireUserId();
+    const { activeProject } = await getAppContext(userId);
+    if (!activeProject) {
+      throw new AccessError(400, "Сначала выберите активный проект.");
+    }
     await createWatchService(prisma).dismissIdea(
-      await requireUserId(),
+      userId,
       readField(formData, "workspaceId"),
       readField(formData, "requestId"),
       parseIdeaIndex(readField(formData, "itemIndex")),
+      activeProject.id,
     );
     revalidateWatch();
   } catch (error) {

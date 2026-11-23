@@ -333,24 +333,33 @@ export function createPostService(db: PrismaClient) {
 
         const existingPlatforms = new Set(post.targets.map((target) => target.platform));
         for (const platform of platforms) {
-          const linked =
-            (await tx.socialAccount.findFirst({
-              where: { workspaceId, platform, status: "connected", projectId: post.projectId },
-              orderBy: { updatedAt: "desc" },
-            })) ??
-            (await tx.socialAccount.findFirst({
-              where: { workspaceId, platform, status: "connected" },
-              orderBy: { updatedAt: "desc" },
-            }));
+          const linked = await tx.socialAccount.findFirst({
+            where: { workspaceId, platform, status: "connected", projectId: post.projectId },
+            orderBy: { updatedAt: "desc" },
+          });
           if (!existingPlatforms.has(platform)) {
             await tx.postTarget.create({
               data: { postId: post.id, workspaceId, platform, status: "draft", socialAccountId: linked?.id },
             });
-          } else if (linked) {
+          } else {
             await tx.postTarget.updateMany({
-              where: { postId: post.id, platform, socialAccountId: null },
-              data: { socialAccountId: linked.id },
+              where: {
+                postId: post.id,
+                platform,
+                socialAccountId: { not: null },
+                OR: [
+                  { socialAccount: { is: { projectId: null } } },
+                  { socialAccount: { is: { projectId: { not: post.projectId } } } },
+                ],
+              },
+              data: { socialAccountId: null },
             });
+            if (linked) {
+              await tx.postTarget.updateMany({
+                where: { postId: post.id, platform, socialAccountId: null },
+                data: { socialAccountId: linked.id },
+              });
+            }
           }
         }
         await tx.postTarget.deleteMany({

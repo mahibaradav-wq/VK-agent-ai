@@ -186,6 +186,37 @@ export function createWatchService(
     return { ok: true as const, posts };
   }
 
+  async function restoreIdea(workspaceId: string, projectId: string, requestId: string, item: string) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const current = await db.aIRequest.findFirst({
+        where: { id: requestId, workspaceId, projectId, kind: WATCH_IDEAS_KIND },
+      });
+      if (!current) {
+        throw new AccessError(409, "Не удалось восстановить идею: запрос больше недоступен.");
+      }
+      let items: string[] = [];
+      try {
+        const parsed = JSON.parse(current.itemsJson) as unknown;
+        if (Array.isArray(parsed)) {
+          items = parsed.filter((value): value is string => typeof value === "string");
+        }
+      } catch {
+        items = [];
+      }
+      if (items.includes(item)) {
+        return;
+      }
+      const restored = await db.aIRequest.updateMany({
+        where: { id: current.id, workspaceId, projectId, kind: WATCH_IDEAS_KIND, itemsJson: current.itemsJson },
+        data: { itemsJson: JSON.stringify([item, ...items]) },
+      });
+      if (restored.count === 1) {
+        return;
+      }
+    }
+    throw new AccessError(409, "Идея не восстановлена после ошибки генерации. Обновите страницу и проверьте список.");
+  }
+
   return {
     async credential(userId: string, workspaceId: string): Promise<PublicWatchCredential> {
       await access.requirePermission(userId, workspaceId, "ai.view");
@@ -461,68 +492,22 @@ export function createWatchService(
       };
     },
 
-    async takeIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number, permission: "post.create" | "ai.generate") {
+    async takeIdea(
+      userId: string,
+      workspaceId: string,
+      requestId: string,
+      itemIndex: number,
+      projectId: string,
+      permission: "post.create" | "ai.generate",
+    ) {
       await access.requirePermission(userId, workspaceId, permission);
       const request = await db.aIRequest.findUnique({ where: { id: requestId } });
       assertWorkspaceBound(workspaceId, request, "AI-запрос");
       if (request.kind !== WATCH_IDEAS_KIND) {
         throw new AccessError(400, "Это не идеи агента наблюдения VK.");
       }
-      let items: string[] = [];
-      try {
-        const parsed = JSON.parse(request.itemsJson) as unknown;
-        if (Array.isArray(parsed)) {
-          items = parsed.filter((item): item is string => typeof item === "string");
-        }
-      } catch {
-        items = [];
-      }
-      const item = items[itemIndex]?.trim();
-      if (!item) {
-        throw new AccessError(400, "Идея не найдена.");
-      }
-      const remaining = items.filter((_, index) => index !== itemIndex);
-      await db.aIRequest.update({
-        where: { id: request.id },
-        data: { itemsJson: JSON.stringify(remaining) },
-      });
-      return { request, item, remaining };
-    },
-
-    async consumeIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number) {
-      const taken = await this.takeIdea(userId, workspaceId, requestId, itemIndex, "post.create");
-      await db.auditLog.create({
-        data: {
-          action: "CONSUME_VK_WATCH_IDEA",
-          entityType: "ai_request",
-          entityId: requestId,
-          actorId: userId,
-          details: `${itemIndex}`,
-        },
-      });
-      return taken.item;
-    },
-
-    async dismissIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number) {
-      const taken = await this.takeIdea(userId, workspaceId, requestId, itemIndex, "ai.generate");
-      await db.auditLog.create({
-        data: {
-          action: "DISMISS_VK_WATCH_IDEA",
-          entityType: "ai_request",
-          entityId: requestId,
-          actorId: userId,
-          details: `${itemIndex}`,
-        },
-      });
-      return taken.item;
-    },
-
-    async applyIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number, projectId: string) {
-      await access.requirePermission(userId, workspaceId, "post.create");
-      const request = await db.aIRequest.findUnique({ where: { id: requestId } });
-      assertWorkspaceBound(workspaceId, request, "AI-запрос");
-      if (request.kind !== WATCH_IDEAS_KIND) {
-        throw new AccessError(400, "Это не идеи агента наблюдения VK.");
+      if (!request.projectId || request.projectId !== projectId) {
+        throw new AccessError(403, "Эта идея принадлежит другому проекту. Соберите идеи для активного проекта.");
       }
       const project = await db.project.findUnique({ where: { id: projectId } });
       assertWorkspaceBound(workspaceId, project, "Проект");
@@ -539,20 +524,72 @@ export function createWatchService(
       if (!item) {
         throw new AccessError(400, "Идея не найдена.");
       }
-      const composed = await ai.composeAgentPost(userId, workspaceId, {
-        prompt: ideaToAgentPrompt(item),
-        tone: "friendly",
-        length: "medium",
-        platform: "vk",
-        visualKind: "image",
-        visualAspect: "4:5",
-        projectId,
-      });
       const remaining = items.filter((_, index) => index !== itemIndex);
-      await db.aIRequest.update({
-        where: { id: request.id },
+      const updated = await db.aIRequest.updateMany({
+        where: {
+          id: request.id,
+          workspaceId,
+          projectId,
+          kind: WATCH_IDEAS_KIND,
+          itemsJson: request.itemsJson,
+        },
         data: { itemsJson: JSON.stringify(remaining) },
       });
+      if (updated.count !== 1) {
+        throw new AccessError(409, "Эту идею уже обработали в другом действии. Обновите страницу.");
+      }
+      return { request, item, remaining };
+    },
+
+    async consumeIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number, projectId: string) {
+      const taken = await this.takeIdea(userId, workspaceId, requestId, itemIndex, projectId, "post.create");
+      await db.auditLog.create({
+        data: {
+          action: "CONSUME_VK_WATCH_IDEA",
+          entityType: "ai_request",
+          entityId: requestId,
+          actorId: userId,
+          details: `${itemIndex}`,
+        },
+      });
+      return taken.item;
+    },
+
+    async dismissIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number, projectId: string) {
+      const taken = await this.takeIdea(userId, workspaceId, requestId, itemIndex, projectId, "ai.generate");
+      await db.auditLog.create({
+        data: {
+          action: "DISMISS_VK_WATCH_IDEA",
+          entityType: "ai_request",
+          entityId: requestId,
+          actorId: userId,
+          details: `${itemIndex}`,
+        },
+      });
+      return taken.item;
+    },
+
+    async applyIdea(userId: string, workspaceId: string, requestId: string, itemIndex: number, projectId: string) {
+      const taken = await this.takeIdea(userId, workspaceId, requestId, itemIndex, projectId, "post.create");
+      let composed: Awaited<ReturnType<typeof ai.composeAgentPost>>;
+      try {
+        composed = await ai.composeAgentPost(userId, workspaceId, {
+          prompt: ideaToAgentPrompt(taken.item),
+          tone: "friendly",
+          length: "medium",
+          platform: "vk",
+          visualKind: "image",
+          visualAspect: "4:5",
+          projectId,
+        });
+      } catch (error) {
+        try {
+          await restoreIdea(workspaceId, projectId, requestId, taken.item);
+        } catch {
+          throw new AccessError(409, "Генерация не завершилась, и идею не удалось автоматически вернуть в список. Обновите страницу.");
+        }
+        throw error;
+      }
       await db.auditLog.create({
         data: {
           action: "APPLY_VK_WATCH_IDEA",
@@ -565,10 +602,10 @@ export function createWatchService(
       return composed.post;
     },
 
-    async listIdeas(userId: string, workspaceId: string) {
+    async listIdeas(userId: string, workspaceId: string, projectId: string | null) {
       await access.requirePermission(userId, workspaceId, "ai.view");
       const rows = await db.aIRequest.findMany({
-        where: { workspaceId, kind: WATCH_IDEAS_KIND },
+        where: { workspaceId, projectId, kind: WATCH_IDEAS_KIND },
         orderBy: { createdAt: "desc" },
         take: 10,
       });
