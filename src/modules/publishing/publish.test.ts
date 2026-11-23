@@ -536,7 +536,7 @@ describe("publishing queue", () => {
     expect(bodies).toEqual({ telegram: "Текст для канала", vk: "Текст для стены" });
   });
 
-  it("reclaims a stale processing job instead of leaving the post locked", async () => {
+  it("parks a stale processing job for manual verification instead of risking a duplicate post", async () => {
     const owner = await registerOwner("pub-stale");
     const post = await draftWithTargets(owner, ["vk"], "Завис");
     await approveCurrent(owner, post.id);
@@ -552,8 +552,14 @@ describe("publishing queue", () => {
 
     const later = new Date("2026-10-14T12:05:00.000Z");
     const results = await publishing.processDueJobs("worker-recover", later);
-    expect(results.some((item) => !item.skipped)).toBe(true);
-    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("failed");
-    expect((await prisma.publishJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("failed");
+    expect(results).toHaveLength(0);
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("requires_manual_check");
+    expect((await prisma.publishJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("requires_manual_check");
+    expect((await prisma.postTarget.findFirstOrThrow({ where: { postId: post.id } })).status).toBe("requires_manual_check");
+    await expectAccess(
+      publishing.enqueue(owner.userId, owner.workspaceId, post.id),
+      400,
+      /неопределённые цели повторно не отправляются/,
+    );
   });
 });
