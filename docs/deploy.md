@@ -17,6 +17,8 @@
 - SSH/Timeweb, миграции живой БД, публикации VK/Telegram, ЮKassa, платные AI-вызовы;
 - restore на VPS (скрипт требует `CONFIRM_RESTORE=YES` и ввод `RESTORE`).
 
+Полный отчёт аудита: [docs/personal-cabinet-audit.md](personal-cabinet-audit.md).
+
 ## Локально (разработка)
 
 ```bash

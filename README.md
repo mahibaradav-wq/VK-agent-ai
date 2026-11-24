@@ -119,6 +119,7 @@ npm run build
 
 ## Документация
 
+- [Аудит личного кабинета](docs/personal-cabinet-audit.md)
 - [Архитектура](docs/architecture.md)
 - [План реализации](docs/implementation-plan.md)
 - [Исследование соцплатформ](docs/social-platforms.md)
