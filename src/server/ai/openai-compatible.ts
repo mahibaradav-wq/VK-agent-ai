@@ -17,6 +17,7 @@ import {
   readErrorBody,
 } from "@/server/ai/errors";
 import { createAiFetch } from "@/server/http/outbound-fetch";
+import { assertAiLiveEnabled } from "@/server/ai/live-guard";
 import { detectMediaType, isVideoMime, MAX_MEDIA_BYTES } from "@/modules/media/file-validation";
 import type { AiGenerateInput, AiGenerateOutput, AiImageInput, AiImageOutput, AiProvider } from "@/server/ai/types";
 
@@ -146,6 +147,7 @@ export function createOpenAiCompatibleProvider(options: {
   fetchImpl?: typeof fetch;
 }): AiProvider {
   const fetchImpl = options.fetchImpl ?? createAiFetch();
+  const usingInjectedFetch = Boolean(options.fetchImpl);
   const baseUrl = options.baseUrl.replace(/\/$/, "");
   const imageModel = options.imageModel?.trim() || "gpt-image-1.5";
   const name = options.name?.trim() || "openai-compatible";
@@ -158,6 +160,9 @@ export function createOpenAiCompatibleProvider(options: {
     ready: true,
     imageReady,
     async generate(input: AiGenerateInput): Promise<AiGenerateOutput> {
+      if (!usingInjectedFetch) {
+        assertAiLiveEnabled();
+      }
       const complete = async (userContent: string) => {
         let response: Response;
         try {
@@ -240,6 +245,9 @@ export function createOpenAiCompatibleProvider(options: {
       };
     },
     async generateImage(input: AiImageInput): Promise<AiImageOutput> {
+      if (!usingInjectedFetch) {
+        assertAiLiveEnabled();
+      }
       if (!imageReady) {
         throw new AccessError(
           400,

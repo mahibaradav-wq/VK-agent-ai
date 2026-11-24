@@ -259,13 +259,59 @@ describe("social accounts", () => {
     expect(laterTarget.socialAccountId).toBeNull();
   });
 
+  it("does not publish a project through another project's Telegram account or a global workspace token", async () => {
+    const owner = await registerOwner("soc-no-fallback");
+    const otherProject = await projects.create(owner.userId, owner.workspaceId, { name: "Второй канал" });
+    const transport = scriptedTelegram({
+      getMe: { ok: true, result: { id: 11, is_bot: true, username: "scope_bot" } },
+      getChat: { ok: true, result: { id: -100111, type: "channel", title: "Канал A" } },
+    });
+    const social = createSocialService(prisma, { telegram: transport });
+    await social.connectTelegram(owner.userId, owner.workspaceId, {
+      token: BOT_TOKEN,
+      chatId: "@channel_a",
+      projectId: owner.projectId,
+    });
+    const postB = await posts.create(owner.userId, owner.workspaceId, otherProject.id, "Проект B");
+    await posts.saveDraft(owner.userId, owner.workspaceId, postB.id, {
+      title: "Проект B",
+      body: "Не в канал A",
+      platforms: ["telegram"],
+      mediaIds: [],
+    });
+    await approveCurrent(owner, postB.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createTelegramAdapter({ db: prisma, transport }) },
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, postB.id);
+    await publishing.processJob(job.id, "worker-no-fallback");
+    expect(transport.calls.some((item) => item.method === "sendMessage")).toBe(false);
+    expect((await prisma.publishAttempt.findFirstOrThrow({ where: { jobId: job.id } })).errorCode).toBe(
+      "integration_not_configured",
+    );
+
+    const global = await social.connectTelegram(owner.userId, owner.workspaceId, { token: BOT_TOKEN });
+    expect(global.projectId).toBeNull();
+    await prisma.postTarget.updateMany({
+      where: { postId: postB.id },
+      data: { status: "failed", lastError: null },
+    });
+    await publishing.enqueue(owner.userId, owner.workspaceId, postB.id);
+    await publishing.processJob(job.id, "worker-no-global");
+    expect(transport.calls.some((item) => item.method === "sendMessage")).toBe(false);
+  });
+
   it("connects a bot token without a channel and does not call getChat", async () => {
     const owner = await registerOwner("soc-bot-only");
     const transport = scriptedTelegram({
       getMe: { ok: true, result: { id: 897, is_bot: true, username: "dom_po_polochkam_bot", first_name: "ДОМ по полочкам" } },
     });
     const social = createSocialService(prisma, { telegram: transport });
-    const connected = await social.connectTelegram(owner.userId, owner.workspaceId, { token: BOT_TOKEN });
+    const connected = await social.connectTelegram(owner.userId, owner.workspaceId, {
+      token: BOT_TOKEN,
+      projectId: owner.projectId,
+    });
     expect(connected.status).toBe("connected");
     expect(connected.displayName).toBe("@dom_po_polochkam_bot");
     expect(connected.externalId).toBe("");

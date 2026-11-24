@@ -6,6 +6,7 @@ import { createPostService } from "@/modules/posts/post-service";
 import { createProductService } from "@/modules/products/product-service";
 import { createWatchService } from "@/modules/watch/watch-service";
 import {
+  PERSONAL_ACTIVE_PROJECT_LIMIT,
   STARTER_PROJECT_NAME,
   createProjectService,
   createStarterProjectIfMissing,
@@ -106,5 +107,32 @@ describe("starter project", () => {
     expect(first.project.id).toBe(second.project.id);
     expect(listed).toHaveLength(1);
     expect(listed[0]?.name).toBe(STARTER_PROJECT_NAME);
+  });
+
+  it("caps active projects at 10 even under concurrent creates", async () => {
+    const address = email("project-cap");
+    await auth.register(address, "password123");
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { email: address },
+      include: { memberships: true },
+    });
+    const workspaceId = user.memberships[0]?.workspaceId ?? "";
+    const attempts = await Promise.allSettled(
+      Array.from({ length: PERSONAL_ACTIVE_PROJECT_LIMIT + 2 }, (_, index) =>
+        projects.create(user.id, workspaceId, { name: `Кабинет ${index + 1}` }),
+      ),
+    );
+    const created = attempts.filter((item) => item.status === "fulfilled").length;
+    const rejected = attempts.filter((item) => item.status === "rejected");
+    expect(created).toBe(PERSONAL_ACTIVE_PROJECT_LIMIT - 1);
+    expect(rejected.length).toBeGreaterThan(0);
+    expect(rejected[0]?.status).toBe("rejected");
+    if (rejected[0]?.status === "rejected") {
+      expect(rejected[0].reason).toMatchObject({
+        status: 400,
+        message: /не больше 10 активных проектов/,
+      });
+    }
+    expect(await prisma.project.count({ where: { workspaceId, archivedAt: null } })).toBe(PERSONAL_ACTIVE_PROJECT_LIMIT);
   });
 });

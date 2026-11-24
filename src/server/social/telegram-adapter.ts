@@ -12,6 +12,7 @@ import {
 } from "@/server/social/telegram-api";
 import { withProductLink } from "@/modules/products/shop-labels";
 import { splitTelegramText, telegramPhotoCaption } from "@/server/social/telegram-text";
+import { resolvePublishSocialAccount } from "@/server/social/resolve-account";
 import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/social/types";
 import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
 
@@ -89,18 +90,7 @@ export function createTelegramAdapter(options: {
   return {
     platform: "telegram",
     async publish(input: PublishInput): Promise<PublishOutcome> {
-      const target = await options.db.postTarget.findUnique({
-        where: { id: input.targetId },
-        include: { socialAccount: { include: { capabilities: true } } },
-      });
-
-      const account =
-        target?.socialAccount ??
-        (await options.db.socialAccount.findFirst({
-          where: { workspaceId: input.workspaceId, platform: "telegram", status: "connected" },
-          include: { capabilities: true },
-          orderBy: { updatedAt: "desc" },
-        }));
+      const account = await resolvePublishSocialAccount(options.db, input, "telegram");
 
       if (!account || account.workspaceId !== input.workspaceId || account.status !== "connected" || !account.encryptedToken) {
         return {

@@ -5,7 +5,6 @@ import { blogPosts, featurePages, siteConfig } from "@/lib/site-data";
 const staticPaths = [
   "/",
   "/features",
-  "/pricing",
   "/faq",
   "/blog",
   "/help",

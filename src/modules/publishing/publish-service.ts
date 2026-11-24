@@ -114,14 +114,24 @@ export function createPublishService(
           data: { status: "requires_manual_check", lastError: reason },
         });
       }
+      const updatedTargets = await tx.postTarget.findMany({
+        where: { postId: job.postId },
+        select: { status: true },
+      });
+      const postStatus = aggregatePostStatus(updatedTargets);
       await tx.post.update({
         where: { id: job.postId },
-        data: { status: hasInFlight ? "requires_manual_check" : "cancelled" },
+        data: { status: postStatus },
       });
+      const jobStatus: PublishJobStatus = hasInFlight || postStatus === "requires_manual_check"
+        ? "requires_manual_check"
+        : postStatus === "published"
+          ? "completed"
+          : "failed";
       await tx.publishJob.updateMany({
         where: { id: job.id, status: { in: ["pending", "claimed", "processing"] } },
         data: {
-          status: hasInFlight ? "requires_manual_check" : "failed",
+          status: jobStatus,
           nextAttemptAt: null,
           lastError: reason,
         },
@@ -146,30 +156,64 @@ export function createPublishService(
     }
   }
 
-  async function releaseStalePublish(post: LoadedPost) {
-    const staleBefore = new Date(now().getTime() - STALE_CLAIM_MS);
-    const recovered = await db.publishJob.updateMany({
+  async function parkStalePublishJobs(filter: { postId?: string; workspaceId?: string }, staleBefore: Date) {
+    const staleJobs = await db.publishJob.findMany({
       where: {
-        postId: post.id,
+        postId: filter.postId,
+        workspaceId: filter.workspaceId || undefined,
         status: { in: ["claimed", "processing"] },
         claimedAt: { lte: staleBefore },
       },
-      data: {
-        status: "failed",
-        lastError: "Задача зависла при публикации и снята с обработки.",
-      },
+      select: { id: true, postId: true },
     });
-    if (recovered.count === 0) {
+    let parkedAny = false;
+    for (const staleJob of staleJobs) {
+      const parked = await db.$transaction(async (tx) => {
+        const claimed = await tx.publishJob.updateMany({
+          where: {
+            id: staleJob.id,
+            status: { in: ["claimed", "processing"] },
+            claimedAt: { lte: staleBefore },
+          },
+          data: {
+            status: "requires_manual_check",
+            claimedBy: null,
+            lastError:
+              "Задача зависла во время публикации. Внешний результат неизвестен — проверьте площадку вручную перед повтором.",
+          },
+        });
+        if (claimed.count !== 1) {
+          return false;
+        }
+        await tx.postTarget.updateMany({
+          where: { postId: staleJob.postId, status: { in: ["publishing", "queued"] } },
+          data: {
+            status: "requires_manual_check",
+            lastError:
+              "Обработчик остановился во время отправки. Публикация могла пройти — проверьте площадку вручную.",
+          },
+        });
+        const targets = await tx.postTarget.findMany({
+          where: { postId: staleJob.postId },
+          select: { status: true },
+        });
+        await tx.post.update({
+          where: { id: staleJob.postId },
+          data: { status: aggregatePostStatus(targets) },
+        });
+        return true;
+      });
+      parkedAny = parkedAny || parked;
+    }
+    return parkedAny;
+  }
+
+  async function releaseStalePublish(post: LoadedPost) {
+    const staleBefore = new Date(now().getTime() - STALE_CLAIM_MS);
+    const recovered = await parkStalePublishJobs({ postId: post.id }, staleBefore);
+    if (!recovered) {
       return post;
     }
-    await db.post.update({
-      where: { id: post.id },
-      data: { status: "failed" },
-    });
-    await db.postTarget.updateMany({
-      where: { postId: post.id, status: "publishing" },
-      data: { status: "failed", lastError: "Задача зависла при публикации и снята с обработки." },
-    });
     return loadBoundPost(post.workspaceId, post.id);
   }
 
@@ -705,13 +749,37 @@ export function createPublishService(
       };
       } catch (error) {
         const message = error instanceof Error ? error.message : "Внутренняя ошибка публикации.";
-        await db.publishJob.update({
-          where: { id: jobId },
-          data: { status: "failed", lastError: message },
-        });
-        await db.post.update({
-          where: { id: claimed.postId },
-          data: { status: "failed" },
+        const current = await db.publishJob.findUnique({ where: { id: jobId } });
+        if (!current || (current.status !== "claimed" && current.status !== "processing")) {
+          return {
+            skipped: false as const,
+            job: await db.publishJob.findUnique({ where: { id: jobId }, include: jobInclude }),
+          };
+        }
+        const targets = await db.postTarget.findMany({ where: { postId: claimed.postId } });
+        const hasInFlight = targets.some((target) => target.status === "publishing");
+        await db.$transaction(async (tx) => {
+          if (hasInFlight) {
+            await tx.postTarget.updateMany({
+              where: { postId: claimed.postId, status: "publishing" },
+              data: { status: "requires_manual_check", lastError: message },
+            });
+          }
+          const updated = await tx.postTarget.findMany({
+            where: { postId: claimed.postId },
+            select: { status: true },
+          });
+          await tx.post.update({
+            where: { id: claimed.postId },
+            data: { status: hasInFlight ? "requires_manual_check" : aggregatePostStatus(updated) },
+          });
+          await tx.publishJob.update({
+            where: { id: jobId },
+            data: {
+              status: hasInFlight ? "requires_manual_check" : "failed",
+              lastError: message,
+            },
+          });
         });
         return {
           skipped: false as const,
@@ -722,14 +790,7 @@ export function createPublishService(
 
     async processDueJobs(workerId: string, at = now(), workspaceId?: string) {
       const staleBefore = new Date(at.getTime() - STALE_CLAIM_MS);
-      await db.publishJob.updateMany({
-        where: {
-          workspaceId: workspaceId || undefined,
-          status: { in: ["claimed", "processing"] },
-          claimedAt: { lte: staleBefore },
-        },
-        data: { status: "pending", claimedBy: null },
-      });
+      await parkStalePublishJobs({ workspaceId }, staleBefore);
       const due = await db.publishJob.findMany({
         where: {
           workspaceId: workspaceId || undefined,

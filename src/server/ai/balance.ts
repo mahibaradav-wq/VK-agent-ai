@@ -1,6 +1,7 @@
 import { DateTime } from "luxon";
 
 import { formatUsd } from "@/lib/format-usd";
+import { isAiLiveEnabled } from "@/server/ai/live-guard";
 import { createAiFetch } from "@/server/http/outbound-fetch";
 
 export { formatUsd };
@@ -101,6 +102,13 @@ export async function fetchAiBalance(options: {
   fetchImpl?: typeof fetch;
   now?: () => Date;
 }): Promise<AiBalanceResult> {
+  if (!options.fetchImpl && !isAiLiveEnabled()) {
+    return {
+      remainingUsd: null,
+      source: "none",
+      message: "Платные AI-запросы выключены. Остаток ChatGPT не запрашивается, пока не согласован бюджет.",
+    };
+  }
   const fetchImpl = options.fetchImpl ?? createAiFetch();
   const empty: AiBalanceResult = {
     remainingUsd: null,

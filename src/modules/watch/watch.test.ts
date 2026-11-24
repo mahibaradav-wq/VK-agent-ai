@@ -398,6 +398,47 @@ describe("VK watch idea agent", () => {
     expect(result.skipped).toHaveLength(0);
   });
 
+  it("rejects applying another workspace's watch idea", async () => {
+    const owner = await registerOwner("watch-idor-a");
+    const other = await registerOwner("watch-idor-b");
+    const vk = scriptedVk({
+      "groups.getById": { ok: true, response: { groups: [{ id: 33, name: "Тест", type: "group" }] } },
+      "wall.get": {
+        ok: true,
+        response: { count: 1, items: [{ id: 1, owner_id: -33, date: 1731600000, text: "Организация специй" }] },
+      },
+    });
+    const watch = createWatchService(prisma, {
+      vk,
+      ai: createAiService(prisma, {
+        provider: scriptedAi({
+          title: "Идеи",
+          body: "Идеи",
+          items: ["Первая идея || Почему || Хук"],
+          raw: "",
+          provider: "scripted",
+          model: "test",
+        }),
+      }),
+    });
+    await watch.connectToken(owner.userId, owner.workspaceId, { token: VK_TOKEN });
+    await watch.addCommunity(owner.userId, owner.workspaceId, "https://vk.com/club33");
+    const collected = await watch.collectIdeas(owner.userId, owner.workspaceId, { projectId: owner.projectId });
+    await expectAccess(
+      watch.applyIdea(other.userId, other.workspaceId, collected.request.id, 0, other.projectId),
+      403,
+      /другому рабочему пространству/,
+    );
+    await expectAccess(
+      watch.consumeIdea(other.userId, owner.workspaceId, collected.request.id, 0, owner.projectId),
+      404,
+      /не найдено/,
+    );
+    expect((await watch.listIdeas(owner.userId, owner.workspaceId, owner.projectId))[0]?.items).toEqual([
+      "Первая идея || Почему || Хук",
+    ]);
+  });
+
   it("blocks a Viewer from adding communities", async () => {
     const owner = await registerOwner("watch-acl");
     const viewer = await registerOwner("watch-viewer");

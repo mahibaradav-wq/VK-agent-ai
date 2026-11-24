@@ -5,6 +5,7 @@
 {$SITE_DOMAIN} {
 	encode gzip zstd
 	reverse_proxy app:3000 {
+		header_up X-Real-IP {remote_host}
 		transport http {
 			read_timeout 120s
 			write_timeout 120s

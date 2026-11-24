@@ -79,6 +79,7 @@ function visualPromptForCopy(input: {
   });
 }
 
+// 0 = без лимита счётчика. Это не финансовая защита: платные вызовы режет AI_LIVE_ENABLED.
 const DEFAULT_MONTHLY_LIMIT = 0;
 
 export type PublicAiRequest = {
