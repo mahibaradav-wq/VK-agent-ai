@@ -15,7 +15,7 @@ Production, SSH, merge в `main`, живые публикации, реальн�
 | Рабочая ветка | `cursor/personal-openai-cabinet-ee77` |
 | PR | [#59](https://github.com/mahibaradav-wq/VK-agent-ai/pull/59) |
 | SHA до этой правки | `fca32cf8e6b6ed81ac29c8720b5685170a57c5ff` |
-| SHA этой правки | см. HEAD ветки после коммита в §14 |
+| SHA этой правки | `9dee4a9270535c304e9869ae3dedb60be1f82cdc` |
 | База | PR [#57](https://github.com/mahibaradav-wq/VK-agent-ai/pull/57) `cursor/personal-cabinet-safety-ee77` @ `78a319b` |
 | `main` | FastAPI/SQLite mock `252230b`; не живой продукт, не менялся |
 
@@ -258,7 +258,7 @@ Destructive restore на живых данных не выполнялся.
 | живой OpenAI | **не выполнялся** |
 | живые VK/Telegram | **не выполнялись** |
 | реальные платежи | **не выполнялись** |
-| CI GitHub этой правки | ещё не бежал до push |
+| CI GitHub SHA `9dee4a9` | после push: смотреть check Test на PR #59 |
 
 Целевые тесты:
 
