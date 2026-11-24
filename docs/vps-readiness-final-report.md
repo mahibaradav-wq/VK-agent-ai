@@ -13,10 +13,11 @@
 | Исходный SHA (PR #60) | `62751d0ebe37b48632f19977aa1b1dff36760463` |
 | База PR #60 | `cursor/vps-readiness-ee77` от PR #59 `ed014ba8f049511438a565606abc13e30dd21ac6` |
 | Рабочая ветка | `cursor/vps-readiness-hardening-ee77` |
+| Конечный SHA | `28df4752a405c31715fc92c89f1f0290369d092f` |
 | `main` | не менялся |
 | PR #59 / #60 | не объединялись |
 
-Конечный SHA фиксируется после коммита этой ветки. GitHub CI и VPS readiness — после push.
+GitHub CI и VPS readiness — после push этого SHA.
 
 ## Изменённые файлы
 
@@ -59,8 +60,8 @@
 | секреты в stdout/stderr отказа | не выводились |
 | `--plan` не меняет Git, файлы, каталоги | PASS |
 | Deploy VPS не может SSH | PASS |
-| GitHub CI / VPS readiness | после push |
-| secret-scan workflow | после push |
+| GitHub CI / VPS readiness | ожидает push `28df475` |
+| secret-scan workflow | в составе VPS readiness |
 
 Тесты не использовали production credentials и не ходили на production PostgreSQL: только `localhost`/`127.0.0.1` и БД `polka_vps_probe_*`.
 
