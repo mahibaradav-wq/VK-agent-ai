@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 
-import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
+import { AccessError, assertActiveProject, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import { createAiService, type PublicAiRequest } from "@/modules/ai/ai-service";
 import { parseVkCommunitySource } from "@/modules/watch/parse";
@@ -381,14 +381,14 @@ export function createWatchService(
       input: { brief?: string; projectId?: string },
     ): Promise<{ request: PublicAiRequest; posts: WatchedPost[] }> {
       await access.requirePermission(userId, workspaceId, "ai.generate");
+      if (input.projectId) {
+        const project = await db.project.findUnique({ where: { id: input.projectId } });
+        assertActiveProject(workspaceId, project);
+      }
       const { token } = await requireToken(workspaceId);
       const communities = await db.vkWatchCommunity.findMany({ where: { workspaceId } });
       if (communities.length === 0) {
         throw new AccessError(400, "Добавьте хотя бы одно сообщество ВКонтакте для наблюдения.");
-      }
-      if (input.projectId) {
-        const project = await db.project.findUnique({ where: { id: input.projectId } });
-        assertWorkspaceBound(workspaceId, project, "Проект");
       }
 
       const fetched = await mapPool(communities, 4, async (community) => {
@@ -510,7 +510,7 @@ export function createWatchService(
         throw new AccessError(403, "Эта идея принадлежит другому проекту. Соберите идеи для активного проекта.");
       }
       const project = await db.project.findUnique({ where: { id: projectId } });
-      assertWorkspaceBound(workspaceId, project, "Проект");
+      assertActiveProject(workspaceId, project);
       let items: string[] = [];
       try {
         const parsed = JSON.parse(request.itemsJson) as unknown;
