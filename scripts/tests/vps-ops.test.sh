@@ -67,6 +67,38 @@ assert_fail_no_secret() {
   log_pass "$name"
 }
 
+assert_block_no_client() {
+  local name="$1"
+  shift
+  local log
+  log="$(mktemp /tmp/vps-probe-client.XXXXXX)"
+  rm -f "$log"
+  if PROBE_CLIENT_LOG="$log" "$@" >/tmp/vps-ops-cmd.out 2>/tmp/vps-ops-cmd.err; then
+    log_fail "$name (expected failure)"
+    rm -f "$log"
+    return
+  fi
+  if [[ -s "$log" ]]; then
+    log_fail "$name launched a PostgreSQL client before refusal"
+    cat "$log" >&2 || true
+    rm -f "$log"
+    return
+  fi
+  rm -f "$log"
+  log_pass "$name"
+}
+
+# Successful probe paths must not inherit developer/CI libpq knobs or leftover PROBE_*.
+while IFS= read -r __pg_line; do
+  __pg_key="${__pg_line%%=*}"
+  case "$__pg_key" in
+    PG*|PROBE_PG*|PROBE_DATABASE_URL|PROBE_CLIENT_LOG)
+      unset "$__pg_key"
+      ;;
+  esac
+done < <(printenv)
+unset __pg_line __pg_key VPS_RUNTIME
+
 cleanup() {
   if [[ -n "$PROBE_DB" ]]; then
     python3 - "$PROBE_DB" <<'PY' >/dev/null 2>&1 || true
@@ -109,8 +141,45 @@ assert_ok "localhost with isolated test database" \
   bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_ci vps_probe_assert_isolated_target'
 assert_ok "127.0.0.1 with isolated test database" \
   bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST=127.0.0.1 PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe vps_probe_assert_isolated_target'
+assert_ok "::1 with isolated test database" \
+  bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST=::1 PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_v6 vps_probe_assert_isolated_target'
 assert_ok "CI container hostname is allowlisted" \
   bash -c 'source scripts/lib/vps-common.sh && vps_probe_host_allowlisted postgres'
+
+assert_block_no_client "localhost + PGHOSTADDR public IPv4 is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && export VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 PGHOSTADDR=8.8.8.8 && vps_probe_exec pg_isready'
+assert_block_no_client "localhost + PGHOSTADDR public IPv6 is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && export VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 PGHOSTADDR=2001:4860:4860::8888 && vps_probe_exec pg_isready'
+assert_block_no_client "localhost + PGHOSTADDR production-like IP is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && export VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 PGHOSTADDR=203.0.113.10 && vps_probe_exec pg_isready'
+assert_block_no_client "PGHOSTADDR without PROBE host is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && export VPS_RUNTIME=probe PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 PGHOSTADDR=8.8.8.8 && unset PROBE_PGHOST && vps_probe_exec pg_isready'
+assert_block_no_client "PGSERVICE with foreign service is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && export VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 PGSERVICE=remote_prod && vps_probe_exec psql -c "SELECT 1"'
+assert_block_no_client "PGSERVICEFILE override is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && export VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 PGSERVICEFILE=/tmp/fake-pg-service.conf && vps_probe_exec psql -c "SELECT 1"'
+assert_block_no_client "PGOPTIONS override is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && export VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 PGOPTIONS="-c search_path=evil" && vps_probe_exec psql -c "SELECT 1"'
+assert_block_no_client "conflicting PGHOST is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && export VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 PGHOST=db.example.test && vps_probe_exec pg_isready'
+assert_block_no_client "conflicting PGPORT is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && export VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 PGPORT=6543 && vps_probe_exec pg_isready'
+assert_block_no_client "conflicting PGUSER is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && export VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 PGUSER=postgres && vps_probe_exec pg_isready'
+assert_block_no_client "conflicting PGDATABASE is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && export VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 PGDATABASE=polka_social && vps_probe_exec pg_isready'
+assert_block_no_client "extra PG* channel binding override is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && export VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 PGCHANNELBINDING=require && vps_probe_exec pg_isready'
+assert_block_no_client "DROP SCHEMA refuses when PGHOSTADDR is set" \
+  bash -c 'source scripts/lib/vps-common.sh && export VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_x PROBE_PGPASSWORD=should-not-appear PGHOSTADDR=8.8.8.8 && vps_reset_public_schema'
+assert_block_no_client "probe migrate refuses production URL before prisma" \
+  env VPS_RUNTIME=probe FIRST_INSTALL=YES \
+  PROBE_DATABASE_URL='postgresql://polka:not-a-real-secret@24dom-po-polochkam.ru:5432/polka_social' \
+  bash scripts/vps-migrate.sh
+assert_block_no_client "probe migrate refuses when PGSERVICE is set" \
+  env VPS_RUNTIME=probe FIRST_INSTALL=YES PGSERVICE=remote_prod \
+  PROBE_DATABASE_URL='postgresql://polka:not-a-real-secret@127.0.0.1:5432/polka_vps_probe_migrate' \
+  bash scripts/vps-migrate.sh
 assert_fail "public IPv4 is blocked" \
   bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST=8.8.8.8 PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 vps_probe_assert_isolated_target'
 assert_fail "public IPv6 is blocked" \
@@ -128,7 +197,7 @@ assert_fail "incorrect probe port is blocked" \
 assert_fail "missing probe user is blocked" \
   bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER= PROBE_PGDATABASE=polka_vps_probe_1 vps_probe_assert_isolated_target'
 assert_fail "VPS_RUNTIME=probe is not enough without fields" \
-  bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe vps_probe_assert_isolated_target'
+  bash -c 'source scripts/lib/vps-common.sh && unset PROBE_PGHOST PROBE_PGPORT PROBE_PGUSER PROBE_PGDATABASE PROBE_PGPASSWORD PROBE_DATABASE_URL && VPS_RUNTIME=probe vps_probe_assert_isolated_target'
 assert_fail "schema drop refuses before isolated target checks" \
   bash -c 'source scripts/lib/vps-common.sh && export VPS_RUNTIME=probe PROBE_PGHOST=8.8.8.8 PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_x PROBE_PGPASSWORD=should-not-appear && vps_reset_public_schema'
 assert_fail_no_secret "probe migrate rejects production URL without leaking secrets" "not-a-real-secret" \
@@ -228,8 +297,7 @@ assert_ok "isolated migrate on empty probe db" \
   env FIRST_INSTALL=YES bash scripts/vps-migrate.sh
 
 assert_ok "probe db has Plan table leftover from historical migrations" \
-  env PGPASSWORD="$PROBE_PGPASSWORD" psql -h "$PROBE_PGHOST" -p "$PROBE_PGPORT" -U "$PROBE_PGUSER" -d "$PROBE_PGDATABASE" -v ON_ERROR_STOP=1 \
-    -c 'SELECT 1 FROM "Plan" LIMIT 1;'
+  vps_probe_exec psql -v ON_ERROR_STOP=1 -c 'SELECT 1 FROM "Plan" LIMIT 1;'
 
 common_probe=(
   env
@@ -275,7 +343,7 @@ media="$(ls -1t "$BACKUP"/polka-media-*.tar.gz | head -n1)"
 manifest="$(ls -1t "$BACKUP"/polka-*.sha256 | head -n1)"
 
 echo "changed-after-backup" >"$MEDIA/photo.txt"
-PGPASSWORD="$PROBE_PGPASSWORD" psql -h "$PROBE_PGHOST" -p "$PROBE_PGPORT" -U "$PROBE_PGUSER" -d "$PROBE_PGDATABASE" -c 'CREATE TABLE IF NOT EXISTS vps_probe_marker(id int);' >/dev/null
+vps_probe_exec psql -c 'CREATE TABLE IF NOT EXISTS vps_probe_marker(id int);' >/dev/null
 
 assert_ok "successful restore" \
   "${common_probe[@]}" CONFIRM_RESTORE=YES RESTORE_CONFIRM=RESTORE \
@@ -287,7 +355,7 @@ if grep -q "cabinet-photo" "$MEDIA/photo.txt"; then
 else
   log_fail "media restore content"
 fi
-if PGPASSWORD="$PROBE_PGPASSWORD" psql -h "$PROBE_PGHOST" -p "$PROBE_PGPORT" -U "$PROBE_PGUSER" -d "$PROBE_PGDATABASE" -tAc "SELECT to_regclass('public.vps_probe_marker');" | grep -q vps_probe_marker; then
+if vps_probe_exec psql -tAc "SELECT to_regclass('public.vps_probe_marker');" | grep -q vps_probe_marker; then
   log_fail "marker table should not survive restore"
 else
   log_pass "database restore dropped post-backup objects"

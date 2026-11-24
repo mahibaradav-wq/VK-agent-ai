@@ -33,7 +33,7 @@ CONFIRM_RESTORE=YES RESTORE_CONFIRM=RESTORE \
 
 Автоматический набор: `npm run test:vps` / `bash scripts/tests/vps-ops.test.sh`. Он создаёт `polka_vps_probe_<pid>`, мигрирует схему, снимает копию, меняет данные, восстанавливает и удаляет probe-БД.
 
-Probe подключается только к allowlist: loopback / `localhost` / резолвящийся в loopback `postgres`, порт `5432`, пользователь `polka`, база `polka_vps_probe` или `polka_vps_probe_<id>`. `VPS_RUNTIME=probe` само по себе недостаточно. Подстроки production-hostname больше не используются. Модель: [vps-probe-security.md](../vps-probe-security.md).
+Probe подключается только к allowlist: loopback / `localhost` / резолвящийся в loopback `postgres`, порт `5432`, пользователь `polka`, база `polka_vps_probe` или `polka_vps_probe_<id>`. `VPS_RUNTIME=probe` само по себе недостаточно. Любой унаследованный `PG*` (включая `PGHOSTADDR` / service-файлы) блокирует запуск клиента; сами клиенты идут через `env -i`. Модель: [vps-probe-security.md](../vps-probe-security.md).
 
 ## Production restore (только по решению владельца)
 

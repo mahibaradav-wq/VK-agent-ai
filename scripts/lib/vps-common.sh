@@ -202,6 +202,120 @@ vps_probe_assert_isolated_url() {
   PROBE_PGDATABASE="$database"
 }
 
+# Refuse any inherited libpq / service-file knobs before a client binary starts.
+# Defense in depth: callers still launch clients under env -i.
+vps_probe_refuse_inherited_libpq() {
+  local line key
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    key="${line%%=*}"
+    case "$key" in
+      PG*)
+        echo "Probe refuses inherited libpq environment ($key)." >&2
+        return 1
+        ;;
+    esac
+  done < <(printenv)
+  return 0
+}
+
+vps_probe_note_client() {
+  if [[ -n "${PROBE_CLIENT_LOG:-}" ]]; then
+    printf '%s\n' "$1" >>"$PROBE_CLIENT_LOG"
+  fi
+}
+
+vps_probe_clean_env_prefix() {
+  # Prints env -i argv prefix for a minimal process environment.
+  # Never includes PGHOST/PGHOSTADDR/PGSERVICE*/PGOPTIONS/DATABASE_URL from the parent.
+  printf '%s\0' env -i
+  printf '%s\0' "PATH=${PATH:?PATH is required for probe clients}"
+  if [[ -n "${HOME:-}" ]]; then
+    printf '%s\0' "HOME=$HOME"
+  else
+    printf '%s\0' "HOME=/tmp"
+  fi
+  [[ -n "${LANG:-}" ]] && printf '%s\0' "LANG=$LANG"
+  [[ -n "${LC_ALL:-}" ]] && printf '%s\0' "LC_ALL=$LC_ALL"
+  [[ -n "${LC_CTYPE:-}" ]] && printf '%s\0' "LC_CTYPE=$LC_CTYPE"
+  [[ -n "${TMPDIR:-}" ]] && printf '%s\0' "TMPDIR=$TMPDIR"
+  [[ -n "${TERM:-}" ]] && printf '%s\0' "TERM=$TERM"
+}
+
+# Run psql / pg_dump / pg_isready / pg_restore against the allowlisted probe target only.
+# Usage: vps_probe_exec <client> [client-args...]
+vps_probe_exec() {
+  local client="${1:-}"
+  shift || true
+  case "$client" in
+    psql|pg_dump|pg_isready|pg_restore) ;;
+    *)
+      echo "Unsupported probe PostgreSQL client." >&2
+      return 1
+      ;;
+  esac
+  vps_probe_assert_isolated_target || return 1
+  vps_probe_refuse_inherited_libpq || return 1
+  command -v "$client" >/dev/null 2>&1 || {
+    echo "Required command not found: $client" >&2
+    return 1
+  }
+
+  local -a run_env=()
+  local -a run_cmd=()
+  local item
+  while IFS= read -r -d '' item; do
+    run_env+=("$item")
+  done < <(vps_probe_clean_env_prefix)
+  if [[ -n "${PROBE_PGPASSWORD:-}" ]]; then
+    run_env+=("PGPASSWORD=$PROBE_PGPASSWORD")
+  fi
+  run_cmd=("${run_env[@]}" "$client"
+    -h "$PROBE_PGHOST"
+    -p "$PROBE_PGPORT"
+    -U "$PROBE_PGUSER"
+    -d "$PROBE_PGDATABASE"
+    "$@")
+
+  vps_probe_note_client "$client"
+  "${run_cmd[@]}"
+}
+
+# Prisma migrate under env -i with only the validated PROBE_DATABASE_URL.
+vps_probe_migrate_deploy() {
+  local root="${1:?probe migrate root required}"
+  vps_probe_assert_isolated_url || return 1
+  vps_probe_refuse_inherited_libpq || return 1
+  [[ -d "$root" ]] || {
+    echo "Probe migrate root is missing." >&2
+    return 1
+  }
+  command -v npx >/dev/null 2>&1 || {
+    echo "Required command not found: npx" >&2
+    return 1
+  }
+
+  local -a run_env=()
+  local item
+  while IFS= read -r -d '' item; do
+    run_env+=("$item")
+  done < <(vps_probe_clean_env_prefix)
+  run_env+=("DATABASE_URL=$PROBE_DATABASE_URL")
+  # Node/npm need a writable cache when HOME is minimal.
+  if [[ -n "${npm_config_cache:-}" ]]; then
+    run_env+=("npm_config_cache=$npm_config_cache")
+  fi
+  if [[ -n "${NPM_CONFIG_CACHE:-}" ]]; then
+    run_env+=("NPM_CONFIG_CACHE=$NPM_CONFIG_CACHE")
+  fi
+
+  vps_probe_note_client "prisma-migrate-deploy"
+  (
+    cd "$root"
+    "${run_env[@]}" npx prisma migrate deploy
+  )
+}
+
 vps_check_free_bytes() {
   local path="$1"
   local needed="${MIN_FREE_BYTES:-268435456}"
@@ -297,8 +411,7 @@ vps_compose() {
 
 vps_postgres_running() {
   if [[ "${VPS_RUNTIME:-compose}" == "probe" ]]; then
-    vps_probe_assert_isolated_target || return 1
-    pg_isready -h "$PROBE_PGHOST" -p "$PROBE_PGPORT" -U "$PROBE_PGUSER" -d "$PROBE_PGDATABASE" >/dev/null 2>&1
+    vps_probe_exec pg_isready >/dev/null 2>&1
     return
   fi
   [[ -n "$(vps_compose ps -q postgres 2>/dev/null)" ]]
@@ -365,11 +478,9 @@ vps_dump_database() {
     sleep "$BACKUP_PAUSE_SECONDS"
   fi
   if [[ "${VPS_RUNTIME:-compose}" == "probe" ]]; then
-    vps_probe_assert_isolated_target || return 1
     # Plain SQL so a newer client can restore into PostgreSQL 16 (custom dumps
     # from PG17+ emit SET transaction_timeout, which 16 rejects).
-    PGPASSWORD="$PROBE_PGPASSWORD" pg_dump --format=plain --no-owner --no-acl \
-      -h "$PROBE_PGHOST" -p "$PROBE_PGPORT" -U "$PROBE_PGUSER" -d "$PROBE_PGDATABASE" \
+    vps_probe_exec pg_dump --format=plain --no-owner --no-acl \
       | grep -v transaction_timeout >"$dest"
     return
   fi
@@ -390,8 +501,7 @@ vps_list_dump() {
 
 vps_reset_public_schema() {
   if [[ "${VPS_RUNTIME:-compose}" == "probe" ]]; then
-    vps_probe_assert_isolated_target || return 1
-    PGPASSWORD="$PROBE_PGPASSWORD" psql -h "$PROBE_PGHOST" -p "$PROBE_PGPORT" -U "$PROBE_PGUSER" -d "$PROBE_PGDATABASE" -v ON_ERROR_STOP=1 \
+    vps_probe_exec psql -v ON_ERROR_STOP=1 \
       -c 'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO CURRENT_USER; GRANT ALL ON SCHEMA public TO public;' >/dev/null
     return
   fi
@@ -406,9 +516,7 @@ vps_restore_database() {
   fi
   vps_reset_public_schema || return 1
   if [[ "${VPS_RUNTIME:-compose}" == "probe" ]]; then
-    vps_probe_assert_isolated_target || return 1
-    PGPASSWORD="$PROBE_PGPASSWORD" psql -h "$PROBE_PGHOST" -p "$PROBE_PGPORT" -U "$PROBE_PGUSER" -d "$PROBE_PGDATABASE" \
-      -v ON_ERROR_STOP=1 -f "$dump" >/dev/null
+    vps_probe_exec psql -v ON_ERROR_STOP=1 -f "$dump" >/dev/null
     return
   fi
   vps_compose exec -T postgres sh -lc 'pg_restore --no-owner --no-privileges --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <"$dump"
@@ -416,8 +524,7 @@ vps_restore_database() {
 
 vps_verify_database() {
   if [[ "${VPS_RUNTIME:-compose}" == "probe" ]]; then
-    vps_probe_assert_isolated_target || return 1
-    PGPASSWORD="$PROBE_PGPASSWORD" psql -h "$PROBE_PGHOST" -p "$PROBE_PGPORT" -U "$PROBE_PGUSER" -d "$PROBE_PGDATABASE" -v ON_ERROR_STOP=1 -c 'SELECT 1 FROM "_prisma_migrations" LIMIT 1;' >/dev/null
+    vps_probe_exec psql -v ON_ERROR_STOP=1 -c 'SELECT 1 FROM "_prisma_migrations" LIMIT 1;' >/dev/null
     return
   fi
   vps_compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "SELECT 1 FROM \"_prisma_migrations\" LIMIT 1;"' >/dev/null
