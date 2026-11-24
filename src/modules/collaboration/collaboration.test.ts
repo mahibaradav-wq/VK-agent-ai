@@ -20,7 +20,7 @@ function email(label: string) {
   return `${label}.${Date.now()}.${Math.random().toString(16).slice(2)}@example.test`;
 }
 
-async function expectAccess(promise: Promise<unknown>, status: 400 | 403 | 404, message: RegExp) {
+async function expectAccess(promise: Promise<unknown>, status: 400 | 403 | 404 | 409, message: RegExp) {
   const error = await promise.then(
     () => {
       throw new Error("expected AccessError");
@@ -181,5 +181,34 @@ describe("collaboration invitations, approval and comments", () => {
     const mail = await prisma.devMailMessage.findFirstOrThrow({ where: { to: invited, kind: "invitation" } });
     expect(mail.url).toContain("/accept-invite");
     expect(mail.body).toMatch(/не уходило во внешнюю почту/i);
+  });
+
+
+  it("blocks approval, comments, and project-access assignment after project archival", async () => {
+    const owner = await registerOwner("col-archived");
+    const approver = await registerOwner("col-archived-approver");
+    await workspaces.addMember(owner.userId, owner.workspaceId, approver.address, "Approver");
+    const post = await draftPost(owner, "Архивное согласование");
+    await collab.submitForApproval(owner.userId, owner.workspaceId, post.id);
+    await projects.archive(owner.userId, owner.workspaceId, owner.projectId);
+
+    await expectAccess(collab.approve(approver.userId, owner.workspaceId, post.id), 409, /Архивный проект/);
+    await expectAccess(collab.reject(approver.userId, owner.workspaceId, post.id), 409, /Архивный проект/);
+    await expectAccess(collab.addComment(owner.userId, owner.workspaceId, post.id, "Комментарий"), 409, /Архивный проект/);
+    await expectAccess(
+      collab.setProjectAccess(owner.userId, owner.workspaceId, approver.userId, [owner.projectId]),
+      409,
+      /Архивный проект/,
+    );
+    await expectAccess(
+      collab.invite(owner.userId, owner.workspaceId, {
+        email: email("col-archived-invite"),
+        role: "Approver",
+        projectIds: [owner.projectId],
+      }),
+      409,
+      /Архивный проект/,
+    );
+    expect(await prisma.projectAccess.count({ where: { workspaceId: owner.workspaceId, projectId: owner.projectId } })).toBe(0);
   });
 });
