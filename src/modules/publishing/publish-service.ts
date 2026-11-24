@@ -532,6 +532,7 @@ export function createPublishService(
           where: { id: target.id },
           data: { status: "publishing" },
         });
+        if (await stopArchivedProjectJob(jobId)) break;
 
         const startedAt = now();
         let outcome: PublishOutcome;
