@@ -1,54 +1,44 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+umask 077
 
-root="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$root"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/vps-common.sh
+source "$SCRIPT_DIR/lib/vps-common.sh"
 
-if ! command -v docker >/dev/null 2>&1; then
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT_DIR"
+
+COMPOSE_FILE="${COMPOSE_FILE:-$ROOT_DIR/docker-compose.prod.yml}"
+ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env.production}"
+
+vps_require_cmd docker || {
   echo "Нужен Docker. На Ubuntu: apt-get install -y docker.io docker-compose-v2" >&2
   exit 1
-fi
-
-if [[ ! -f .env.production ]]; then
-  echo "Скопируйте .env.production.example в .env.production и укажите домен, AUTH_SECRET и пароль БД." >&2
+}
+vps_require_file "$COMPOSE_FILE" "$ENV_FILE" || {
+  echo "Скопируйте .env.production.example в .env.production и укажите домен, AUTH_SECRET, TOKEN_ENCRYPTION_KEY и пароль БД." >&2
   exit 1
-fi
-
-value_of() {
-  local key="$1"
-  awk -F= -v key="$key" '$1==key {print substr($0, index($0,"=")+1); exit}' .env.production
 }
 
-domain="$(value_of SITE_DOMAIN)"
-secret="$(value_of AUTH_SECRET)"
-password="$(value_of POSTGRES_PASSWORD)"
-site_url="$(value_of NEXT_PUBLIC_SITE_URL)"
-mailbox="$(value_of AUTH_DEV_MAILBOX)"
+vps_validate_production_env_file "$ENV_FILE" || exit 1
+vps_require_free_bytes "$ROOT_DIR" || exit 1
 
-if [[ -z "$domain" || "$domain" == "example.com" || "$domain" == *your-domain* ]]; then
-  echo "Задайте настоящий SITE_DOMAIN в .env.production (купленный домен без https://)." >&2
-  exit 1
-fi
+domain="$(vps_env_get "$ENV_FILE" SITE_DOMAIN)"
 
-if [[ ${#secret} -lt 32 || "$secret" == *replace-with* ]]; then
-  echo "AUTH_SECRET должен быть случайной строкой не короче 32 символов." >&2
-  exit 1
-fi
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d postgres
+echo "Waiting for PostgreSQL..."
+for _ in $(seq 1 30); do
+  if docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T postgres pg_isready >/dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T postgres pg_isready >/dev/null
 
-if [[ -z "$password" || "$password" == *replace-with* ]]; then
-  echo "Задайте POSTGRES_PASSWORD в .env.production." >&2
-  exit 1
-fi
+FIRST_INSTALL=YES COMPOSE_FILE="$COMPOSE_FILE" ENV_FILE="$ENV_FILE" bash "$SCRIPT_DIR/vps-migrate.sh"
 
-if [[ "$site_url" != "https://$domain" ]]; then
-  echo "NEXT_PUBLIC_SITE_URL должен быть https://$domain без слэша в конце." >&2
-  exit 1
-fi
-
-if [[ "$mailbox" == "true" ]]; then
-  echo "AUTH_DEV_MAILBOX нельзя включать на публичном хостинге." >&2
-  exit 1
-fi
-
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --build app worker caddy
 echo "Сайт должен открыться на https://$domain после выпуска сертификата (обычно 1–2 минуты)."
+echo "Проверьте: curl -fsS https://$domain/api/health"
+echo "Миграции Prisma больше не выполняются при каждом старте app — только через scripts/vps-migrate.sh."

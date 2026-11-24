@@ -5,7 +5,12 @@
 
 ## Что проверено локально/CI и что нет
 
-Проверяется в CI (`npm test`, `typecheck`, `lint`, `build`, `prisma migrate`, `bash -n` скриптов):
+Проверяется в GitHub Actions:
+
+- workflow **CI** (`ubuntu-latest`): `npm test`, `typecheck`, `lint`, `prisma migrate`, `bash -n` скриптов;
+- workflow **VPS readiness** (`ubuntu-24.04`, без SSH): то же плюс `npm run build`, `npm run test:vps`, Playwright e2e, проверка состава Docker image и отсутствие секретов в git.
+
+Playwright 1.56 не ставит Chromium на `ubuntu-latest` (26.04), поэтому readiness закреплён на 24.04.
 
 - очередь публикаций и stale/manual VK на mocked адаптерах;
 - изоляция workspace/project и архив проекта;
@@ -110,10 +115,11 @@ ACME_EMAIL=ваш@email.ru
 NEXT_PUBLIC_SITE_URL=https://ваш-домен.ru
 AUTH_URL=https://ваш-домен.ru
 AUTH_SECRET=$(openssl rand -hex 32)
+TOKEN_ENCRYPTION_KEY=$(openssl rand -hex 32)
 POSTGRES_PASSWORD=$(openssl rand -hex 16)
 ```
 
-`AUTH_DEV_MAILBOX` не задавайте. Затем:
+`AUTH_SECRET` и `TOKEN_ENCRYPTION_KEY` должны отличаться. `POSTGRES_PASSWORD` — только символы `A-Z a-z 0-9 . _ ~ -` (hex подходит): Compose вставляет его в `DATABASE_URL` без экранирования. `AUTH_DEV_MAILBOX` не задавайте. Затем:
 
 ```bash
 bash scripts/vps-up.sh
@@ -121,15 +127,19 @@ curl -fsS https://ваш-домен.ru/api/health
 # {"ok":true,"db":"up"}
 ```
 
-Стек: Caddy (HTTPS) → Next.js → PostgreSQL, плюс воркер очереди. Медиа лежат в Docker-томе `media_data`.
+`vps-up.sh` поднимает PostgreSQL, отдельно вызывает `scripts/vps-migrate.sh` (`FIRST_INSTALL=YES`) и только потом app/worker/caddy. Контейнер app больше не выполняет migrate при старте.
 
-Обновление на уже работающем сервере:
+Стек: Caddy (HTTPS) → Next.js → PostgreSQL, плюс воркер очереди. Медиа лежат в Docker-томе `media_data`. На хосте должны быть открыты 22/80/443; порт 5432 не публикуется.
+
+Обновление на уже работающем сервере (не запускать, пока владелец не подтвердит):
 
 ```bash
-bash scripts/vps-pull.sh
+bash scripts/vps-pull.sh --plan <ветка-или-sha>
+# после успешного плана и решения владельца:
+bash scripts/vps-pull.sh --apply <ветка-или-sha>
 ```
 
-Скрипт сам подхватит `docker-compose.timeweb.yml`, если файл есть на VPS. Остановка: `npm run hosting:down`.
+`--plan` проверяет git, Docker, место и env, ничего не выкладывает. `--apply` сначала делает backup; без успешного manifest migrate и checkout не идут. Локальный overlay `docker-compose.timeweb.yml` подхватывается, если файл есть на VPS (в git его нет). Остановка: `npm run hosting:down`. Откат: [runbooks/rollback.md](runbooks/rollback.md).
 
 Проверьте вход, что `/dev/mailbox` закрыт, и что `/admin` недоступен обычному Owner. Первый аккаунт на рабочем сайте подтверждается сразу, без письма. Superadmin: `ADMIN_EMAILS` с email уже зарегистрированного пользователя.
 
@@ -158,7 +168,7 @@ echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILh3zvl5RyoqR5SDpLTB+MrmDy2amBvOF5921r
   | ssh root@24dom-po-polochkam.ru 'umask 077; mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys'
 ```
 
-Когда ключ окажется на сервере, напишите «ключ добавлен» — агент выложит сайт сам.
+Задание подготовки VPS **не подключается по SSH и не выкладывает сайт**. Ключ на сервер не добавлялся. Следующий этап — только после отдельного подтверждения владельца.
 
 ### Постоянная выкладка из GitHub Actions
 

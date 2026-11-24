@@ -1,17 +1,29 @@
+# SSH production deploy. workflow_dispatch only — never pull_request or push.
+# Prefer `bash scripts/vps-pull.sh --plan` on the VPS. This job is not used by the
+# VPS-readiness work and must not be triggered from that PR.
+
 name: Deploy VPS
 
 on:
   workflow_dispatch:
     inputs:
+      confirm:
+        description: Type I-UNDERSTAND-THIS-SSHS-TO-PRODUCTION
+        required: true
       ref:
         description: Git branch or tag to deploy
         required: true
-        default: main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Refuse unless explicitly confirmed
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "I-UNDERSTAND-THIS-SSHS-TO-PRODUCTION" ]; then
+            echo "Refusing. This workflow SSHs to production. Run scripts/vps-pull.sh --plan on the VPS instead."
+            exit 1
+          fi
       - name: Publish on Timeweb VPS
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -22,6 +34,7 @@ jobs:
           script: |
             set -euo pipefail
             cd "${{ secrets.VPS_PATH }}"
+            echo "This workflow does not run prisma migrate deploy. Use scripts/vps-pull.sh --apply on the VPS after a backup."
             git fetch origin "${{ github.event.inputs.ref }}"
             git checkout "${{ github.event.inputs.ref }}"
             git pull --ff-only origin "${{ github.event.inputs.ref }}"

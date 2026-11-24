@@ -1,0 +1,83 @@
+# Preflight for a future VPS update. Never SSHs, never deploys, never uses production DATABASE_URL.
+
+name: VPS readiness
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: vps-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Readiness checks
+    # Playwright 1.56 cannot install Chromium on ubuntu-latest (26.04).
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: polka
+          POSTGRES_PASSWORD: polka_dev_password
+          POSTGRES_DB: polka_social
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U polka -d polka_social"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://polka:polka_dev_password@localhost:5432/polka_social
+      AUTH_SECRET: ci-auth-secret-not-for-production
+      STORAGE_DRIVER: local
+      LOCAL_STORAGE_DIR: ./data/media
+      AUTH_DEV_MAILBOX: "true"
+      AUTH_ALLOW_PUBLIC_REGISTRATION: "true"
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install ffmpeg and PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg postgresql-client
+      - name: Shell syntax
+        run: bash -n scripts/lib/vps-common.sh scripts/backup-vps.sh scripts/restore-vps.sh scripts/vps-up.sh scripts/vps-pull.sh scripts/vps-migrate.sh scripts/vps-rollback.sh scripts/tests/vps-ops.test.sh
+      - name: Refuse VPS SSH in this workflow
+        run: |
+          if grep -E 'uses:[[:space:]]*appleboy/ssh-action' .github/workflows/vps-readiness.yml .github/workflows/ci.yml; then
+            echo "CI and readiness workflows must not SSH to the VPS." >&2
+            exit 1
+          fi
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma validate
+      - run: npx prisma migrate deploy
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - name: Isolated VPS probe tests
+        run: npm run test:vps
+      - name: Production build
+        run: npm run build
+      - name: Docker image composition
+        run: |
+          test ! -f docker-compose.timeweb.yml
+          grep -F -q 'CMD ["npm", "start", "--", "--hostname", "0.0.0.0", "--port", "3000"]' Dockerfile
+          if grep -F -q 'prisma migrate deploy && npm start' Dockerfile; then
+            echo "App CMD must not run migrate on start." >&2
+            exit 1
+          fi
+          grep -F -q 'scripts/vps-migrate.sh' scripts/vps-up.sh
+      - name: Playwright e2e
+        run: npx playwright install --with-deps chromium && npx playwright test
+      - name: Secret-shaped tracked files
+        run: |
+          if git grep -I -E 'sk-live-|whsec_|BEGIN OPENSSH PRIVATE KEY|YOOKASSA_SECRET_KEY=' -- ':!.github/workflows/vps-readiness.yml' ':!src/server/security/secrets.ts' ':!**/*.test.ts' ':!**/*.test.sh' ':!docs' ':!.env.example'; then
+            echo "Possible secret material in git." >&2
+            exit 1
+          fi

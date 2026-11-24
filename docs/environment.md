@@ -29,7 +29,7 @@
 
 | Переменная | Назначение | Если пусто |
 |---|---|---|
-| `TOKEN_ENCRYPTION_KEY` | Отдельный случайный ключ AES-256 для токенов соцаккаунтов; обязателен в production, минимум 32 символа, не совпадает с `AUTH_SECRET` | В development допускается fallback на `AUTH_SECRET`; в production шифрование без отдельного ключа блокируется. Старые токены можно расшифровать legacy-ключом `AUTH_SECRET`. |
+| `TOKEN_ENCRYPTION_KEY` | Отдельный случайный ключ AES-256 для токенов соцаккаунтов. **В production обязателен**: минимум 32 символа, не совпадает с `AUTH_SECRET`. `scripts/vps-up.sh` и `POLKA_REQUIRE_PROD_SECRETS` это проверяют | В development допускается fallback на `AUTH_SECRET`. Старые токены можно расшифровать legacy-ключом `AUTH_SECRET`. Не кладите ключ в Git и не включайте его в backup-архив |
 | `REDIS_URL` + `QUEUE_DRIVER=redis` | BullMQ | Задачи пишутся в PostgreSQL, диспетчер Redis не стартует |
 | `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_IMAGE_MODEL` | запасной AI-провайдер, если в кабинете нет подключённого провайдера | UI предлагает подключить ChatGPT; без ключа генерация не имитируется. Счётчик usage безлимитен (`0`) и не является бюджетом |
 | `ADMIN_EMAILS` | Email через запятую → Superadmin при первом заходе в `/admin` | Админка пуста, пока роль не выдана |

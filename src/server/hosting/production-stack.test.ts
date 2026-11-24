@@ -12,6 +12,7 @@ describe("production hosting stack", () => {
   const envExample = read(".env.production.example");
   const deploy = read("docs/deploy.md");
   const upScript = read("scripts/vps-up.sh");
+  const commonScript = read("scripts/lib/vps-common.sh");
   const restoreScript = read("scripts/restore-vps.sh");
   const ci = read(".github/workflows/ci.yml");
   const deployWorkflow = read(".github/workflows/deploy-vps.yml");
@@ -22,11 +23,25 @@ describe("production hosting stack", () => {
   const projectsHome = read("src/app/app/page.tsx");
   const registerPage = read("src/app/register/page.tsx");
 
-  it("builds the app image and applies migrations before start", () => {
+  it("builds the app image without migrating on container start", () => {
+    const migrate = read("scripts/vps-migrate.sh");
+    const pull = read("scripts/vps-pull.sh");
     expect(dockerfile).toContain("npx prisma generate && npm run build");
-    expect(dockerfile).toContain("npx prisma migrate deploy");
     expect(dockerfile).toContain("ffmpeg");
-    expect(dockerfile).toContain("npm start -- --hostname 0.0.0.0 --port 3000");
+    expect(dockerfile).toContain('CMD ["npm", "start", "--", "--hostname", "0.0.0.0", "--port", "3000"]');
+    expect(dockerfile).not.toContain("prisma migrate deploy && npm start");
+    expect(migrate).toContain("prisma migrate deploy");
+    expect(migrate).toContain("BACKUP_VERIFIED");
+    expect(pull).toContain("--apply");
+    expect(pull).toContain("backup-vps.sh");
+  });
+
+  it("does not publish PostgreSQL and health JSON names no secrets", () => {
+    const health = read("src/app/api/health/route.ts");
+    expect(compose).not.toMatch(/"5432:5432"/);
+    expect(health).toContain('db: "up"');
+    expect(health).not.toContain("DATABASE_URL");
+    expect(health).not.toContain("AUTH_SECRET");
   });
 
   it("gives the app IPv6 so outbound APIs can use dual-stack", () => {
@@ -53,7 +68,9 @@ describe("production hosting stack", () => {
     expect(envExample).toMatch(/# AUTH_DEV_MAILBOX=/);
     expect(envExample).toMatch(/# AI_MONTHLY_HARD_LIMIT=/);
     expect(envExample).not.toMatch(/^AUTH_DEV_MAILBOX=true$/m);
-    expect(upScript).toContain("AUTH_DEV_MAILBOX нельзя включать");
+    expect(commonScript).toContain("AUTH_DEV_MAILBOX cannot be enabled");
+    expect(commonScript).toContain("TOKEN_ENCRYPTION_KEY");
+    expect(upScript).toContain("vps-migrate.sh");
     expect(deploy).toContain("Первый аккаунт на рабочем сайте подтверждается сразу");
   });
 
@@ -69,11 +86,13 @@ describe("production hosting stack", () => {
     expect(ci).toContain("npm run typecheck");
     expect(ci).toContain("npm run lint");
     expect(ci).toContain("npm test");
-    expect(ci).toContain("bash -n scripts/backup-vps.sh");
+    expect(ci).toContain("bash -n scripts/lib/vps-common.sh");
+    expect(ci).toContain("scripts/backup-vps.sh");
     expect(ci).not.toContain("appleboy/ssh-action");
     expect(ci).not.toContain("docker compose");
     expect(ci).not.toContain("VPS_HOST");
     expect(deployWorkflow).toContain("workflow_dispatch:");
+    expect(deployWorkflow).toContain("I-UNDERSTAND-THIS-SSHS-TO-PRODUCTION");
     expect(deployWorkflow).not.toContain("pull_request:");
     expect(deployWorkflow).not.toContain("npm test");
   });
@@ -81,7 +100,9 @@ describe("production hosting stack", () => {
   it("requires explicit restore confirmation and checksum verification", () => {
     expect(restoreScript).toContain('CONFIRM_RESTORE:-}');
     expect(restoreScript).toContain("sha256sum --check");
-    expect(restoreScript).toContain('Type RESTORE to continue');
+    expect(restoreScript).toContain("Type RESTORE to continue");
+    expect(restoreScript).toContain("vps_same_backup_set");
+    expect(commonScript).toContain(".restore-staging");
   });
 
   it("hides commercial pricing and checkout from the personal-cabinet UI", () => {
