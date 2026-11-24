@@ -1,45 +1,24 @@
-# SSH production deploy. workflow_dispatch only — never pull_request or push.
-# Prefer `bash scripts/vps-pull.sh --plan` on the VPS. This job is not used by the
-# VPS-readiness work and must not be triggered from that PR.
+# Production GitHub deploy is disabled until the owner separately re-enables it.
+# This workflow must never open a remote shell, never rebuild production
+# services, and never bypass scripts/vps-pull.sh (backup, checkout, migrate, health-check).
 
 name: Deploy VPS
 
 on:
   workflow_dispatch:
     inputs:
-      confirm:
-        description: Type I-UNDERSTAND-THIS-SSHS-TO-PRODUCTION
-        required: true
-      ref:
-        description: Git branch or tag to deploy
+      note:
+        description: Disabled. Production deploy requires a separate owner decision and scripts/vps-pull.sh on the VPS.
         required: true
 
 jobs:
-  deploy:
+  refuse:
+    name: Deploy VPS is disabled
     runs-on: ubuntu-latest
     steps:
-      - name: Refuse unless explicitly confirmed
+      - name: Refuse every dispatch
         run: |
-          if [ "${{ github.event.inputs.confirm }}" != "I-UNDERSTAND-THIS-SSHS-TO-PRODUCTION" ]; then
-            echo "Refusing. This workflow SSHs to production. Run scripts/vps-pull.sh --plan on the VPS instead."
-            exit 1
-          fi
-      - name: Publish on Timeweb VPS
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script_stop: true
-          script: |
-            set -euo pipefail
-            cd "${{ secrets.VPS_PATH }}"
-            echo "This workflow does not run prisma migrate deploy. Use scripts/vps-pull.sh --apply on the VPS after a backup."
-            git fetch origin "${{ github.event.inputs.ref }}"
-            git checkout "${{ github.event.inputs.ref }}"
-            git pull --ff-only origin "${{ github.event.inputs.ref }}"
-            if [ -f docker-compose.timeweb.yml ]; then
-              docker compose -f docker-compose.prod.yml -f docker-compose.timeweb.yml --env-file .env.production up -d --build
-            else
-              docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
-            fi
+          echo "GitHub Deploy VPS is disabled." >&2
+          echo "It previously opened a remote shell and rebuilt production services, skipping backup and migrate." >&2
+          echo "After an owner decision, run bash scripts/vps-pull.sh --plan then --apply on the VPS." >&2
+          exit 1

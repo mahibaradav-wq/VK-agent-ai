@@ -2,7 +2,8 @@
 
 Дата: 24 ноября 2026, Europe/Moscow.  
 Исходный HEAD PR #59: `ed014ba8f049511438a565606abc13e30dd21ac6`.  
-Ветка работы: `cursor/vps-readiness-ee77` @ `82149232eed5d7b30c1346099f0567ca614f53be`.  
+PR #60 HEAD (до hardening): `62751d0ebe37b48632f19977aa1b1dff36760463`.  
+Ветка hardening: `cursor/vps-readiness-hardening-ee77`.  
 SSH, production deploy, production-миграции и чтение секретов не выполнялись.
 
 ## Согласованность стека
@@ -34,11 +35,12 @@ SSH, production deploy, production-миграции и чтение секрет
 | `docs/security.md` | не было процедуры обновления VPS | средний | ссылки на runbooks | исправлено в доке |
 | `docs/runbooks/backups.md` | не покрывал probe-проверки и interrupt | средний | обновлён | исправлено |
 | `scripts/vps-up.sh` | не проверял `TOKEN_ENCRYPTION_KEY`, charset пароля, AUTH_URL | высокий | `vps_validate_production_env_file` | исправлено |
-| `scripts/vps-pull.sh` | сразу `git pull` + `up --build`, health по публичному URL | высокий | `--plan` по умолчанию; `--apply` только после backup | исправлено |
+| `scripts/vps-pull.sh` | `--plan` писал `previous-sha` и мог `git fetch` | высокий | `--plan` только читает; fetch/запись SHA только в `--apply` | исправлено |
+| `scripts/lib/vps-common.sh` | probe отсекал production по подстрокам hostname | высокий | allowlist host/port/user/db + loopback resolve до любого SQL | исправлено |
 | `scripts/backup-vps.sh` | не было проверки места, mode 600, probe-режима | средний | добавлено | исправлено |
 | `scripts/restore-vps.sh` | media wipe до успешного tar; нет сверки timestamp | высокий | staging + timestamp set; app не стартует при ошибке | исправлено |
 | `.github/workflows/ci.yml` | не проверял новые скрипты | низкий | расширен `bash -n` | исправлено |
-| `.github/workflows/deploy-vps.yml` | SSH на VPS без фразы подтверждения, default `main` | высокий | confirm phrase; default ref снят | исправлено, **не запускался** |
+| `.github/workflows/deploy-vps.yml` | SSH + `up --build` в обход backup/migrate | высокий | workflow отключён, любой dispatch — отказ, SSH нет | исправлено, **не запускался** |
 | Prisma migrations | 17 файлов, billing-таблицы на месте | — | DROP не добавлялся | ок |
 | `/api/health` | `{ok, db}`, без connection string | — | без изменений | ок |
 | worker | poll PostgreSQL / optional Redis, нет HTTP health | средний | документирован | предупреждение |

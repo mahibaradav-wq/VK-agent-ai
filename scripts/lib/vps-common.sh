@@ -34,28 +34,198 @@ vps_require_file() {
   done
 }
 
-vps_refuse_production_probe() {
-  local haystack="${1:-}"
-  if [[ "$haystack" == *24dom-po-polochkam* || "$haystack" == *timeweb* ]]; then
-    echo "Probe mode refuses production hosts. Use a local test database." >&2
-    return 1
-  fi
+# Probe mode is never trusted by itself. Isolated PostgreSQL is allowed only when
+# host, port, user and database all match a local test allowlist and the host
+# resolves only to loopback. Fail before any client talks to PostgreSQL.
+# Never print passwords or connection URLs.
+
+vps_probe_python() {
+  python3 -c 'import ipaddress, os, re, socket, sys
+from urllib.parse import unquote, urlparse
+
+ALLOWED_HOSTS = {"localhost", "postgres"}
+ALLOWED_PORTS = {5432}
+ALLOWED_USERS = {"polka"}
+DB_RE = re.compile(r"^polka_vps_probe(_[A-Za-z0-9]+)*$")
+
+def fail(message):
+    print(message, file=sys.stderr)
+    raise SystemExit(1)
+
+def normalize_host(host):
+    host = (host or "").strip()
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    return host
+
+def is_ip(host):
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
+
+def is_loopback_ip(host):
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+def host_allowlisted(host):
+    host = normalize_host(host)
+    if not host:
+        return False
+    if is_ip(host):
+        return is_loopback_ip(host)
+    return host in ALLOWED_HOSTS
+
+def check_host(host):
+    host = normalize_host(host)
+    if not host:
+        fail("Probe host is missing.")
+    if is_ip(host):
+        if not is_loopback_ip(host):
+            fail("Probe host is not a loopback address.")
+        return
+    if host not in ALLOWED_HOSTS:
+        fail("Probe host is not on the isolated allowlist.")
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        fail("Probe host cannot be resolved; refusing.")
+    if not infos:
+        fail("Probe host cannot be resolved; refusing.")
+    for info in infos:
+        ip = info[4][0]
+        if "%" in ip:
+            ip = ip.split("%", 1)[0]
+        if not is_loopback_ip(ip):
+            fail("Probe host does not resolve only to loopback.")
+
+def check_fields(host, port, user, database):
+    check_host(host)
+    try:
+        port_n = int(port)
+    except (TypeError, ValueError):
+        fail("Probe port is not allowed.")
+    if port_n not in ALLOWED_PORTS:
+        fail("Probe port is not allowed.")
+    if (user or "") not in ALLOWED_USERS:
+        fail("Probe user is not allowed.")
+    if not DB_RE.fullmatch(database or ""):
+        fail("Probe database name is not an isolated test database.")
+
+def parse_url():
+    raw = os.environ.get("PROBE_DATABASE_URL") or ""
+    if not raw.strip():
+        fail("Probe DATABASE_URL is missing.")
+    if "?" in raw or "#" in raw:
+        fail("Probe DATABASE_URL must not include query parameters.")
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"postgres", "postgresql"}:
+        fail("Probe DATABASE_URL scheme is not allowed.")
+    host = parsed.hostname or ""
+    if parsed.port is None:
+        fail("Probe port is not allowed.")
+    user = unquote(parsed.username or "")
+    database = unquote((parsed.path or "").lstrip("/"))
+    if "/" in database or not database:
+        fail("Probe database name is not an isolated test database.")
+    check_fields(host, str(parsed.port), user, database)
+    return host, str(parsed.port), user, database
+
+mode = sys.argv[1]
+if mode == "host-allowlisted":
+    raise SystemExit(0 if host_allowlisted(sys.argv[2] if len(sys.argv) > 2 else "") else 1)
+if mode == "check-fields":
+    if len(sys.argv) < 6:
+        fail("Probe connection fields are incomplete.")
+    check_fields(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
+    raise SystemExit(0)
+if mode == "parse-url":
+    host, port, user, database = parse_url()
+    print(host)
+    print(port)
+    print(user)
+    print(database)
+    raise SystemExit(0)
+fail("Unknown probe check.")
+' "$@"
 }
 
-vps_require_free_bytes() {
+vps_probe_host_allowlisted() {
+  vps_probe_python host-allowlisted "${1:-}"
+}
+
+vps_probe_assert_isolated_target() {
+  if [[ "${VPS_RUNTIME:-}" != "probe" ]]; then
+    echo "Isolated probe checks require VPS_RUNTIME=probe." >&2
+    return 1
+  fi
+  if [[ -z "${PROBE_PGHOST:-}" || -z "${PROBE_PGPORT:-}" || -z "${PROBE_PGUSER:-}" || -z "${PROBE_PGDATABASE:-}" ]]; then
+    echo "Probe connection fields are incomplete." >&2
+    return 1
+  fi
+  vps_probe_python check-fields "$PROBE_PGHOST" "$PROBE_PGPORT" "$PROBE_PGUSER" "$PROBE_PGDATABASE"
+}
+
+vps_probe_assert_isolated_url() {
+  if [[ "${VPS_RUNTIME:-}" != "probe" ]]; then
+    echo "Isolated probe checks require VPS_RUNTIME=probe." >&2
+    return 1
+  fi
+  local parsed host port user database
+  parsed="$(vps_probe_python parse-url)" || return 1
+  host="$(printf '%s\n' "$parsed" | sed -n '1p')"
+  port="$(printf '%s\n' "$parsed" | sed -n '2p')"
+  user="$(printf '%s\n' "$parsed" | sed -n '3p')"
+  database="$(printf '%s\n' "$parsed" | sed -n '4p')"
+  if [[ -n "${PROBE_PGHOST:-}" && "$PROBE_PGHOST" != "$host" ]]; then
+    echo "Probe host does not match the isolated URL." >&2
+    return 1
+  fi
+  if [[ -n "${PROBE_PGPORT:-}" && "$PROBE_PGPORT" != "$port" ]]; then
+    echo "Probe port does not match the isolated URL." >&2
+    return 1
+  fi
+  if [[ -n "${PROBE_PGUSER:-}" && "$PROBE_PGUSER" != "$user" ]]; then
+    echo "Probe user does not match the isolated URL." >&2
+    return 1
+  fi
+  if [[ -n "${PROBE_PGDATABASE:-}" && "$PROBE_PGDATABASE" != "$database" ]]; then
+    echo "Probe database does not match the isolated URL." >&2
+    return 1
+  fi
+  PROBE_PGHOST="$host"
+  PROBE_PGPORT="$port"
+  PROBE_PGUSER="$user"
+  PROBE_PGDATABASE="$database"
+}
+
+vps_check_free_bytes() {
   local path="$1"
   local needed="${MIN_FREE_BYTES:-268435456}"
   if [[ ! "$needed" =~ ^[0-9]+$ ]]; then
     echo "MIN_FREE_BYTES must be a non-negative integer." >&2
     return 1
   fi
-  mkdir -p "$path"
+  local probe="$path"
+  while [[ ! -e "$probe" && "$probe" != "/" && "$probe" != "." ]]; do
+    probe="$(dirname "$probe")"
+  done
+  [[ -e "$probe" ]] || probe="."
   local available
-  available="$(df -Pk "$path" | awk 'NR==2 {print $4 * 1024}')"
+  available="$(df -Pk "$probe" | awk 'NR==2 {print $4 * 1024}')"
   if (( available < needed )); then
     echo "Not enough free space at $path (need ${needed} bytes)." >&2
     return 1
   fi
+}
+
+vps_require_free_bytes() {
+  local path="$1"
+  vps_check_free_bytes "$path" || return 1
+  mkdir -p "$path"
 }
 
 vps_validate_password_charset() {
@@ -127,6 +297,7 @@ vps_compose() {
 
 vps_postgres_running() {
   if [[ "${VPS_RUNTIME:-compose}" == "probe" ]]; then
+    vps_probe_assert_isolated_target || return 1
     pg_isready -h "$PROBE_PGHOST" -p "$PROBE_PGPORT" -U "$PROBE_PGUSER" -d "$PROBE_PGDATABASE" >/dev/null 2>&1
     return
   fi
@@ -194,6 +365,7 @@ vps_dump_database() {
     sleep "$BACKUP_PAUSE_SECONDS"
   fi
   if [[ "${VPS_RUNTIME:-compose}" == "probe" ]]; then
+    vps_probe_assert_isolated_target || return 1
     # Plain SQL so a newer client can restore into PostgreSQL 16 (custom dumps
     # from PG17+ emit SET transaction_timeout, which 16 rejects).
     PGPASSWORD="$PROBE_PGPASSWORD" pg_dump --format=plain --no-owner --no-acl \
@@ -218,6 +390,7 @@ vps_list_dump() {
 
 vps_reset_public_schema() {
   if [[ "${VPS_RUNTIME:-compose}" == "probe" ]]; then
+    vps_probe_assert_isolated_target || return 1
     PGPASSWORD="$PROBE_PGPASSWORD" psql -h "$PROBE_PGHOST" -p "$PROBE_PGPORT" -U "$PROBE_PGUSER" -d "$PROBE_PGDATABASE" -v ON_ERROR_STOP=1 \
       -c 'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO CURRENT_USER; GRANT ALL ON SCHEMA public TO public;' >/dev/null
     return
@@ -231,8 +404,9 @@ vps_restore_database() {
     echo "Simulated PostgreSQL restore failure." >&2
     return 1
   fi
-  vps_reset_public_schema
+  vps_reset_public_schema || return 1
   if [[ "${VPS_RUNTIME:-compose}" == "probe" ]]; then
+    vps_probe_assert_isolated_target || return 1
     PGPASSWORD="$PROBE_PGPASSWORD" psql -h "$PROBE_PGHOST" -p "$PROBE_PGPORT" -U "$PROBE_PGUSER" -d "$PROBE_PGDATABASE" \
       -v ON_ERROR_STOP=1 -f "$dump" >/dev/null
     return
@@ -242,6 +416,7 @@ vps_restore_database() {
 
 vps_verify_database() {
   if [[ "${VPS_RUNTIME:-compose}" == "probe" ]]; then
+    vps_probe_assert_isolated_target || return 1
     PGPASSWORD="$PROBE_PGPASSWORD" psql -h "$PROBE_PGHOST" -p "$PROBE_PGPORT" -U "$PROBE_PGUSER" -d "$PROBE_PGDATABASE" -v ON_ERROR_STOP=1 -c 'SELECT 1 FROM "_prisma_migrations" LIMIT 1;' >/dev/null
     return
   fi

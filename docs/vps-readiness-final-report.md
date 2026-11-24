@@ -1,79 +1,95 @@
-# Итоговый отчёт: готовность к безопасному развёртыванию VPS
+# Итоговый отчёт: усиление безопасности VPS readiness
 
 Дата: 24 ноября 2026, Europe/Moscow.
 
 **Итоговый статус: READY WITH WARNINGS**
 
-Можно переходить к обследованию реального VPS после подтверждения владельца. Deploy, SSH, production-миграции и изменение `main` не выполнялись и не разрешены этим отчётом.
+Отдельный PR поверх PR #60. Merge, deploy, SSH, обследование реального VPS не выполнялись.
 
 ## Идентификаторы
 
 | Поле | Значение |
 |---|---|
-| Исходный SHA (PR #59) | `ed014ba8f049511438a565606abc13e30dd21ac6` |
-| Рабочая ветка | `cursor/vps-readiness-ee77` |
-| PR готовности | [#60](https://github.com/mahibaradav-wq/VK-agent-ai/pull/60) |
-| Итоговый SHA (зелёный CI) | `82149232eed5d7b30c1346099f0567ca614f53be` |
-| База | PR [#59](https://github.com/mahibaradav-wq/VK-agent-ai/pull/59) `cursor/personal-openai-cabinet-ee77` |
-| `main` | `252230b21725318eb3952cec13a059b94b093692`, не менялся |
-| PR #59 | открыт, не объединён, HEAD `ed014ba` |
+| Исходный SHA (PR #60) | `62751d0ebe37b48632f19977aa1b1dff36760463` |
+| База PR #60 | `cursor/vps-readiness-ee77` от PR #59 `ed014ba8f049511438a565606abc13e30dd21ac6` |
+| Рабочая ветка | `cursor/vps-readiness-hardening-ee77` |
+| Конечный SHA | `48ee19f82ece2ff53d32048a827a73b0dcb83e07` |
+| Функциональный SHA | `28df4752a405c31715fc92c89f1f0290369d092f` |
+| `main` | не менялся |
+| PR #59 / #60 | не объединялись |
+
+GitHub CI Test: SUCCESS [45486551352](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45486551352).  
+GitHub VPS readiness: SUCCESS [45486551423](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45486551423) (syntax, SSH-guard, prisma, lint, typecheck, test, probe, build, image, Playwright e2e, secret-scan).
 
 ## Изменённые файлы
 
-Новые: `scripts/lib/vps-common.sh`, `scripts/vps-migrate.sh`, `scripts/vps-rollback.sh`, `scripts/tests/vps-ops.test.sh`, `src/server/hosting/vps-ops.test.ts`, `.github/workflows/vps-readiness.yml`, `docs/vps-readiness-audit.md`, `docs/runbooks/restore-validation.md`, `docs/runbooks/migration-plan.md`, `docs/runbooks/rollback.md`, `docs/vps-readiness-final-report.md`.
+- `scripts/lib/vps-common.sh` — строгая probe-allowlist, проверка до любого SQL
+- `scripts/backup-vps.sh`, `scripts/restore-vps.sh`, `scripts/vps-migrate.sh` — вызывают allowlist вместо подстрок hostname
+- `scripts/vps-pull.sh` — `--plan` только читает состояние
+- `scripts/tests/vps-ops.test.sh`, `src/server/hosting/vps-ops.test.ts`, `src/server/hosting/production-stack.test.ts`
+- `.github/workflows/deploy-vps.yml` — отключён, без SSH
+- `.github/workflows/vps-readiness.yml` — любой `ssh-action` в workflows запрещён
+- `docs/vps-probe-security.md` (новый)
+- `docs/vps-readiness-audit.md`, `docs/vps-readiness-final-report.md`
+- `docs/runbooks/restore-validation.md`, `docs/runbooks/rollback.md`
+- `docs/deploy.md`, `docs/security.md`
 
-Существенные правки: `Dockerfile`, `docker-compose.prod.yml`, `scripts/backup-vps.sh`, `scripts/restore-vps.sh`, `scripts/vps-up.sh`, `scripts/vps-pull.sh`, `.github/workflows/ci.yml`, `.github/workflows/deploy-vps.yml`, `src/server/security/secrets.ts`, `src/instrumentation.ts`, `.gitignore`, `.dockerignore`, `docs/deploy.md`, `docs/environment.md`, `docs/security.md`, `docs/runbooks/backups.md`.
+## Что исправлено
 
-## Исправленные проблемы
+1. Probe больше не ищет подстроки `24dom-po-polochkam` / `timeweb`. Разрешены только loopback-IP или имена `localhost`/`postgres` с резолвом только в loopback, порт `5432`, пользователь `polka`, БД `polka_vps_probe` / `polka_vps_probe_<id>`. `VPS_RUNTIME=probe` недостаточно. `DROP SCHEMA` и `prisma migrate deploy` не идут до проверки. URL с query-параметрами отклоняется. Пароль и `DATABASE_URL` в ошибки не печатаются.
+2. GitHub Deploy VPS не содержит SSH-action и не пересобирает сервисы. Любой `workflow_dispatch` завершается отказом. Workflow **не запускался**.
+3. `vps-pull.sh --plan` не создаёт каталоги, не пишет `previous-sha`, не делает `git fetch`/checkout, backup, migrate, restart. Если целевой ref нет локально — отказ с пояснением.
 
-1. `prisma migrate deploy` больше не выполняется при старте контейнера app.
-2. Обновление VPS требует `--plan`, затем `--apply` только после успешного backup.
-3. `vps-up.sh` проверяет `TOKEN_ENCRYPTION_KEY`, отличие от `AUTH_SECRET`, URL-safe пароль БД, закрытый mailbox.
-4. Backup: место на диске, mode 700/600, interrupt cleanup, сохранение предыдущих копий, возврат app/worker при ошибке.
-5. Restore: один timestamp, SHA-256, staging медиа, отказ без подтверждения, сервисы не стартуют после ошибки.
-6. Отдельные `vps-migrate.sh` и `vps-rollback.sh` (сценарии A и B).
-7. `POLKA_REQUIRE_PROD_SECRETS` на app/worker; GitHub Deploy VPS требует фразу подтверждения и не стартует с `main` по умолчанию.
-8. Workflow `vps-readiness.yml` без SSH; runner `ubuntu-24.04` (Playwright 1.56 не ставит Chromium на ubuntu 26.04).
-9. Probe-дампы — plain SQL без `SET transaction_timeout`, чтобы клиент PostgreSQL 17 восстанавливал в сервер 16.
-10. Vitest-обёртка `vps-ops` получила timeout 120 с (иначе GitHub обрывал suite на дефолтных 5 с).
-
-## Результаты проверок
+## Результаты тестов (локально, 24 ноября 2026, Europe/Moscow)
 
 | Проверка | Результат |
 |---|---|
-| `npm run lint` | PASS (локально и GitHub) |
-| `npm run typecheck` | PASS (локально и GitHub) |
-| `npx vitest run` / `npm test` | PASS 52 files / 253 tests |
-| `npm run test:vps` | PASS 41 probe-сценариев |
-| `npm run test:e2e` | PASS 8 локально; Playwright e2e PASS в workflow VPS readiness |
+| `npm run lint` | PASS |
+| `npm run typecheck` | PASS |
+| `npm test` | PASS 52 files / 253 tests |
+| `npm run test:vps` | PASS 68 сценариев |
 | `npm run build` | PASS |
 | `npx prisma validate` | PASS |
-| `npx prisma migrate deploy` (тестовая БД CI) | PASS |
-| `npx prisma migrate status` (локальная тестовая БД) | PASS 17 migrations, up to date |
-| `bash -n` все VPS-скрипты | PASS |
-| тесты backup / restore / отказов / rollback --plan | PASS |
-| GitHub **CI Test** `8214923` | SUCCESS [45481119416](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45481119416) |
-| GitHub **VPS readiness** `8214923` | SUCCESS [45481119359](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45481119359) (syntax, SSH-guard, prisma, lint, typecheck, test, probe, build, image, e2e, secret-scan) |
-| единый OpenAI / AI-лимит / коммерция 410 | не ломались (vitest) |
-| Docker Compose backup на этом агенте | **BLOCKED** — Docker недоступен |
-| SSH / production deploy / production migrate | не выполнялись |
-| платный OpenAI / VK / Telegram live | не вызывались |
-| секреты в Git и отчётах | не выводились; `.env` не коммитился |
+| `bash -n` VPS-скрипты | PASS |
+| localhost + тестовая БД | PASS |
+| hostname CI `postgres` в allowlist | PASS |
+| публичный IPv4 / IPv6 | BLOCK |
+| неизвестный DNS / production hostname | BLOCK |
+| production-подобное имя БД | BLOCK |
+| пустой хост / неверный порт / нет пользователя | BLOCK |
+| restore/DROP до проверки | BLOCK |
+| migrate с production URL в probe | BLOCK |
+| секреты в stdout/stderr отказа | не выводились |
+| `--plan` не меняет Git, файлы, каталоги | PASS |
+| Deploy VPS не может SSH | PASS |
+| GitHub **CI Test** `48ee19f` | SUCCESS [45486551352](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45486551352) |
+| GitHub **VPS readiness** `48ee19f` | SUCCESS [45486551423](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45486551423) |
+| secret-scan workflow | PASS (шаг VPS readiness) |
 
-## Оставшиеся риски и BLOCKED
+Тесты не использовали production credentials и не ходили на production PostgreSQL: только `localhost`/`127.0.0.1` и БД `polka_vps_probe_*`.
+
+## Подтверждения запретов
+
+- SSH не использовался.
+- GitHub Deploy VPS не запускался.
+- production DATABASE_URL, `.env` production, Docker Compose на VPS, Prisma migrate на production не выполнялись.
+- Платный OpenAI, публикации VK/Telegram не вызывались.
+- `main` не менялся; PR #59 и #60 не объединялись.
+
+## Оставшиеся BLOCKED и WARNING
 
 | Тема | Статус |
 |---|---|
-| Нет Docker на агенте — compose-путь backup/restore не гонялся | BLOCKED (probe-путь покрыт) |
-| Реальный VPS, IPv6 daemon, `docker-compose.timeweb.yml` на сервере | BLOCKED, нужно обследование |
-| Расписание backup и копия вне VPS | не создавались |
-| Worker без HTTP healthcheck | предупреждение |
-| `deploy-vps.yml` всё ещё умеет SSH после фразы подтверждения | предупреждение; workflow не запускался |
-| Несогласованность БД/медиа, если dump прошёл, а tar на swap упал | сервисы остаются down; повтор backup |
+| Docker Compose backup/restore на этом агенте | BLOCKED — нет Docker |
+| Реальный VPS, IPv6 daemon, overlay compose на сервере | BLOCKED, нужно обследование владельцем |
+| Cron и off-site копии | не создавались |
+| Worker без HTTP healthcheck | WARNING |
 | Production `.env` не читался | намеренно |
+| GitHub Deploy VPS отключён до решения владельца | WARNING / ожидаемо |
+| Имя `postgres` в allowlist, но живой коннект только если резолв = loopback | fail-closed |
 
-## Готовность к следующему этапу
+## Готовность
 
-**READY WITH WARNINGS.** Следующий этап — обследование VPS владельцем (Docker, тома, `.env.production` ключи без вывода значений, место, cron). Только после отдельного подтверждения: `vps-pull.sh --plan`, backup, `--apply`.
+**READY WITH WARNINGS.** Следующий этап (обследование VPS, ручной `--plan`/`--apply`) — только после отдельного подтверждения владельца.
 
-Не deploy. Не SSH. Не merge в `main`. Коммит этого отчёта может идти после зелёного SHA `8214923` и не меняет скрипты.
+Не merge. Не deploy. Не SSH.

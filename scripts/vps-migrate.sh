@@ -18,7 +18,7 @@ fi
 
 if [[ "$VPS_RUNTIME" == "probe" ]]; then
   : "${PROBE_DATABASE_URL:?Set PROBE_DATABASE_URL for isolated migrate tests}"
-  vps_refuse_production_probe "$PROBE_DATABASE_URL" || exit 1
+  vps_probe_assert_isolated_url || exit 1
   (cd "$ROOT_DIR" && DATABASE_URL="$PROBE_DATABASE_URL" npx prisma migrate deploy)
   exit 0
 fi

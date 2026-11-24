@@ -23,8 +23,11 @@ Safe VPS update. Does not run unless you pass --apply.
   bash scripts/vps-pull.sh --plan [git-ref]
   bash scripts/vps-pull.sh --apply [git-ref]
 
---plan  Preflight only: git, Docker, disk, env keys, target ref. No backup, migrate, or restart.
---apply Requires a successful backup, then checkout, image tag, build, migrate, start, health-check.
+--plan  Read-only preflight: git, Docker, disk, env keys, locally available target ref.
+        Does not create files or directories, does not git fetch/checkout, and does not
+        write previous-sha. If a check would need a write or fetch, it stops.
+--apply Records the current SHA, creates and verifies a backup, then checkout, image tag,
+        build, migrate, start, health-check. Never runs if backup fails.
 
 This script never SSHs anywhere. Run it on the VPS after an owner decision.
 EOF
@@ -49,7 +52,33 @@ while [[ $# -gt 0 ]]; do
 done
 [[ $# -eq 0 ]] || { ref="$1"; shift; }
 
-preflight() {
+read_only_preflight() {
+  vps_require_cmd git docker tar sha256sum || return 1
+  vps_require_file "$COMPOSE_FILE" "$ENV_FILE" || return 1
+  vps_validate_production_env_file "$ENV_FILE" || return 1
+  if [[ "${VPS_SKIP_GIT_CLEAN:-}" != "true" ]]; then
+    vps_git_clean || return 1
+  fi
+  vps_check_free_bytes "$BACKUP_DIR" || return 1
+  echo "Current commit: $(git rev-parse HEAD)"
+  if [[ -n "$ref" ]]; then
+    if git rev-parse --verify "$ref^{commit}" >/dev/null 2>&1; then
+      echo "Target ref is already available locally: $ref"
+    elif git rev-parse --verify "origin/$ref^{commit}" >/dev/null 2>&1; then
+      echo "Target ref is already available locally as origin/$ref"
+    else
+      echo "Target ref is not available locally. --plan does not git fetch or change refs. Fetch on the VPS, then re-run --plan." >&2
+      return 1
+    fi
+  else
+    echo "No target ref given; --apply would fast-forward the current branch."
+  fi
+  docker info >/dev/null
+  echo "Docker is available. Free space check passed."
+  echo "--plan is read-only: no files, directories, Git objects, backup, migrate, or restart."
+}
+
+apply_preflight() {
   vps_require_cmd git docker tar sha256sum || return 1
   vps_require_file "$COMPOSE_FILE" "$ENV_FILE" || return 1
   vps_validate_production_env_file "$ENV_FILE" || return 1
@@ -58,6 +87,7 @@ preflight() {
   fi
   vps_require_free_bytes "$BACKUP_DIR" || return 1
   mkdir -p "$STATE_DIR"
+  chmod 700 "$STATE_DIR"
   vps_record_sha "$STATE_DIR/previous-sha"
   echo "Current commit: $(git rev-parse HEAD)"
   if [[ -n "$ref" ]]; then
@@ -65,14 +95,18 @@ preflight() {
     git rev-parse --verify "origin/$ref^{commit}" >/dev/null 2>&1 || git rev-parse --verify "$ref^{commit}" >/dev/null
     echo "Target ref is reachable: $ref"
   else
-    echo "No target ref given; --apply would fast-forward the current branch."
+    echo "No target ref given; fast-forwarding the current branch after backup."
   fi
   docker info >/dev/null
   echo "Docker is available. Free space check passed."
 }
 
 echo "=== Polka Social VPS update ($mode) ==="
-preflight
+if [[ "$mode" == "apply" ]]; then
+  apply_preflight
+else
+  read_only_preflight
+fi
 
 if [[ "$mode" != "apply" ]]; then
   cat <<'EOF'

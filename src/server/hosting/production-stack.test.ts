@@ -13,6 +13,7 @@ describe("production hosting stack", () => {
   const deploy = read("docs/deploy.md");
   const upScript = read("scripts/vps-up.sh");
   const commonScript = read("scripts/lib/vps-common.sh");
+  const pullScript = read("scripts/vps-pull.sh");
   const restoreScript = read("scripts/restore-vps.sh");
   const ci = read(".github/workflows/ci.yml");
   const deployWorkflow = read(".github/workflows/deploy-vps.yml");
@@ -26,6 +27,7 @@ describe("production hosting stack", () => {
   it("builds the app image without migrating on container start", () => {
     const migrate = read("scripts/vps-migrate.sh");
     const pull = read("scripts/vps-pull.sh");
+    expect(pull).toContain("read_only_preflight");
     expect(dockerfile).toContain("npx prisma generate && npm run build");
     expect(dockerfile).toContain("ffmpeg");
     expect(dockerfile).toContain('CMD ["npm", "start", "--", "--hostname", "0.0.0.0", "--port", "3000"]');
@@ -92,9 +94,18 @@ describe("production hosting stack", () => {
     expect(ci).not.toContain("docker compose");
     expect(ci).not.toContain("VPS_HOST");
     expect(deployWorkflow).toContain("workflow_dispatch:");
-    expect(deployWorkflow).toContain("I-UNDERSTAND-THIS-SSHS-TO-PRODUCTION");
+    expect(deployWorkflow).toContain("Deploy VPS is disabled");
+    expect(deployWorkflow).not.toContain("appleboy/ssh-action");
+    expect(deployWorkflow).not.toContain("I-UNDERSTAND-THIS-SSHS-TO-PRODUCTION");
     expect(deployWorkflow).not.toContain("pull_request:");
     expect(deployWorkflow).not.toContain("npm test");
+    expect(deployWorkflow).not.toContain("docker compose");
+    expect(deployWorkflow).not.toContain("up -d --build");
+    expect(commonScript).toContain("vps_probe_assert_isolated_target");
+    expect(commonScript).not.toContain("24dom-po-polochkam");
+    expect(commonScript).not.toContain("timeweb");
+    expect(pullScript).toContain("read_only_preflight");
+    expect(pullScript).toContain("--plan is read-only");
   });
 
   it("requires explicit restore confirmation and checksum verification", () => {
