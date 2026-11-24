@@ -16,6 +16,7 @@ import {
 } from "@/server/social/vk-api";
 import { VK_MANUAL_PHOTO_CODE, VK_MANUAL_PHOTO_MESSAGE } from "@/modules/social/vk-manual";
 import { toVkWallText } from "@/modules/social/vk-wall-text";
+import { resolvePublishSocialAccount } from "@/server/social/resolve-account";
 import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/social/types";
 import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
 
@@ -488,18 +489,7 @@ export function createVkAdapter(options: {
   return {
     platform: "vk",
     async publish(input: PublishInput): Promise<PublishOutcome> {
-      const target = await options.db.postTarget.findUnique({
-        where: { id: input.targetId },
-        include: { socialAccount: { include: { capabilities: true } } },
-      });
-
-      const account =
-        target?.socialAccount ??
-        (await options.db.socialAccount.findFirst({
-          where: { workspaceId: input.workspaceId, platform: "vk", status: "connected" },
-          include: { capabilities: true },
-          orderBy: { updatedAt: "desc" },
-        }));
+      const account = await resolvePublishSocialAccount(options.db, input, "vk");
 
       if (!account || account.workspaceId !== input.workspaceId || account.status !== "connected" || !account.encryptedToken) {
         return {

@@ -194,9 +194,9 @@ describe("billing and subscriptions", () => {
         currency: "RUB",
       },
     });
-    const first = makeEvent("first-payment-event");
+    const first = makeEvent(`first-payment-event-${owner.workspaceId}`);
     await billing.handleWebhook(first.rawBody, first.signature);
-    const second = makeEvent("second-payment-event");
+    const second = makeEvent(`second-payment-event-${owner.workspaceId}`);
     await expectAccess(billing.handleWebhook(second.rawBody, second.signature), 400, /уже обработана|не ожидает/);
     expect((await billing.getState(owner.userId, owner.workspaceId)).subscription.plan.slug).toBe("team");
     expect(await prisma.paymentEvent.count({ where: { checkoutId: started.checkoutId, processed: true } })).toBe(1);
