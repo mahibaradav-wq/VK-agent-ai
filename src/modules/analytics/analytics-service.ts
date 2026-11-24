@@ -1,7 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { DateTime } from "luxon";
 
-import { assertWorkspaceBound } from "@/modules/access/permissions";
+import { assertActiveProject, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import {
   aggregateSnapshots,
@@ -214,16 +214,18 @@ export function createAnalyticsService(
 
       if (filters?.projectId) {
         const project = await db.project.findUnique({ where: { id: filters.projectId } });
-        assertWorkspaceBound(workspaceId, project, "Проект");
+        assertActiveProject(workspaceId, project);
       }
       if (filters?.socialAccountId) {
-        const account = await db.socialAccount.findUnique({ where: { id: filters.socialAccountId } });
+        const account = await db.socialAccount.findUnique({ where: { id: filters.socialAccountId }, include: { project: true } });
         assertWorkspaceBound(workspaceId, account, "Социальный аккаунт");
+        if (account.project) assertActiveProject(workspaceId, account.project);
       }
 
       const rows = await db.analyticsSnapshot.findMany({
         where: {
           workspaceId,
+          OR: [{ projectId: null }, { project: { is: { archivedAt: null } } }],
           periodStart: { lte: to },
           periodEnd: { gte: from },
           ...(filters?.projectId ? { projectId: filters.projectId } : {}),
@@ -265,16 +267,29 @@ export function createAnalyticsService(
         status: { not: "disconnected" as const },
         ...(input?.socialAccountId ? { id: input.socialAccountId } : {}),
       };
-      const accounts = await db.socialAccount.findMany({ where, orderBy: { createdAt: "asc" } });
+      const accounts = await db.socialAccount.findMany({ where, include: { project: true }, orderBy: { createdAt: "asc" } });
       if (input?.socialAccountId && accounts.length === 0) {
         const missing = await db.socialAccount.findUnique({ where: { id: input.socialAccountId } });
         assertWorkspaceBound(workspaceId, missing, "Социальный аккаунт");
+      }
+
+      if (input?.socialAccountId && accounts[0]?.project) {
+        assertActiveProject(workspaceId, accounts[0].project);
       }
 
       const collected: PublicSnapshot[] = [];
       const skipped: CollectSkip[] = [];
 
       for (const account of accounts) {
+        if (account.project?.archivedAt) {
+          skipped.push({
+            accountId: account.id,
+            platform: account.platform,
+            displayName: account.displayName,
+            reason: "Проект архивирован: сбор аналитики для него отключён.",
+          });
+          continue;
+        }
         if (account.platform === "telegram") {
           const result = await collectTelegramAccount(userId, account);
           if (result.snapshot) {

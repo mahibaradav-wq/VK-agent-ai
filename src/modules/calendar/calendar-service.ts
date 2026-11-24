@@ -1,7 +1,7 @@
 import type { PostStatus, PrismaClient } from "@prisma/client";
 import { DateTime } from "luxon";
 
-import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
+import { AccessError, assertActiveProject, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import { localDateTimeToUtc, parseTimezone, utcToDisplay, utcToLocalInput } from "@/modules/calendar/timezone";
 import { parsePlatforms } from "@/modules/posts/platforms";
@@ -48,9 +48,10 @@ export function createCalendarService(db: PrismaClient) {
   async function loadBoundPost(workspaceId: string, postId: string) {
     const post = await db.post.findUnique({
       where: { id: postId },
-      include: { schedule: true, targets: true },
+      include: { schedule: true, targets: true, project: true },
     });
     assertWorkspaceBound(workspaceId, post, "Публикация");
+    assertActiveProject(workspaceId, post.project);
     return post;
   }
 
@@ -80,6 +81,7 @@ export function createCalendarService(db: PrismaClient) {
           startsAt: { gte: input.from, lt: input.to },
           post: {
             workspaceId,
+            project: { is: { archivedAt: null } },
             projectId: input.projectId || undefined,
             status: status || undefined,
             targets: platform ? { some: { platform } } : undefined,
