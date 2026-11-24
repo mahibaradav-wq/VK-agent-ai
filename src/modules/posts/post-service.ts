@@ -77,7 +77,11 @@ export function createPostService(db: PrismaClient) {
         await loadBoundProject(workspaceId, projectId);
       }
       return db.post.findMany({
-        where: { workspaceId, projectId: projectId || undefined },
+        where: {
+          workspaceId,
+          projectId: projectId || undefined,
+          project: { is: { archivedAt: null } },
+        },
         include: postInclude,
         orderBy: { updatedAt: "desc" },
       });
