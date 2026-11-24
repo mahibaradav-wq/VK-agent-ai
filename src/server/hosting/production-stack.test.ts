@@ -12,8 +12,13 @@ describe("production hosting stack", () => {
   const envExample = read(".env.production.example");
   const deploy = read("docs/deploy.md");
   const upScript = read("scripts/vps-up.sh");
+  const restoreScript = read("scripts/restore-vps.sh");
   const ci = read(".github/workflows/ci.yml");
   const deployWorkflow = read(".github/workflows/deploy-vps.yml");
+  const nav = read("src/lib/site-data.ts");
+  const home = read("src/app/page.tsx");
+  const pricing = read("src/app/pricing/page.tsx");
+  const studio = read("src/app/app/studio/page.tsx");
 
   it("builds the app image and applies migrations before start", () => {
     expect(dockerfile).toContain("npx prisma generate && npm run build");
@@ -34,6 +39,7 @@ describe("production hosting stack", () => {
     expect(compose).toContain('"443:443"');
     expect(compose).toContain("SITE_DOMAIN");
     expect(caddy).toContain("reverse_proxy app:3000");
+    expect(caddy).toContain("header_up X-Real-IP {remote_host}");
     expect(caddy).toContain("{$SITE_DOMAIN}");
     expect(caddy).toContain("Strict-Transport-Security");
   });
@@ -60,11 +66,30 @@ describe("production hosting stack", () => {
     expect(ci).toContain("npm run typecheck");
     expect(ci).toContain("npm run lint");
     expect(ci).toContain("npm test");
+    expect(ci).toContain("bash -n scripts/backup-vps.sh");
     expect(ci).not.toContain("appleboy/ssh-action");
     expect(ci).not.toContain("docker compose");
     expect(ci).not.toContain("VPS_HOST");
     expect(deployWorkflow).toContain("workflow_dispatch:");
     expect(deployWorkflow).not.toContain("pull_request:");
     expect(deployWorkflow).not.toContain("npm test");
+  });
+
+  it("requires explicit restore confirmation and checksum verification", () => {
+    expect(restoreScript).toContain('CONFIRM_RESTORE:-}');
+    expect(restoreScript).toContain("sha256sum --check");
+    expect(restoreScript).toContain('Type RESTORE to continue');
+  });
+
+  it("hides commercial pricing and checkout from the personal-cabinet UI", () => {
+    expect(nav).not.toContain('href: "/pricing"');
+    expect(home).not.toContain("PricingTable");
+    expect(pricing).not.toContain("PricingTable");
+    expect(pricing).toContain("Коммерческие тарифы не продаются");
+  });
+
+  it("does not start image generation when Studio loads", () => {
+    expect(studio).not.toContain("generateImage");
+    expect(studio).not.toContain("composeAgentPost");
   });
 });

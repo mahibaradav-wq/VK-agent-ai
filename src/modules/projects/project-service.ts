@@ -7,6 +7,7 @@ import { lockWorkspaceMetric } from "@/modules/billing/usage";
 
 export const STARTER_PROJECT_NAME = "Дом по полочкам";
 export const STARTER_PROJECT_DESCRIPTION = "Клуб ВК и Telegram-канал этого проекта.";
+export const PERSONAL_ACTIVE_PROJECT_LIMIT = 10;
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
@@ -76,8 +77,11 @@ export function createProjectService(db: PrismaClient) {
 
       const project = await db.$transaction(async (tx) => {
         await lockWorkspaceMetric(tx, workspaceId, "projects");
-        const limits = await getWorkspacePlanLimits(tx, workspaceId);
         const used = await tx.project.count({ where: { workspaceId, archivedAt: null } });
+        if (used >= PERSONAL_ACTIVE_PROJECT_LIMIT) {
+          throw new AccessError(400, `Можно держать не больше ${PERSONAL_ACTIVE_PROJECT_LIMIT} активных проектов.`);
+        }
+        const limits = await getWorkspacePlanLimits(tx, workspaceId);
         if (used >= limits.projects) {
           throw new AccessError(400, `Лимит проектов тарифа исчерпан (${limits.projects}).`);
         }

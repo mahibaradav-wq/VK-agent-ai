@@ -16,7 +16,7 @@ import { marketingPlans } from "@/modules/billing/plans";
 export const siteConfig = {
   name: "Polka Social",
   description:
-    "SaaS-платформа для планирования публикаций, AI-подготовки контента, согласований и аналитики соцсетей.",
+    "Личный кабинет для планирования публикаций, AI-подготовки контента и ручной проверки ВК и Telegram.",
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
 };
 
@@ -24,7 +24,6 @@ export const navItems = [
   { href: "/features", label: "Возможности" },
   { href: "/features/autoposting", label: "Автопостинг" },
   { href: "/features/ai-assistant", label: "AI" },
-  { href: "/pricing", label: "Тарифы" },
   { href: "/blog", label: "Блог" },
   { href: "/help", label: "Помощь" },
 ];

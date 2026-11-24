@@ -17,6 +17,17 @@ export function listedAdminEmails() {
     .filter(Boolean);
 }
 
+export function isPublicRegistrationOpen() {
+  return process.env.AUTH_ALLOW_PUBLIC_REGISTRATION !== "false";
+}
+
+class ClosedRegistrationError extends Error {
+  constructor() {
+    super("Регистрация закрыта. Войдите или примите приглашение владельца.");
+    this.name = "ClosedRegistrationError";
+  }
+}
+
 export function shouldAutoVerifyEmail(email: string, existingUserCount: number) {
   if (isDevMailboxEnabled() || process.env.NODE_ENV !== "production") {
     return false;
@@ -71,7 +82,21 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
       try {
         await ensureCanonicalPlans(db);
         const user = await db.$transaction(async (tx) => {
-          const autoVerify = shouldAutoVerifyEmail(normalizedEmail, await tx.user.count());
+          const existingCount = await tx.user.count();
+          if (!isPublicRegistrationOpen() && existingCount > 0) {
+            const invite = await tx.invitation.findFirst({
+              where: {
+                email: normalizedEmail,
+                acceptedAt: null,
+                expiresAt: { gt: new Date() },
+              },
+              select: { id: true },
+            });
+            if (!invite) {
+              throw new ClosedRegistrationError();
+            }
+          }
+          const autoVerify = shouldAutoVerifyEmail(normalizedEmail, existingCount);
           const created = await tx.user.create({
             data: {
               email: normalizedEmail,
@@ -135,6 +160,9 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
           mailboxUrl: mailboxUrlIfEnabled(),
         };
       } catch (error) {
+        if (error instanceof ClosedRegistrationError) {
+          return { ok: false, message: error.message };
+        }
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
           return { ok: false, message: "Этот email уже занят." };
         }
@@ -313,8 +341,9 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
         return { ok: false, message: "Проверьте токен и пароль. Пароль должен содержать минимум 8 символов." };
       }
 
+      const tokenHash = hashToken(token);
       const record = await db.passwordResetToken.findUnique({
-        where: { tokenHash: hashToken(token) },
+        where: { tokenHash },
       });
 
       if (!record || record.expires < new Date()) {
@@ -322,15 +351,32 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
       }
 
       const passwordHash = await bcrypt.hash(password, 12);
-      await db.$transaction([
-        db.user.update({
+      const consumed = await db.$transaction(async (tx) => {
+        const claimed = await tx.passwordResetToken.deleteMany({
+          where: {
+            tokenHash,
+            userId: record.userId,
+            expires: { gt: new Date() },
+          },
+        });
+        if (claimed.count !== 1) {
+          return false;
+        }
+
+        await tx.user.update({
           where: { id: record.userId },
           data: { passwordHash },
-        }),
-        db.passwordResetToken.deleteMany({
+        });
+        await tx.passwordResetToken.deleteMany({
           where: { userId: record.userId },
-        }),
-      ]);
+        });
+        return true;
+      });
+
+      if (!consumed) {
+        return { ok: false, message: "Токен сброса пароля недействителен или просрочен." };
+      }
+
       await writeAudit("RESET_PASSWORD", record.userId, record.userId);
 
       return { ok: true, message: "Пароль обновлён. Войдите с новым паролем." };

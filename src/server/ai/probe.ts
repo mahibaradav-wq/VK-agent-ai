@@ -1,6 +1,7 @@
 import { AccessError } from "@/modules/access/permissions";
 import { AI_UNAVAILABLE_MESSAGE, OPENAI_REGION_MESSAGE, isOpenAiRegionBlock } from "@/server/ai/errors";
 import { createAiFetch } from "@/server/http/outbound-fetch";
+import { assertAiLiveEnabled } from "@/server/ai/live-guard";
 
 const PROBE_TIMEOUT_MS = 8_000;
 
@@ -15,6 +16,9 @@ export async function probeAiApiKey(options: {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 }): Promise<AiProbeResult> {
+  if (!options.fetchImpl) {
+    assertAiLiveEnabled();
+  }
   const fetchImpl = options.fetchImpl ?? createAiFetch();
   const baseUrl = options.baseUrl.replace(/\/$/, "");
   let response: Response;

@@ -11,8 +11,10 @@ import { createPageMetadata } from "@/lib/metadata";
 import { getAppContext } from "@/modules/access/app-context";
 import { hasPermission } from "@/modules/access/permissions";
 import { createCalendarService } from "@/modules/calendar/calendar-service";
+import { selectTimezone } from "@/modules/calendar/actions";
 import {
   calendarViews,
+  displayTimezones,
   parseAnchorDate,
   parseCalendarView,
   parseTimezone,
@@ -91,7 +93,7 @@ export default async function CalendarPage({
       <PageHeader
         eyebrow="Календарь"
         title={anchor.setLocale("ru").toFormat("LLLL yyyy")}
-        description="Первый экран — месяц. Время — Москва. Один слот уходит в ВК и Telegram. Красный слот — причина, правите только время."
+        description={`Время отображается в часовом поясе ${timezone}. В базе расписание хранится в UTC.`}
       />
       <Container className="grid gap-6 pb-20">
         <Card className="grid gap-4">
@@ -106,6 +108,26 @@ export default async function CalendarPage({
               </Link>
             ))}
           </div>
+          <form action={selectTimezone} className="flex flex-wrap items-center gap-2">
+            <label htmlFor="calendar-timezone" className="text-sm font-semibold text-ink">
+              Часовой пояс
+            </label>
+            <select
+              id="calendar-timezone"
+              name="timezone"
+              defaultValue={timezone}
+              className="min-h-10 rounded-xl border border-ink/15 bg-white px-3 text-sm"
+            >
+              {displayTimezones.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <button type="submit" className="min-h-10 rounded-xl bg-ink px-4 text-sm font-semibold text-white">
+              Применить
+            </button>
+          </form>
           <div className="flex flex-wrap items-center gap-3">
             <Link href={hrefWith({ ...currentQuery, date: prev })} className="text-sm font-semibold text-brand-dark">
               Назад

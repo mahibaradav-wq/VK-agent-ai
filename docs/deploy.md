@@ -1,6 +1,21 @@
 # Запуск и выкладка
 
-Процедура ниже проверена на этапе 14: миграции с чистой БД, `npm run build`, `npm start`, `/api/health`.
+Процедура ниже описывает **локальный** запуск и шаблон VPS. Production deploy, SSH
+и миграции живой БД этим заданием не выполнялись.
+
+## Что проверено локально/CI и что нет
+
+Проверяется в CI (`npm test`, `typecheck`, `lint`, `build`, `prisma migrate`, `bash -n` скриптов):
+
+- очередь публикаций и stale/manual VK на mocked адаптерах;
+- изоляция workspace/project и архив проекта;
+- auth, rate limit по `X-Real-IP`, закрытая регистрация;
+- fail-closed `AI_LIVE_ENABLED` без живых вызовов OpenAI.
+
+Не проверялось в production и не запускалось этим агентом:
+
+- SSH/Timeweb, миграции живой БД, публикации VK/Telegram, ЮKassa, платные AI-вызовы;
+- restore на VPS (скрипт требует `CONFIRM_RESTORE=YES` и ввод `RESTORE`).
 
 ## Локально (разработка)
 

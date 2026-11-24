@@ -1,6 +1,6 @@
 # Polka Social
 
-SaaS-платформа для планирования публикаций, AI-подготовки контента, согласований и аналитики соцсетей.
+Личный кабинет для планирования публикаций, AI-подготовки контента и ручной проверки ВК и Telegram. Рабочее приложение — Next.js 16 и PostgreSQL, не FastAPI.
 
 Этап 14: безопасность, e2e критических потоков, миграции с чистой БД и документация запуска. Доступ к /admin только у PlatformAdmin.
 
@@ -83,25 +83,18 @@ npm run build
 
 - `/` — главная
 - `/features` — возможности
-- `/pricing` — тарифы
 - `/faq` — вопросы
 - `/blog` — блог
 - `/help` — справка
 - `/contacts` — контакты
 - `/login` и `/register` — вход и регистрация
 - `/forgot-password` и `/reset-password` — восстановление доступа
-- `/app` — кабинет и переключение workspace/project
-- `/app/projects` — проекты текущего пространства
-- `/app/calendar` — календарь: месяц, неделя, день, список
-- `/app/posts` — черновики публикаций
-- `/app/ai` — AI-ассистент контента
-- `/app/analytics` — аналитика: фильтры, графики, источник и collectedAt
-- `/app/queue` — очередь автопостинга
-- `/app/social-accounts` — Telegram Bot API и статусы интеграций
-- `/app/media` — медиатека
-- `/app/team` — приглашения, роли и проекты Approver
-- `/app/notifications` — уведомления о согласовании и комментариях
-- `/app/subscription` — тариф, лимиты и статус оплаты
+- `/app` — кабинет и переключение проектов (до 10 активных)
+- `/app/calendar` — календарь в выбранном поясе; в базе UTC
+- `/app/studio` — пост + визуал
+- `/app/ideas` — идеи из Watch
+- `/app/products` — товары
+- `/app/connections` — VK, Telegram и ключ ChatGPT
 - `/admin` — обзор платформы (только PlatformAdmin)
 - `/admin/users` — пользователи и выдача ролей админки
 - `/admin/workspaces` — все рабочие пространства
@@ -134,3 +127,4 @@ npm run build
 - [Запуск и выкладка](docs/deploy.md)
 - [Очереди](docs/runbooks/queues.md)
 - [Интеграции](docs/runbooks/integrations.md)
+- [Резервные копии](docs/runbooks/backups.md)

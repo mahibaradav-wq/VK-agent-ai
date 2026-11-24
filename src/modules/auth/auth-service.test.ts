@@ -1,7 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { mailboxToken } from "@/lib/mailbox-url";
-import { createAuthService, hashToken, shouldAutoVerifyEmail } from "@/modules/auth/auth-service";
+import {
+  createAuthService,
+  hashToken,
+  isPublicRegistrationOpen,
+  shouldAutoVerifyEmail,
+} from "@/modules/auth/auth-service";
 import { prisma } from "@/server/db/prisma";
 
 const siteUrl = "http://localhost:3000";
@@ -178,5 +183,69 @@ describe("auth service", () => {
     expect(mailRequest.ok).toBe(true);
     expect(reset.ok).toBe(true);
     expect(login.ok).toBe(true);
+    const reused = await auth.resetPassword(token, "anotherpassword123");
+    expect(reused.ok).toBe(false);
+  });
+
+  it("allows only one concurrent password reset to consume a token", async () => {
+    const address = email("reset-race");
+    await auth.register(address, "password123");
+    const verifyMail = await prisma.devMailMessage.findFirstOrThrow({
+      where: { to: address, kind: "verify_email" },
+      orderBy: { createdAt: "desc" },
+    });
+    await auth.verifyEmail(mailboxToken(verifyMail.url));
+    await auth.requestPasswordReset(address);
+    const resetMail = await prisma.devMailMessage.findFirstOrThrow({
+      where: { to: address, kind: "reset_password" },
+      orderBy: { createdAt: "desc" },
+    });
+    const token = mailboxToken(resetMail.url);
+
+    const results = await Promise.all([
+      auth.resetPassword(token, "first-password-123"),
+      auth.resetPassword(token, "second-password-123"),
+    ]);
+
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    expect(results.filter((result) => !result.ok)).toHaveLength(1);
+    const firstLogin = await auth.authenticate(address, "first-password-123");
+    const secondLogin = await auth.authenticate(address, "second-password-123");
+    expect(Number(firstLogin.ok) + Number(secondLogin.ok)).toBe(1);
+  });
+
+  it("closes public registration while keeping invited emails", async () => {
+    expect(isPublicRegistrationOpen()).toBe(true);
+    const ownerAddress = email("closed-owner");
+    const invitedAddress = email("closed-invited");
+    const strangerAddress = email("closed-stranger");
+    await auth.register(ownerAddress, "password123");
+    vi.stubEnv("AUTH_ALLOW_PUBLIC_REGISTRATION", "false");
+    try {
+      expect(isPublicRegistrationOpen()).toBe(false);
+      const blocked = await auth.register(strangerAddress, "password123");
+      expect(blocked.ok).toBe(false);
+      expect(blocked.message).toContain("закрыта");
+      expect(await prisma.user.findUnique({ where: { email: strangerAddress } })).toBeNull();
+
+      const ownerUser = await prisma.user.findUniqueOrThrow({
+        where: { email: ownerAddress },
+        include: { memberships: true },
+      });
+      await prisma.invitation.create({
+        data: {
+          workspaceId: ownerUser.memberships[0]!.workspaceId,
+          email: invitedAddress,
+          role: "Editor",
+          tokenHash: hashToken(`invite-${invitedAddress}`),
+          invitedById: ownerUser.id,
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+      const invited = await auth.register(invitedAddress, "password123");
+      expect(invited.ok).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

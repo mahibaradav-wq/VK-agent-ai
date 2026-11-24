@@ -4,7 +4,6 @@ import { CTASection } from "@/components/marketing/cta-section";
 import { FAQ } from "@/components/marketing/faq";
 import { FeatureSection } from "@/components/marketing/feature-section";
 import { Hero } from "@/components/marketing/hero";
-import { PricingTable } from "@/components/marketing/pricing-table";
 import { ProductBlock } from "@/components/marketing/product-block";
 import { TestimonialSection } from "@/components/marketing/testimonial-section";
 import { createPageMetadata } from "@/lib/metadata";
@@ -24,7 +23,7 @@ export default function HomePage() {
       <FeatureSection
         eyebrow="Преимущества"
         title="Одна рабочая цепочка вместо набора разрозненных сервисов"
-        description="Платформа проектируется как полноценный SaaS: от идеи и согласования до очереди публикаций и журнала попыток."
+        description="Личный кабинет для нескольких проектов: от идеи и согласования до очереди публикаций и журнала попыток."
         items={homeHighlights}
       />
       <ProductBlock
@@ -40,7 +39,7 @@ export default function HomePage() {
         eyebrow="AI-инструменты"
         title="Ассистент готовит текст, команда принимает решение"
         description="Генерация идей, заголовков, CTA и адаптаций идёт через серверный адаптер. Публикация без approval недоступна."
-        points={["история генераций", "перенос в редактор", "лимиты по тарифу"]}
+        points={["история генераций", "перенос в редактор", "без имитации без ключа"]}
         href="/features/ai-assistant"
         cta="Подробнее про AI"
         icon={Bot}
@@ -72,7 +71,6 @@ export default function HomePage() {
         cta="Командная работа"
         icon={UsersRound}
       />
-      <PricingTable />
       <FAQ />
       <TestimonialSection />
       <CTASection />
