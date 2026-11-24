@@ -22,7 +22,7 @@ export default defineConfig({
   use: {
     baseURL:
       process.env.PLAYWRIGHT_BASE_URL ?? process.env.AUTH_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://127.0.0.1:3000",
-    channel: "chrome",
+    channel: process.env.CI ? undefined : "chrome",
   },
   webServer: {
     command: "npm start -- --hostname 127.0.0.1 --port 3000",

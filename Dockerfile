@@ -33,4 +33,5 @@ COPY --from=builder /app/next.config.ts ./
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 RUN npx prisma generate
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma migrate deploy && npm start -- --hostname 0.0.0.0 --port 3000"]
+# Migrations are a separate controlled step (scripts/vps-migrate.sh), not part of app start.
+CMD ["npm", "start", "--", "--hostname", "0.0.0.0", "--port", "3000"]

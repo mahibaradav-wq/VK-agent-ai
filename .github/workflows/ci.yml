@@ -41,7 +41,7 @@ jobs:
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Check VPS script syntax
-        run: bash -n scripts/backup-vps.sh scripts/restore-vps.sh scripts/vps-up.sh scripts/vps-pull.sh
+        run: bash -n scripts/lib/vps-common.sh scripts/backup-vps.sh scripts/restore-vps.sh scripts/vps-up.sh scripts/vps-pull.sh scripts/vps-migrate.sh scripts/vps-rollback.sh scripts/tests/vps-ops.test.sh
       - run: npm ci
       - run: npx prisma generate
       - run: npx prisma migrate deploy

@@ -11,6 +11,9 @@ test-results
 coverage
 *.log
 .DS_Store
+*.dump
+polka-*.sha256
+.vps-state
 docs
 e2e
 setup.bat

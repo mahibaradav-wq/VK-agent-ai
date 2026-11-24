@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:vps": "bash scripts/tests/vps-ops.test.sh",
     "test:e2e": "playwright test",
     "test:all": "vitest run && playwright test",
     "db:generate": "prisma generate",

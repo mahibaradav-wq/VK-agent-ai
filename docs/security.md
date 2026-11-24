@@ -32,6 +32,9 @@
 - Rate limit хранится в памяти процесса. Несколько инстансов не делят счётчик. Платный Redis не обязателен: для личного кабинета достаточно одного процесса Node; следующий бесплатный шаг — таблица в PostgreSQL с TTL, не внешний WAF.
 - `AUTH_DEV_MAILBOX=true` в настоящем production откроет `/dev/mailbox`. В проде флаг должен быть выключен, а письма идут только через HTTP-адаптер.
 - In-memory rate limit и health не заменяют WAF, backup и мониторинг инцидентов.
+- Обновление VPS: `scripts/vps-pull.sh --plan`, затем `--apply` только после успешного backup. Миграции — отдельный `scripts/vps-migrate.sh`, не старт контейнера. Откат: [runbooks/rollback.md](runbooks/rollback.md).
+- Firewall на VPS: открыть 22/80/443. PostgreSQL и Redis в production Compose не публикуются на хост. Не открывать 5432 в интернет.
+- `AUTH_DEV_MAILBOX`, совпадающие `AUTH_SECRET`/`TOKEN_ENCRYPTION_KEY` и URL-небезопасный `POSTGRES_PASSWORD` блокируются `vps-up.sh`.
 
 ## Секреты
 

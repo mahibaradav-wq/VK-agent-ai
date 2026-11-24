@@ -12,3 +12,7 @@ tsconfig.tsbuildinfo
 data/media/
 playwright-report/
 test-results/
+.vps-state/
+*.dump
+polka-*.sha256
+polka-*-backups/
