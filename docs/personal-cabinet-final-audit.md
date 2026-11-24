@@ -13,7 +13,7 @@ Production, SSH, merge в `main`, живые публикации и платн�
 | Поле | Значение |
 |---|---|
 | Рабочая ветка | `cursor/personal-openai-cabinet-ee77` |
-| SHA этого отчёта | будет совпадать с HEAD указанной ветки после коммита документации |
+| SHA | `a57d43b1af7b48aae06410a7bb2cc4ef15606e65` |
 | Родитель | `78a319b9236e6f33f4056483c95e365f022c501b` (`cursor/personal-cabinet-safety-ee77`) |
 | Исходный PR | [#57](https://github.com/mahibaradav-wq/VK-agent-ai/pull/57), open, не merged |
 | База #57 | [#56](https://github.com/mahibaradav-wq/VK-agent-ai/pull/56) @ `2a87f51` |
