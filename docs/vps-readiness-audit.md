@@ -2,7 +2,7 @@
 
 Дата: 24 ноября 2026, Europe/Moscow.  
 Исходный HEAD PR #59: `ed014ba8f049511438a565606abc13e30dd21ac6`.  
-Ветка работы: `cursor/vps-readiness-ee77`.  
+Ветка работы: `cursor/vps-readiness-ee77` @ `21649303f4c7ca2010a2014e8e3ec80efb76f1fb`.  
 SSH, production deploy, production-миграции и чтение секретов не выполнялись.
 
 ## Согласованность стека

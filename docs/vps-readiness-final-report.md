@@ -12,7 +12,7 @@
 |---|---|
 | Исходный SHA (PR #59) | `ed014ba8f049511438a565606abc13e30dd21ac6` |
 | Рабочая ветка | `cursor/vps-readiness-ee77` |
-| Итоговый SHA | см. HEAD ветки после коммита |
+| Итоговый SHA | `21649303f4c7ca2010a2014e8e3ec80efb76f1fb` |
 | База | PR [#59](https://github.com/mahibaradav-wq/VK-agent-ai/pull/59) `cursor/personal-openai-cabinet-ee77` |
 | `main` | `252230b`, не менялся |
 | PR #59 | не объединён |
