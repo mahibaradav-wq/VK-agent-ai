@@ -32,8 +32,6 @@
 | `TOKEN_ENCRYPTION_KEY` | Отдельный случайный ключ AES-256 для токенов соцаккаунтов; обязателен в production, минимум 32 символа, не совпадает с `AUTH_SECRET` | В development допускается fallback на `AUTH_SECRET`; в production шифрование без отдельного ключа блокируется. Старые токены можно расшифровать legacy-ключом `AUTH_SECRET`. |
 | `REDIS_URL` + `QUEUE_DRIVER=redis` | BullMQ | Задачи пишутся в PostgreSQL, диспетчер Redis не стартует |
 | `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_IMAGE_MODEL` | запасной AI-провайдер, если в кабинете нет подключённого провайдера | UI предлагает подключить ChatGPT; без ключа генерация не имитируется. Счётчик usage безлимитен (`0`) и не является бюджетом |
-| `YOOKASSA_SHOP_ID` + `YOOKASSA_SECRET_KEY` | ЮKassa. В личном кабинете checkout из UI выключен, таблицы не удаляются | Checkout не имитирует оплату |
-| `BILLING_WEBHOOK_SECRET` | запасной HMAC-стенд для тестов | Не нужен, если задана ЮKassa |
 | `ADMIN_EMAILS` | Email через запятую → Superadmin при первом заходе в `/admin` | Админка пуста, пока роль не выдана |
 | `EMAIL_API_KEY`, `EMAIL_API_URL`, `EMAIL_FROM` | Внешняя почта уведомлений | Без mailbox и без ключа письмо не отправляется |
 | `STORAGE_DRIVER=s3` и `S3_*` | Объектное хранилище | Локальный диск или отказ загрузки |

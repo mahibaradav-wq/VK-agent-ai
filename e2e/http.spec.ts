@@ -39,3 +39,13 @@ test("robots disallows private surfaces", async ({ request }) => {
   expect(body).toContain("Disallow: /admin");
   expect(body).toContain("Disallow: /dev");
 });
+
+test("commercial billing routes are gone", async ({ request }) => {
+  for (const path of ["/api/subscription", "/api/webhooks/billing"]) {
+    for (const method of ["get", "post"] as const) {
+      const response = await request[method](path);
+      expect(response.status(), `${method} ${path}`).toBe(410);
+      expect(await response.json()).toMatchObject({ ok: false });
+    }
+  }
+});

@@ -4,12 +4,7 @@ import { useActionState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { StatusBanner } from "@/components/ui/status-banner";
-import {
-  grantPlatformAdmin,
-  revokePlatformAdmin,
-  updatePlanLimits,
-  type AdminFormState,
-} from "@/modules/admin/actions";
+import { grantPlatformAdmin, revokePlatformAdmin, type AdminFormState } from "@/modules/admin/actions";
 
 const idle: AdminFormState = { status: "idle", message: "" };
 
@@ -47,51 +42,6 @@ export function RevokeAdminForm({ userId }: { userId: string }) {
       <Button type="submit" variant="secondary" disabled={pending}>
         {pending ? "Снимаем..." : "Снять роль"}
       </Button>
-    </form>
-  );
-}
-
-export function PlanLimitsForm({
-  slug,
-  projects,
-  socialAccounts,
-  members,
-  postsPerMonth,
-}: {
-  slug: string;
-  projects: number;
-  socialAccounts: number;
-  members: number;
-  postsPerMonth: number;
-}) {
-  const [state, formAction, pending] = useActionState(updatePlanLimits, idle);
-  return (
-    <form action={formAction} className="grid gap-3">
-      <input type="hidden" name="slug" value={slug} />
-      {(
-        [
-          ["projects", "Проекты", projects],
-          ["socialAccounts", "Аккаунты", socialAccounts],
-          ["members", "Участники", members],
-          ["postsPerMonth", "Публикации в месяц", postsPerMonth],
-        ] as Array<[string, string, number]>
-      ).map(([name, label, value]) => (
-        <label key={name} className="grid gap-1 text-sm font-medium text-ink">
-          {label}
-          <input
-            name={name}
-            type="number"
-            min={1}
-            defaultValue={value}
-            required
-            className="min-h-11 rounded-2xl border border-ink/10 bg-white px-4"
-          />
-        </label>
-      ))}
-      {state.message ? (
-        <StatusBanner tone={state.status === "success" ? "success" : "warning"}>{state.message}</StatusBanner>
-      ) : null}
-      <Button disabled={pending}>{pending ? "Сохраняем..." : "Сохранить лимиты"}</Button>
     </form>
   );
 }

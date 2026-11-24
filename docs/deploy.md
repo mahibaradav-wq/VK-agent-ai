@@ -133,7 +133,7 @@ bash scripts/vps-pull.sh
 
 Проверьте вход, что `/dev/mailbox` закрыт, и что `/admin` недоступен обычному Owner. Первый аккаунт на рабочем сайте подтверждается сразу, без письма. Superadmin: `ADMIN_EMAILS` с email уже зарегистрированного пользователя.
 
-В кабинете ЮKassa укажите HTTP-уведомления на `https://ваш-домен.ru/api/webhooks/billing` (события `payment.succeeded` и `payment.canceled`). Ключи — `YOOKASSA_SHOP_ID` и `YOOKASSA_SECRET_KEY` в `.env.production`.
+Личный кабинет не принимает платежи ЮKassa. `/api/webhooks/billing` отвечает 410 и не обрабатывает уведомления.
 
 Секреты только в `.env.production` на сервере, не в git.
 

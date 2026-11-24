@@ -10,7 +10,6 @@ const adminNav = [
   { href: "/admin", label: "Обзор" },
   { href: "/admin/users", label: "Пользователи" },
   { href: "/admin/workspaces", label: "Workspaces" },
-  { href: "/admin/plans", label: "Тарифы" },
   { href: "/admin/integrations", label: "Интеграции" },
   { href: "/admin/queues", label: "Очереди" },
   { href: "/admin/errors", label: "Ошибки" },

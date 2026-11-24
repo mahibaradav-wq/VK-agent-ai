@@ -1,7 +1,17 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
+import { DateTime } from "luxon";
 
 import { AccessError } from "@/modules/access/permissions";
-import { monthBounds, type DbClient } from "@/modules/billing/plans";
+
+export type DbClient = PrismaClient | Prisma.TransactionClient;
+
+export function monthBounds(at: Date) {
+  const start = DateTime.fromJSDate(at, { zone: "utc" }).startOf("month");
+  return {
+    periodStart: start.toJSDate(),
+    periodEnd: start.endOf("month").toJSDate(),
+  };
+}
 
 export const USAGE_METRICS = {
   ai: "ai_generations",

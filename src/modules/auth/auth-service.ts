@@ -3,7 +3,6 @@ import { createHash, randomBytes } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
-import { attachFreeSubscription, ensureCanonicalPlans } from "@/modules/billing/plans";
 import { createStarterProjectIfMissing } from "@/modules/projects/project-service";
 import { isDevMailboxEnabled } from "@/server/mail/dev-mailbox";
 
@@ -80,7 +79,6 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
       const workspaceName = `Рабочее пространство ${normalizedEmail.split("@")[0]}`;
 
       try {
-        await ensureCanonicalPlans(db);
         const user = await db.$transaction(async (tx) => {
           const existingCount = await tx.user.count();
           if (!isPublicRegistrationOpen() && existingCount > 0) {
@@ -115,7 +113,6 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
           });
           const workspaceId = created.memberships[0]?.workspaceId;
           if (workspaceId) {
-            await attachFreeSubscription(tx, workspaceId);
             await createStarterProjectIfMissing(tx, workspaceId, created.id);
           }
 

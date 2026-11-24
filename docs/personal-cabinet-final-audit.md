@@ -1,10 +1,10 @@
 # Итоговый отчёт: личный кабинет Polka Social
 
-Дата проверки: 24 ноября 2026, Europe/Moscow.  
-Задание: единый OpenAI на кабинет, исключение коммерческих сценариев, один владелец и до 10 активных проектов, безопасные VK/Telegram, резервное копирование.  
-Production, SSH, merge в `main`, живые публикации и платные вызовы OpenAI не выполнялись.
+Дата проверки: 24 ноября 2026, ~22:30 Europe/Moscow.  
+Задание: устранение замечаний приёмки PR #59 — коммерческие сценарии должны быть исключены из рабочего приложения, а не выключены флагом.  
+Production, SSH, merge в `main`, живые публикации, реальные платежи и платные вызовы OpenAI не выполнялись.
 
-**Это не заявление о 100% готовности к включению платных функций.** Ниже — фактические статусы проверок.
+**Это не заявление о 100% готовности включать `AI_LIVE_ENABLED` или деплоить.** Ниже — фактические статусы проверок.
 
 ---
 
@@ -13,61 +13,70 @@ Production, SSH, merge в `main`, живые публикации и платн�
 | Поле | Значение |
 |---|---|
 | Рабочая ветка | `cursor/personal-openai-cabinet-ee77` |
-| SHA | `a57d43b1af7b48aae06410a7bb2cc4ef15606e65` |
-| Родитель | `78a319b9236e6f33f4056483c95e365f022c501b` (`cursor/personal-cabinet-safety-ee77`) |
-| Исходный PR | [#57](https://github.com/mahibaradav-wq/VK-agent-ai/pull/57), open, не merged |
-| База #57 | [#56](https://github.com/mahibaradav-wq/VK-agent-ai/pull/56) @ `2a87f51` |
+| PR | [#59](https://github.com/mahibaradav-wq/VK-agent-ai/pull/59) |
+| SHA до этой правки | `fca32cf8e6b6ed81ac29c8720b5685170a57c5ff` |
+| SHA этой правки | см. HEAD ветки после коммита в §14 |
+| База | PR [#57](https://github.com/mahibaradav-wq/VK-agent-ai/pull/57) `cursor/personal-cabinet-safety-ee77` @ `78a319b` |
 | `main` | FastAPI/SQLite mock `252230b`; не живой продукт, не менялся |
 
-После push SHA этой ветки нужно смотреть в созданном PR поверх #57.
+Работа шла в текущей ветке PR #59, без новой PR-цепочки и без merge.
 
 ---
 
 ## 2. Состояние исходного PR
 
-PR **#57** «Personal cabinet safety audit on the #56 chain»:
+PR **#59** «Personal cabinet: one OpenAI, no commercial path, 10 projects»:
 
-- состояние: **open**, draft=false, mergeable;
-- HEAD на момент старта этой работы: `78a319b`;
-- CI Test на `78a319b`: **success** (GitHub Actions, 24.11.2026 21:24 Europe/Moscow);
+- состояние на старте этой правки: **open**, HEAD `fca32cf`;
+- CI Test на `fca32cf`: **success** (GitHub Actions, 24.11.2026 22:00 Europe/Moscow);
 - в `main` не влит;
-- стек: #57 стоит над #56.
+- стек: #59 стоит над #57.
 
-Эта работа **не обновляет #57** и **не делает merge**. Новый PR идёт отдельной веткой поверх #57.
-
----
-
-## 3. Какие файлы изменены
-
-Новые:
-
-- `src/modules/cabinet/limits.ts`
-- `src/modules/cabinet/commercial.ts`
-- `src/modules/cabinet/cabinet.test.ts`
-- `docs/personal-cabinet-final-audit.md`
-
-Существенные правки:
-
-- AI: `src/server/ai/live-guard.ts`, `openai-compatible.ts`, `probe.ts`, `balance.ts`, `src/modules/ai/ai-service.ts`, `provider-service.ts`
-- кабинет: проекты, регистрация, billing HTTP, social resolve-account, UI `/app`, `/register`, `/admin/plans`, `/app/connections`
-- тесты: cabinet, projects, social, billing, live-guard, production-stack, e2e
-- env/docs: `.env.example`, `.env.production.example`, `docs/environment.md`, `docs/security.md`
-- `vitest.config.ts` — для unit-тестов регистрация открыта явно
-
-Полный `git diff --stat` относительно `78a319b`: 35+ файлов до отчёта, плюс этот markdown.
+Эта правка **обновляет #59**. Merge, deploy и изменение `main` не выполнялись.
 
 ---
 
-## 4. Что исправлено
+## 3. Что удалено из рабочего приложения
 
-1. Платные AI-вызовы идут через один кабинетный шлюз: `AI_LIVE_ENABLED` + `AI_MONTHLY_HARD_LIMIT` + advisory lock счётчика.
-2. Один OpenAI-ключ кабинета шарится между проектами владельца; чужой владелец ключ не получает.
-3. Checkout, webhook ЮKassa и HTTP `/api/subscription` закрыты, пока `BILLING_CHECKOUT_ENABLED` не равен `true`.
-4. Операционные лимиты отвязаны от строк `Plan`: 10 активных проектов, свои лимиты аккаунтов/участников/постов.
-5. Публикация VK/Telegram не берёт workspace-global токен (`projectId=null`) как скрытый fallback.
-6. Архив/восстановление проекта с тем же cap=10 и UI на `/app`.
-7. Публичная регистрация по умолчанию закрыта после первого владельца; страница `/register` это показывает.
-8. E2E приведены к текущему кабинету (без email в шапке).
+Удалены рабочие коммерческие сценарии, а не спрятаны за `BILLING_CHECKOUT_ENABLED`:
+
+| Компонент | Как исключён |
+|---|---|
+| `PLAN_CATALOG` / `src/modules/billing/plans.ts` | файл удалён |
+| `PricingTable` | файл удалён |
+| `subscription-board.tsx` | файл удалён |
+| ЮKassa (`yookassa.ts`, `yookassa.test.ts`) | файлы удалены |
+| HMAC-checkout (`hmac-provider.ts`, `signature.ts`) | файлы удалены |
+| Checkout / cancel / webhook в `billing-service` | заглушка: любой вызов → 403 |
+| `BILLING_CHECKOUT_ENABLED` | больше не читается кодом приложения; `isCommercialBillingEnabled()` всегда `false` |
+| `YOOKASSA_*` / `BILLING_WEBHOOK_SECRET` | не выбирают провайдера; `createBillingProviderFromEnv()` всегда `disabled` |
+| `/admin/plans` | страница редиректит на `/admin`; пункт навигации снят |
+| `PlanLimitsForm` / `updatePlanLimits` action | удалены из UI; сервис бросает 403 |
+| Регистрация → `Plan`/`Subscription` | `attachFreeSubscription` / `ensureCanonicalPlans` убраны |
+| Env how-to ЮKassa | убрано из `.env.example`, `.env.production.example`, `docs/environment.md` |
+
+Оставшиеся заглушки, чтобы случайный импорт не включил оплату:
+
+- `src/modules/cabinet/commercial.ts` — всегда `false`, HTTP 410;
+- `src/modules/billing/billing-service.ts` — 403 на все коммерческие методы, `allowCommercial` игнорируется;
+- `src/server/billing/index.ts` — только `disabled`;
+- `src/modules/billing/actions.ts` — server actions возвращают сообщение «не продаёт тарифы».
+
+---
+
+## 4. Какие коммерческие маршруты исключены
+
+| Маршрут | Поведение |
+|---|---|
+| `GET/POST/PUT/PATCH/DELETE /api/subscription` | **410 Gone**, JSON `{ ok: false }` |
+| `GET/POST/PUT/PATCH/DELETE /api/webhooks/billing` | **410 Gone**, JSON `{ ok: false }` |
+| `/app/subscription` | редирект на `/app` |
+| `/admin/plans` | редирект на `/admin` |
+| `/pricing` | информационная страница «тарифы не продаются», без checkout и без `PricingTable` |
+
+Скрытых рабочих платёжных endpoints нет: провайдер ЮKassa не импортируется, webhook не проверяет подпись и не пишет `PaymentEvent`.
+
+`BILLING_CHECKOUT_ENABLED=true`, `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY` и `BILLING_WEBHOOK_SECRET` **не включают** checkout. Это покрыто unit-тестами `cabinet.test.ts` и `billing.test.ts`.
 
 ---
 
@@ -94,6 +103,7 @@ PR **#57** «Personal cabinet safety audit on the #56 chain»:
 - `beginPaidAi()` в транзакции берёт `pg_advisory_xact_lock` + `reserveUsage`, так что параллельные запросы не обходят лимит.
 - Исчерпание пишет `AI_PAID_DENIED` с `budget_exhausted` (без ключа).
 - `DEFAULT_MONTHLY_LIMIT = 0` остаётся безлимитом **только** для injected mock-провайдеров в тестах.
+- `UsageRecord` считает AI/посты кабинета и больше не зависит от `Plan`/`PLAN_CATALOG`.
 
 Prepaid-цифра с `platform.openai.com` по-прежнему не запрашивается, пока live выключен (`fetchAiBalance`).
 
@@ -119,44 +129,39 @@ Prepaid-цифра с `platform.openai.com` по-прежнему не запр�
 
 ---
 
-## 8. Какие коммерческие компоненты отключены или удалены
+## 8. Что осталось в базе данных и почему
 
-Статус: **PASS** для работающего приложения; код биллинга не вычищен целиком.
+Статус: **PASS**. Таблицы и миграции **не удалялись**. Пользовательские данные не трогались.
 
-Отключено в рабочем сценарии:
+| Таблица | В рабочем приложении | Почему оставлена |
+|---|---|---|
+| `Plan` | не читается и не пишется | история миграций и возможные старые строки; DROP потребовал бы отдельной миграции и разрешения владельца |
+| `Subscription` | регистрация больше **не** создаёт строку | то же; безопасная отвязка уже сделана в коде |
+| `CheckoutSession` | нет писателей | схема ЮKassa остаётся в PostgreSQL без сценария оплаты |
+| `PaymentEvent` | нет писателей | webhook отвечает 410 и не идемпотентит платежи |
+| `UsageRecord` | **используется** | внутренний учёт AI и постов (`reserveUsage` + advisory lock), не коммерческий биллинг |
+| `WorkspaceAiConnection` | **используется** | единый ключ OpenAI кабинета |
+| `AuditLog` | **используется** | журнал, в том числе `AI_PAID_DENIED` |
+| `Project.archivedAt` | **используется** | архив / restore при cap=10 |
 
-- HTTP `GET /api/subscription` и `POST /api/webhooks/billing` → 403;
-- `startCheckout` / `cancel` / `handleWebhook` без `BILLING_CHECKOUT_ENABLED=true`;
-- UI `/pricing` без витрины и checkout; `/app/subscription` редирект на `/app`;
-- навигация кабинета без «Подписка» и без ссылки на pricing;
-- тарифные лимиты больше не режут проекты, соцаккаунты, участников и посты.
+`npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma` (отдельная shadow-БД) — **различий нет**. 17 миграций, schema up to date. Отдельная DROP-миграция **не нужна** на этом этапе.
 
-Не удалялось:
-
-- модуль `billing-service`, провайдер ЮKassa, `PricingTable.tsx`, `PLAN_CATALOG`;
-- админка `/admin/plans` (есть баннер, что лимиты кабинета не оттуда);
-- таблицы БД (см. §9).
-
-Unit-тесты биллинга по-прежнему гоняются при явно включённом `BILLING_CHECKOUT_ENABLED` в `billing.test.ts`, чтобы не потерять защиту webhook-логики на случай обратного включения. Это не рабочий сценарий кабинета.
+Безопасная очистка позже, только по решению владельца: бэкап → убедиться, что приложение не читает таблицы → миграция DROP.
 
 ---
 
-## 9. Что осталось в базе данных и почему
+## 9. Что сохранено из уже принятых решений PR #59
 
-Статус: **PASS** (безопасный вариант: оставить, отвязать).
+Не нарушено:
 
-Используются действующими функциями:
+- единый OpenAI для проектов владельца и одно место хранения ключа;
+- централизованные настройки моделей;
+- общий месячный лимит AI, `AI_LIVE_ENABLED`, `AI_MONTHLY_HARD_LIMIT`, защита от конкурентного превышения;
+- лимит 10 активных проектов, архивирование и восстановление;
+- запрет глобального fallback VK/Telegram;
+- закрытая регистрация после создания владельца.
 
-| Таблица | Зачем сейчас |
-|---|---|
-| `Plan`, `Subscription` | `attachFreeSubscription` при регистрации; чтение state; **не** лимит проектов |
-| `CheckoutSession`, `PaymentEvent` | только если коммерческий флаг включён в тестах/аварийном режиме |
-| `UsageRecord` | общий счётчик AI и постов кабинета |
-| `WorkspaceAiConnection` | единый ключ OpenAI |
-| `AuditLog` | журнал, в том числе `AI_PAID_DENIED` |
-| `Project.archivedAt` | архив |
-
-Пользовательские данные и история миграций не трогались. Отдельная миграция на DROP `Plan`/`Subscription` **не нужна** на этом этапе: регистрация всё ещё создаёт free-подписку, чтобы не ломать схему. Безопасная очистка позже: бэкап → отключить `attachFreeSubscription` → миграция DROP после проверки, что никто не читает эти таблицы.
+Новые AI-провайдеры не подключались. Настройки AI не менялись. Реальных платных запросов не было.
 
 ---
 
@@ -170,7 +175,7 @@ Unit-тесты биллинга по-прежнему гоняются при �
 - Восстановление при полном cap отклоняется; чужой workspace не восстанавливает чужой проект (403).
 - UI: форма создания, «В архив», список архива и «Восстановить».
 
-Клиентские workspace, платные аккаунты и коммерческие роли не вводились. Регистрация: первый пользователь на пустой БД проходит; дальше — только `AUTH_ALLOW_PUBLIC_REGISTRATION=true` или действующее приглашение. Способ входа (credentials JWT) не менялся.
+Клиентские workspace, платные аккаунты и коммерческие роли не вводились. Регистрация: первый пользователь на пустой БД проходит; дальше — только `AUTH_ALLOW_PUBLIC_REGISTRATION=true` или действующее приглашение.
 
 ---
 
@@ -180,8 +185,7 @@ Unit-тесты биллинга по-прежнему гоняются при �
 
 - `resolvePublishSocialAccount` принимает только `connected` аккаунт **этого** `post.projectId`.
 - Bound global (`projectId=null`) и чужой проект → `integration_not_configured`, без `sendMessage`/`wall.post`.
-- Подключение без `projectId` по-прежнему сохраняет токен как явный общий ресурс, но публикация его не берёт. В UI такие токены не показываются как рабочие для клуба.
-- Идемпотентность `wall.post` guid, unknown → `requires_manual_check`, stale jobs, архив с очередью — покрыты прежними тестами `social.test.ts` / `publish.test.ts` (259 unit).
+- Подключение без `projectId` по-прежнему сохраняет токен как явный общий ресурс, но публикация его не берёт.
 - Реальных вызовов VK/Telegram API не было.
 
 ---
@@ -192,14 +196,14 @@ Unit-тесты биллинга по-прежнему гоняются при �
 
 Проверено тестами/кодом:
 
-- auth + Owner; Viewer не генерирует AI и не стартует checkout;
+- auth + Owner; коммерческий checkout недоступен даже Superadmin;
 - IDOR проектов и соцаккаунтов;
 - изоляция OpenAI-ключа между владельцами;
-- rate limit логина/регистрации по `X-Real-IP` (не клиентский `X-Forwarded-For`);
-- AES-256-GCM токенов, `TOKEN_ENCRYPTION_KEY` обязателен в production и ≠ `AUTH_SECRET`;
+- rate limit логина/регистрации по `X-Real-IP`;
+- AES-256-GCM токенов;
 - секреты не попадают в JSON ответов и audit details;
 - публичная регистрация закрыта по умолчанию;
-- `/app` и `/admin` редиректят анонима (e2e http).
+- коммерческие HTTP 410 без обработки платежа.
 
 Не раскрывались значения секретов и `.env`.
 
@@ -221,69 +225,67 @@ Unit-тесты биллинга по-прежнему гоняются при �
 
 ## 13. Результаты проверки резервного копирования
 
+Локальный dump/restore из предыдущей итерации PR #59 не повторялся: схема и миграции не менялись. Синтаксис скриптов проверен снова.
+
 | Проверка | Статус | Комментарий |
 |---|---|---|
 | `bash -n` backup/restore/vps scripts | **PASS** | синтаксис |
-| Отказ restore без `CONFIRM_RESTORE=YES` | **PASS** | exit 1 |
-| Локальный `pg_dump -Fc` → отдельная БД `polka_restore_probe` | **PASS** | 2171 пользователей совпали, 40 public tables |
-| Целостность SHA-256 dump+media tar | **PASS** | изолированный каталог `/tmp` |
-| Восстановление медиа из tar | **PASS** | контрольный файл |
-| Полный `restore-vps.sh` через docker compose production | **BLOCKED** | нет Docker и `.env.production` в этой среде; к production не подключались |
+| Полный `restore-vps.sh` через docker compose production | **BLOCKED** | к production не подключались |
 | Расписание и копия вне VPS | **BLOCKED** | нужна настройка сервера владельцем |
 
-Инструкция: `docs/runbooks/backups.md`. Destructive restore на живых данных не выполнялся.
+Destructive restore на живых данных не выполнялся.
 
 ---
 
 ## 14. Точные команды тестирования и результаты
 
-Среда: локальный PostgreSQL `polka_social`, без платного OpenAI, без VK/Telegram live.
+Среда: локальный PostgreSQL `polka_social`, без платного OpenAI, без VK/Telegram live, без ЮKassa.
 
 | Команда | Результат |
 |---|---|
-| `npx vitest run` | **PASS** 52 files, 259 tests |
+| `npx vitest run` | **PASS** 51 files, 250 tests (меньше 259: удалены тесты живого ЮKassa/HMAC) |
 | `npm run typecheck` | **PASS** |
 | `npm run lint` | **PASS** |
 | `npm run build` | **PASS** (предупреждения Turbopack про `spawn` ffmpeg, не ошибки) |
 | `npx prisma validate` | **PASS** |
 | `npx prisma migrate status` | **PASS** 17 migrations, schema up to date |
-| `prisma migrate diff --from-migrations ... --exit-code` | **BLOCKED** нужен `--shadow-database-url`; статус миграций проверен иначе |
+| `prisma migrate diff --from-migrations … --exit-code` | **PASS** No difference detected (отдельная shadow-БД, затем удалена) |
 | `bash -n scripts/backup-vps.sh scripts/restore-vps.sh scripts/vps-up.sh scripts/vps-pull.sh` | **PASS** |
-| изолированный dump/restore PostgreSQL + tar media | **PASS** |
-| `npx playwright test` (`AUTH_ALLOW_PUBLIC_REGISTRATION=true AUTH_DEV_MAILBOX=true`, `npm start` после build) | **PASS** 7 tests |
+| `npx playwright test` (`AUTH_ALLOW_PUBLIC_REGISTRATION=true`, `npm start` после build) | **PASS** 8 tests, включая 410 на `/api/subscription` и `/api/webhooks/billing` |
 | конкурентное создание проектов | **PASS** внутри vitest |
-| единый AI-провайдер / лимит / отказ live | **PASS** внутри vitest |
-| коммерческие HTTP 403 | **PASS** внутри vitest |
-| изоляция проектов / publish без дубля | **PASS** внутри vitest |
+| единый OpenAI / общий AI-лимит / отказ live | **PASS** внутри vitest |
+| коммерческие HTTP 410; env не включает оплату | **PASS** внутри vitest и e2e |
 | живой OpenAI | **не выполнялся** |
 | живые VK/Telegram | **не выполнялись** |
-| CI GitHub этой ветки | ещё не бежал до push |
+| реальные платежи | **не выполнялись** |
+| CI GitHub этой правки | ещё не бежал до push |
 
-Целевые тесты, которые требуют отдельного упоминания:
+Целевые тесты:
 
-- `src/modules/cabinet/cabinet.test.ts`
-- `src/server/ai/live-guard.test.ts`
-- `src/modules/projects/project-service.test.ts` (cap 10 + restore)
-- `src/modules/social/social.test.ts` (нет global fallback)
-- `src/modules/auth/auth-service.test.ts` (закрытая регистрация)
-- `src/modules/e2e/critical-path.test.ts` (unit-путь register → integration_not_configured)
+- `src/modules/billing/billing.test.ts` — нет Plan/Subscription при регистрации, env не включает оплату, HTTP 410, `UsageRecord` атомарно
+- `src/modules/cabinet/cabinet.test.ts` — `BILLING_CHECKOUT_ENABLED` и `allowCommercial` бесполезны; единый OpenAI
+- `src/modules/admin/admin.test.ts` — Superadmin не управляет тарифами
+- `src/server/hosting/production-stack.test.ts` — нет `PricingTable`, ЮKassa, `/admin/plans`, коммерческих файлов
+- `src/modules/projects/project-service.test.ts` — cap 10 + restore
+- `e2e/http.spec.ts` — commercial billing routes are gone
 
 ---
 
-## 15. Оставшиеся дефекты и ограничения
+## 15. Оставшиеся ограничения
 
 | Тема | Статус | Суть |
 |---|---|---|
-| Таблицы Plan/Subscription | ограничение | оставлены; не влияют на cap проектов |
-| `/admin/plans` | ограничение | Superadmin всё ещё может править строки Plan; кабинет их не читает |
-| `PricingTable.tsx` / `billing-service` | ограничение | мёртвый код для UI, живой только под тестовым флагом |
+| Таблицы `Plan` / `Subscription` / `CheckoutSession` / `PaymentEvent` | ограничение | оставлены в PostgreSQL без рабочих сценариев |
+| Файлы `/api/subscription` и `/api/webhooks/billing` | ограничение | отвечают 410, чтобы не оставлять скрытый рабочий endpoint |
+| `/pricing` | ограничение | страница-уведомление, не витрина |
+| `src/server/billing/types.ts` | ограничение | типы заглушки `disabled`, без ЮKassa |
 | Env `AI_API_KEY` | ограничение | запасной провайдер из env, если в кабинете нет ключа; всё равно режется live-guard |
 | Probe ключа при выключенном AI | ограничение | connect с реальным `/models` заблокирован вместе с генерацией |
 | 2FA, nonce-CSP, внешний backup | не сделано | внешняя инфраструктура / отдельные задачи |
-| Photo-цепочка PR #41/#42 | не в этой ветке | не merge-или |
 | `main` | не трогали | по-прежнему mock FastAPI |
+| Deploy / merge | не выполнялись | ждут проверки владельца |
 
-P0/P1 из предыдущего аудита (`docs/personal-cabinet-audit.md`), относящиеся к этому заданию, в этой ветке закрыты либо явно отложены как инфраструктура.
+P0 приёмки PR #59 (коммерция только выключена флагом) в этой правке закрыт: флаг больше не является выключателем оплаты.
 
 ---
 
@@ -292,16 +294,16 @@ P0/P1 из предыдущего аудита (`docs/personal-cabinet-audit.md`
 | Блок | Статус | Кратко |
 |---|---|---|
 | A. Единый OpenAI | **PASS** | один ключ кабинета, общий лимит, fail-closed |
-| B. Коммерция | **PASS** | сценарии недоступны; таблицы не удалены |
+| B. Коммерция | **PASS** | сценарии удалены из рабочего приложения; env не включает оплату; таблицы БД сохранены |
 | C. Кабинет 10 проектов | **PASS** | create/restore/архив/регистрация |
 | D. VK / Telegram | **PASS** | нет тихого global fallback; mock only |
 | E. Безопасность | **PASS** | с оговоркой VPS-настроек |
-| F. Backup | **PASS** локально / **BLOCKED** production compose | |
+| F. Backup | **PASS** синтаксис скриптов / **BLOCKED** production compose | |
 
 ---
 
 ## Вывод
 
-**Проект соответствует модели личного кабинета одного владельца** в пределах этой кодовой базы: один OpenAI на кабинет, до 10 активных проектов, коммерческие checkout/тарифы не участвуют в рабочем пути, публикация не берёт чужой или глобальный соцаккаунт по умолчанию.
+**Проект соответствует модели личного кабинета одного владельца:** один OpenAI на кабинет, до 10 активных проектов, коммерческие checkout/тарифы/ЮKassa из рабочего приложения исключены, `BILLING_CHECKOUT_ENABLED` ничего не включает, публикация не берёт чужой или глобальный соцаккаунт по умолчанию.
 
 Это **не** разрешение включать `AI_LIVE_ENABLED`, публиковать в VK/Telegram, деплоить или вливать в `main`. Нужно отдельное решение владельца после ревью этого PR.

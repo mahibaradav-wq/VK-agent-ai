@@ -7,10 +7,9 @@ import { createAiConnectionService } from "@/modules/ai/provider-service";
 import { createAiService } from "@/modules/ai/ai-service";
 import { createAuthService } from "@/modules/auth/auth-service";
 import { createBillingService } from "@/modules/billing/billing-service";
-import { COMMERCIAL_BILLING_DISABLED_MESSAGE } from "@/modules/cabinet/commercial";
+import { COMMERCIAL_BILLING_DISABLED_MESSAGE, isCommercialBillingEnabled } from "@/modules/cabinet/commercial";
 import { createProjectService } from "@/modules/projects/project-service";
 import { prisma } from "@/server/db/prisma";
-import { createHmacBillingProvider } from "@/server/billing";
 import { createUnconfiguredAiProvider } from "@/server/ai/unconfigured";
 
 const auth = createAuthService(prisma, "http://localhost:3000");
@@ -40,25 +39,23 @@ describe("personal cabinet", () => {
     await prisma.$disconnect();
   });
 
-  it("rejects commercial checkout when billing is not explicitly enabled", async () => {
+  it("cannot re-enable commercial checkout with BILLING_CHECKOUT_ENABLED", async () => {
     const previous = process.env.BILLING_CHECKOUT_ENABLED;
-    delete process.env.BILLING_CHECKOUT_ENABLED;
+    process.env.BILLING_CHECKOUT_ENABLED = "true";
     try {
-      const owner = await registerOwner("no-commerce");
-      const billing = createBillingService(prisma, {
-        provider: createHmacBillingProvider({ secret: "test-not-used" }),
-      });
-      await expect(billing.startCheckout(owner.userId, owner.workspaceId, "team")).rejects.toBeInstanceOf(AccessError);
-      await expect(billing.startCheckout(owner.userId, owner.workspaceId, "team")).rejects.toMatchObject({
+      expect(isCommercialBillingEnabled()).toBe(false);
+      const billing = createBillingService(prisma, { allowCommercial: true });
+      await expect(billing.startCheckout()).rejects.toBeInstanceOf(AccessError);
+      await expect(billing.startCheckout()).rejects.toMatchObject({
         status: 403,
         message: COMMERCIAL_BILLING_DISABLED_MESSAGE,
       });
-      await expect(billing.handleWebhook("{}", "")).rejects.toMatchObject({
+      await expect(billing.handleWebhook()).rejects.toMatchObject({
         status: 403,
         message: COMMERCIAL_BILLING_DISABLED_MESSAGE,
       });
-      expect((await getSubscription()).status).toBe(403);
-      expect((await postBillingWebhook()).status).toBe(403);
+      expect((await getSubscription()).status).toBe(410);
+      expect((await postBillingWebhook()).status).toBe(410);
     } finally {
       if (previous === undefined) {
         delete process.env.BILLING_CHECKOUT_ENABLED;

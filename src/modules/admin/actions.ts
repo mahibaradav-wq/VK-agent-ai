@@ -25,10 +25,6 @@ function readField(formData: FormData, name: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function readInt(formData: FormData, name: string) {
-  return Number(readField(formData, name));
-}
-
 function admin() {
   return createAdminService(prisma);
 }
@@ -59,26 +55,6 @@ export async function revokePlatformAdmin(
     return { status: "success", message: "Роль администратора снята. Действие записано в audit." };
   } catch (error) {
     const message = error instanceof AccessError ? error.message : "Не удалось снять роль.";
-    return { status: "invalid", message };
-  }
-}
-
-export async function updatePlanLimits(
-  _prev: AdminFormState,
-  formData: FormData,
-): Promise<AdminFormState> {
-  try {
-    await admin().updatePlanLimits(await requireUserId(), readField(formData, "slug"), {
-      projects: readInt(formData, "projects"),
-      socialAccounts: readInt(formData, "socialAccounts"),
-      members: readInt(formData, "members"),
-      postsPerMonth: readInt(formData, "postsPerMonth"),
-    });
-    revalidatePath("/admin/plans");
-    revalidatePath("/admin/audit");
-    return { status: "success", message: "Лимиты тарифа обновлены. Действие записано в audit." };
-  } catch (error) {
-    const message = error instanceof AccessError ? error.message : "Не удалось обновить тариф.";
     return { status: "invalid", message };
   }
 }

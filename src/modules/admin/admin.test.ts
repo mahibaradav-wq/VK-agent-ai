@@ -61,12 +61,7 @@ describe("platform admin and email notifications", () => {
     await expectAccess(admin.listUsers(owner.userId), 403, /Недостаточно прав для админки/);
     await expectAccess(admin.listWorkspaces(owner.userId), 403, /Недостаточно прав для админки/);
     await expectAccess(admin.listAudit(owner.userId), 403, /Недостаточно прав для админки/);
-    await expectAccess(admin.updatePlanLimits(owner.userId, "start", {
-      projects: 1,
-      socialAccounts: 1,
-      members: 1,
-      postsPerMonth: 1,
-    }), 403, /Недостаточно прав для админки/);
+    await expectAccess(admin.updatePlanLimits(owner.userId), 403, /Недостаточно прав для админки/);
   });
 
   it("lets a Superadmin read platform data and records grant/revoke in audit", async () => {
@@ -81,12 +76,7 @@ describe("platform admin and email notifications", () => {
 
     await admin.grantAdmin(actor.userId, target.address, "Support");
     await expectAccess(admin.grantAdmin(actor.userId, target.address, "Support"), 400, /уже является администратором/);
-    await expectAccess(admin.updatePlanLimits(target.userId, "start", {
-      projects: 3,
-      socialAccounts: 2,
-      members: 4,
-      postsPerMonth: 9,
-    }), 403, /только Superadmin/);
+    await expectAccess(admin.updatePlanLimits(target.userId), 403, /не продаёт тарифы/);
 
     await admin.revokeAdmin(actor.userId, target.userId);
     await expectAccess(admin.overview(target.userId), 403, /Недостаточно прав для админки/);
@@ -97,33 +87,12 @@ describe("platform admin and email notifications", () => {
     expect(audit.some((row) => row.action === "REVOKE_PLATFORM_ADMIN")).toBe(true);
   });
 
-  it("updates plan limits only for Superadmin and keeps the change", async () => {
+  it("does not let Superadmin manage commercial plans", async () => {
     const actor = await registerOwner("adm-plan");
     await makeSuperadmin(actor.userId);
-    const current = (await admin.listPlans(actor.userId)).find((plan) => plan.slug === "start");
-    expect(current).toBeTruthy();
-    const updated = await admin.updatePlanLimits(actor.userId, "start", {
-      projects: current!.projects,
-      socialAccounts: current!.socialAccounts,
-      members: current!.members,
-      postsPerMonth: 4242,
-    });
-    expect(updated.postsPerMonth).toBe(4242);
-    const again = await admin.listPlans(actor.userId);
-    expect(again.find((plan) => plan.slug === "start")?.postsPerMonth).toBe(4242);
-    await admin.updatePlanLimits(actor.userId, "start", {
-      projects: current!.projects,
-      socialAccounts: current!.socialAccounts,
-      members: current!.members,
-      postsPerMonth: current!.postsPerMonth,
-    });
-    const audit = await prisma.auditLog.findFirst({
-      where: { action: "UPDATE_PLAN_LIMITS", actorId: actor.userId },
-      orderBy: { createdAt: "desc" },
-    });
-    expect(audit?.details).toBe(
-      `start:${current!.projects}/${current!.socialAccounts}/${current!.members}/${current!.postsPerMonth}`,
-    );
+    await expectAccess(admin.listPlans(actor.userId), 403, /не продаёт тарифы/);
+    await expectAccess(admin.updatePlanLimits(actor.userId), 403, /не продаёт тарифы/);
+    expect(await prisma.auditLog.count({ where: { action: "UPDATE_PLAN_LIMITS", actorId: actor.userId } })).toBe(0);
   });
 
   it("bootstraps Superadmin from ADMIN_EMAILS and hides secrets in integrations", async () => {

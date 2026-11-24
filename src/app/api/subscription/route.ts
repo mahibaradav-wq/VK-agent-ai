@@ -1,5 +1,21 @@
-import { COMMERCIAL_BILLING_DISABLED_MESSAGE } from "@/modules/cabinet/commercial";
+import { commercialBillingGoneResponse } from "@/modules/cabinet/commercial";
 
 export async function GET() {
-  return Response.json({ ok: false, error: COMMERCIAL_BILLING_DISABLED_MESSAGE }, { status: 403 });
+  return commercialBillingGoneResponse();
+}
+
+export async function POST() {
+  return commercialBillingGoneResponse();
+}
+
+export async function PUT() {
+  return commercialBillingGoneResponse();
+}
+
+export async function PATCH() {
+  return commercialBillingGoneResponse();
+}
+
+export async function DELETE() {
+  return commercialBillingGoneResponse();
 }
