@@ -12,10 +12,11 @@
 |---|---|
 | Исходный SHA (PR #59) | `ed014ba8f049511438a565606abc13e30dd21ac6` |
 | Рабочая ветка | `cursor/vps-readiness-ee77` |
-| Итоговый SHA | `21649303f4c7ca2010a2014e8e3ec80efb76f1fb` |
+| PR готовности | [#60](https://github.com/mahibaradav-wq/VK-agent-ai/pull/60) |
+| Итоговый SHA (зелёный CI) | `82149232eed5d7b30c1346099f0567ca614f53be` |
 | База | PR [#59](https://github.com/mahibaradav-wq/VK-agent-ai/pull/59) `cursor/personal-openai-cabinet-ee77` |
-| `main` | `252230b`, не менялся |
-| PR #59 | не объединён |
+| `main` | `252230b21725318eb3952cec13a059b94b093692`, не менялся |
+| PR #59 | открыт, не объединён, HEAD `ed014ba` |
 
 ## Изменённые файлы
 
@@ -32,22 +33,27 @@
 5. Restore: один timestamp, SHA-256, staging медиа, отказ без подтверждения, сервисы не стартуют после ошибки.
 6. Отдельные `vps-migrate.sh` и `vps-rollback.sh` (сценарии A и B).
 7. `POLKA_REQUIRE_PROD_SECRETS` на app/worker; GitHub Deploy VPS требует фразу подтверждения и не стартует с `main` по умолчанию.
-8. Workflow `vps-readiness.yml` без SSH.
+8. Workflow `vps-readiness.yml` без SSH; runner `ubuntu-24.04` (Playwright 1.56 не ставит Chromium на ubuntu 26.04).
+9. Probe-дампы — plain SQL без `SET transaction_timeout`, чтобы клиент PostgreSQL 17 восстанавливал в сервер 16.
+10. Vitest-обёртка `vps-ops` получила timeout 120 с (иначе GitHub обрывал suite на дефолтных 5 с).
 
 ## Результаты проверок
 
 | Проверка | Результат |
 |---|---|
-| `npm run lint` | PASS |
-| `npm run typecheck` | PASS |
-| `npx vitest run` | PASS 52 files / 253 tests |
-| `npm run test:vps` (внутри vitest) | PASS 41 probe-сценариев |
-| `npm run test:e2e` | PASS 8 |
-| `npm run build` | PASS (предупреждения Turbopack ffmpeg spawn) |
+| `npm run lint` | PASS (локально и GitHub) |
+| `npm run typecheck` | PASS (локально и GitHub) |
+| `npx vitest run` / `npm test` | PASS 52 files / 253 tests |
+| `npm run test:vps` | PASS 41 probe-сценариев |
+| `npm run test:e2e` | PASS 8 локально; Playwright e2e PASS в workflow VPS readiness |
+| `npm run build` | PASS |
 | `npx prisma validate` | PASS |
+| `npx prisma migrate deploy` (тестовая БД CI) | PASS |
 | `npx prisma migrate status` (локальная тестовая БД) | PASS 17 migrations, up to date |
 | `bash -n` все VPS-скрипты | PASS |
 | тесты backup / restore / отказов / rollback --plan | PASS |
+| GitHub **CI Test** `8214923` | SUCCESS [45481119416](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45481119416) |
+| GitHub **VPS readiness** `8214923` | SUCCESS [45481119359](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45481119359) (syntax, SSH-guard, prisma, lint, typecheck, test, probe, build, image, e2e, secret-scan) |
 | единый OpenAI / AI-лимит / коммерция 410 | не ломались (vitest) |
 | Docker Compose backup на этом агенте | **BLOCKED** — Docker недоступен |
 | SSH / production deploy / production migrate | не выполнялись |
@@ -70,4 +76,4 @@
 
 **READY WITH WARNINGS.** Следующий этап — обследование VPS владельцем (Docker, тома, `.env.production` ключи без вывода значений, место, cron). Только после отдельного подтверждения: `vps-pull.sh --plan`, backup, `--apply`.
 
-Не deploy. Не SSH. Не merge в `main`.
+Не deploy. Не SSH. Не merge в `main`. Коммит этого отчёта может идти после зелёного SHA `8214923` и не меняет скрипты.
