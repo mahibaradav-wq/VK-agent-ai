@@ -82,20 +82,32 @@ export function createWorkspaceService(db: PrismaClient) {
 
       access.assertRoleChange(actor.role, actorId, targetUserId, target.role, nextRole);
 
-      const updated = await db.workspaceMember.update({
-        where: { id: target.id },
-        data: { role: nextRole },
+      return db.$transaction(async (tx) => {
+        const updated = await tx.workspaceMember.update({
+          where: { id: target.id },
+          data: { role: nextRole },
+        });
+
+        // Project grants are meaningful only for the Approver role.
+        // Remove them in the same transaction as demotion to prevent stale
+        // approvals from silently returning if the member is promoted later.
+        if (nextRole !== "Approver") {
+          await tx.projectAccess.deleteMany({
+            where: { workspaceId, userId: targetUserId },
+          });
+        }
+
+        await tx.auditLog.create({
+          data: {
+            action: "CHANGE_ROLE",
+            entityType: "workspace_member",
+            entityId: target.id,
+            actorId,
+            details: `${target.role}->${nextRole}`,
+          },
+        });
+        return updated;
       });
-      await db.auditLog.create({
-        data: {
-          action: "CHANGE_ROLE",
-          entityType: "workspace_member",
-          entityId: target.id,
-          actorId,
-          details: `${target.role}->${nextRole}`,
-        },
-      });
-      return updated;
     },
   };
 }

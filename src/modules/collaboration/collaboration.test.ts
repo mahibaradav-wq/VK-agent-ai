@@ -211,4 +211,39 @@ describe("collaboration invitations, approval and comments", () => {
     );
     expect(await prisma.projectAccess.count({ where: { workspaceId: owner.workspaceId, projectId: owner.projectId } })).toBe(0);
   });
+  it("clears Approver project grants when the member is demoted", async () => {
+    const owner = await registerOwner("col-demotion-owner");
+    const approver = await registerOwner("col-demotion-approver");
+    await workspaces.addMember(owner.userId, owner.workspaceId, approver.address, "Approver");
+    await collab.setProjectAccess(owner.userId, owner.workspaceId, approver.userId, [owner.projectId]);
+
+    expect(
+      await prisma.projectAccess.count({
+        where: { workspaceId: owner.workspaceId, userId: approver.userId },
+      }),
+    ).toBe(1);
+
+    await workspaces.changeRole(owner.userId, owner.workspaceId, approver.userId, "Editor");
+    expect(
+      await prisma.projectAccess.count({
+        where: { workspaceId: owner.workspaceId, userId: approver.userId },
+      }),
+    ).toBe(0);
+
+    await workspaces.changeRole(owner.userId, owner.workspaceId, approver.userId, "Approver");
+    expect(
+      await prisma.projectAccess.count({
+        where: { workspaceId: owner.workspaceId, userId: approver.userId },
+      }),
+    ).toBe(0);
+
+    const post = await draftPost(owner, "Проверка после повторного назначения");
+    await collab.submitForApproval(owner.userId, owner.workspaceId, post.id);
+    await expectAccess(
+      collab.approve(approver.userId, owner.workspaceId, post.id),
+      403,
+      /Нет права согласовывать этот проект/,
+    );
+  });
+
 });
