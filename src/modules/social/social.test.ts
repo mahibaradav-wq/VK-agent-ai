@@ -47,7 +47,7 @@ function email(label: string) {
   return `${label}.${Date.now()}.${Math.random().toString(16).slice(2)}@example.test`;
 }
 
-async function expectAccess(promise: Promise<unknown>, status: 400 | 403 | 404, message: RegExp) {
+async function expectAccess(promise: Promise<unknown>, status: 400 | 403 | 404 | 409, message: RegExp) {
   const error = await promise.then(
     () => {
       throw new Error("expected AccessError");
@@ -1547,5 +1547,53 @@ describe("social accounts", () => {
     expect(confirmed.status).toBe("published");
     await publishing.confirmManualVk(owner.userId, owner.workspaceId, post.id);
     expect(transport.methods.filter((method) => method === "wall.post")).toHaveLength(wallCalls);
+  });
+
+
+  it("rejects new and existing VK/Telegram connections for archived projects before API calls", async () => {
+    const owner = await registerOwner("soc-archived");
+    const otherProject = await projects.create(owner.userId, owner.workspaceId, { name: "Проект для переподключения" });
+    const social = createSocialService(prisma, {
+      telegram: scriptedTelegram({}),
+      vk: scriptedVk({}),
+    });
+
+    await projects.archive(owner.userId, owner.workspaceId, owner.projectId);
+    await expectAccess(
+      social.createRequiresSetup(owner.userId, owner.workspaceId, { platform: "telegram", projectId: owner.projectId }),
+      409,
+      /Архивный проект/,
+    );
+    const telegram = scriptedTelegram({});
+    const vk = scriptedVk({});
+    const guardedSocial = createSocialService(prisma, { telegram, vk });
+    await expectAccess(
+      guardedSocial.connectTelegram(owner.userId, owner.workspaceId, { token: BOT_TOKEN, projectId: owner.projectId }),
+      409,
+      /Архивный проект/,
+    );
+    await expectAccess(
+      guardedSocial.connectVk(owner.userId, owner.workspaceId, {
+        token: VK_COMMUNITY_TOKEN,
+        source: "https://vk.com/club242155421",
+        projectId: owner.projectId,
+      }),
+      409,
+      /Архивный проект/,
+    );
+    expect(telegram.calls).toHaveLength(0);
+    expect(vk.methods).toHaveLength(0);
+
+    const existing = await social.createRequiresSetup(owner.userId, owner.workspaceId, {
+      platform: "telegram",
+      projectId: otherProject.id,
+    });
+    await projects.archive(owner.userId, owner.workspaceId, otherProject.id);
+    await expectAccess(
+      guardedSocial.connectTelegram(owner.userId, owner.workspaceId, { token: BOT_TOKEN, accountId: existing.id }),
+      409,
+      /Архивный проект/,
+    );
+    expect(telegram.calls).toHaveLength(0);
   });
 });
