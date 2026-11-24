@@ -536,11 +536,15 @@ describe("publishing queue", () => {
     expect(bodies).toEqual({ telegram: "Текст для канала", vk: "Текст для стены" });
   });
 
-  it("reclaims a stale processing job instead of leaving the post locked", async () => {
+  it("parks a stale processing job for manual verification instead of risking a duplicate post", async () => {
     const owner = await registerOwner("pub-stale");
     const post = await draftWithTargets(owner, ["vk"], "Завис");
     await approveCurrent(owner, post.id);
-    const publishing = createPublishService(prisma, { queue: createInlineQueue() });
+    const vk = scripted("vk", [{ kind: "success", externalId: "must-not-send" }]);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: createAdapterRegistry([vk]),
+    });
     const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
     const stale = new Date("2026-10-14T12:00:00.000Z");
     await prisma.publishJob.update({
@@ -551,10 +555,159 @@ describe("publishing queue", () => {
     await prisma.postTarget.updateMany({ where: { postId: post.id }, data: { status: "publishing" } });
 
     const later = new Date("2026-10-14T12:05:00.000Z");
-    const results = await publishing.processDueJobs("worker-recover", later);
-    expect(results.some((item) => !item.skipped)).toBe(true);
-    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("failed");
-    expect((await prisma.publishJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("failed");
+    const results = await publishing.processDueJobs("worker-recover", later, owner.workspaceId);
+    expect(results).toHaveLength(0);
+    expect(vk.calls).toBe(0);
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("requires_manual_check");
+    expect((await prisma.publishJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("requires_manual_check");
+    expect((await prisma.postTarget.findFirstOrThrow({ where: { postId: post.id } })).status).toBe("requires_manual_check");
+    await expectAccess(
+      publishing.enqueue(owner.userId, owner.workspaceId, post.id),
+      400,
+      /неопределённые цели повторно не отправляются/,
+    );
+    expect(vk.calls).toBe(0);
+  });
+
+  it("parks a stale claimed job whose targets never left queued, so a worker crash before send cannot be retried blindly", async () => {
+    const owner = await registerOwner("pub-stale-queued");
+    const post = await draftWithTargets(owner, ["telegram"], "Завис до отправки");
+    await approveCurrent(owner, post.id);
+    const telegram = scripted("telegram", [{ kind: "success", externalId: "must-not-send" }]);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: createAdapterRegistry([telegram]),
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await prisma.publishJob.update({
+      where: { id: job.id },
+      data: {
+        status: "claimed",
+        claimedAt: new Date("2026-10-14T12:00:00.000Z"),
+        claimedBy: "dead-worker",
+        attemptCount: 1,
+      },
+    });
+    await prisma.post.update({ where: { id: post.id }, data: { status: "queued" } });
+
+    const results = await publishing.processDueJobs("worker-recover-queued", new Date("2026-10-14T12:05:00.000Z"), owner.workspaceId);
+    expect(results).toHaveLength(0);
+    expect(telegram.calls).toBe(0);
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("requires_manual_check");
+    expect((await prisma.postTarget.findFirstOrThrow({ where: { postId: post.id } })).status).toBe("requires_manual_check");
+    await expectAccess(
+      publishing.enqueue(owner.userId, owner.workspaceId, post.id),
+      400,
+      /неопределённые цели повторно не отправляются/,
+    );
+  });
+
+  it("keeps an already published Telegram target when a stale VK send is parked", async () => {
+    const owner = await registerOwner("pub-stale-mixed");
+    const post = await draftWithTargets(owner, ["vk", "telegram"], "Смешанный завис");
+    await approveCurrent(owner, post.id);
+    const vk = scripted("vk", [{ kind: "success", externalId: "must-not-send" }]);
+    const telegram = scripted("telegram", [{ kind: "success", externalId: "must-not-send" }]);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: createAdapterRegistry([vk, telegram]),
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await prisma.publishJob.update({
+      where: { id: job.id },
+      data: {
+        status: "processing",
+        claimedAt: new Date("2026-10-14T12:00:00.000Z"),
+        claimedBy: "dead-worker",
+        attemptCount: 1,
+      },
+    });
+    await prisma.post.update({ where: { id: post.id }, data: { status: "publishing" } });
+    await prisma.postTarget.update({
+      where: { id: (await prisma.postTarget.findFirstOrThrow({ where: { postId: post.id, platform: "telegram" } })).id },
+      data: { status: "published", externalId: "tg-kept" },
+    });
+    await prisma.postTarget.update({
+      where: { id: (await prisma.postTarget.findFirstOrThrow({ where: { postId: post.id, platform: "vk" } })).id },
+      data: { status: "publishing" },
+    });
+
+    await publishing.processDueJobs("worker-recover-mixed", new Date("2026-10-14T12:05:00.000Z"), owner.workspaceId);
+    const stored = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, include: { targets: true } });
+    expect(stored.status).toBe("requires_manual_check");
+    expect(stored.targets.find((target) => target.platform === "telegram")?.status).toBe("published");
+    expect(stored.targets.find((target) => target.platform === "vk")?.status).toBe("requires_manual_check");
+    expect(vk.calls).toBe(0);
+    expect(telegram.calls).toBe(0);
+    await expectAccess(
+      publishing.enqueue(owner.userId, owner.workspaceId, post.id),
+      400,
+      /неопределённые цели повторно не отправляются/,
+    );
+  });
+
+  it("parks a stale job only once when two workers recover it concurrently", async () => {
+    const owner = await registerOwner("pub-stale-race");
+    const post = await draftWithTargets(owner, ["vk"], "Гонка");
+    await approveCurrent(owner, post.id);
+    const vk = scripted("vk", [{ kind: "success", externalId: "must-not-send" }]);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: createAdapterRegistry([vk]),
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await prisma.publishJob.update({
+      where: { id: job.id },
+      data: {
+        status: "processing",
+        claimedAt: new Date("2026-10-14T12:00:00.000Z"),
+        claimedBy: "dead-worker",
+        attemptCount: 1,
+      },
+    });
+    await prisma.post.update({ where: { id: post.id }, data: { status: "publishing" } });
+    await prisma.postTarget.updateMany({ where: { postId: post.id }, data: { status: "publishing" } });
+
+    const later = new Date("2026-10-14T12:05:00.000Z");
+    const [first, second] = await Promise.all([
+      publishing.processDueJobs("worker-race-a", later, owner.workspaceId),
+      publishing.processDueJobs("worker-race-b", later, owner.workspaceId),
+    ]);
+    expect(first).toHaveLength(0);
+    expect(second).toHaveLength(0);
+    expect(vk.calls).toBe(0);
+    expect(await prisma.publishJob.count({ where: { postId: post.id } })).toBe(1);
+    expect((await prisma.publishJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("requires_manual_check");
+    expect((await prisma.postTarget.findFirstOrThrow({ where: { postId: post.id } })).status).toBe("requires_manual_check");
+  });
+
+  it("stops the next adapter call as soon as the project is archived mid-publish", async () => {
+    const owner = await registerOwner("pub-archive-mid");
+    const post = await draftWithTargets(owner, ["telegram", "vk"], "Архив на середине");
+    await approveCurrent(owner, post.id);
+    const telegram = {
+      platform: "telegram",
+      calls: 0,
+      async publish() {
+        telegram.calls += 1;
+        await projects.archive(owner.userId, owner.workspaceId, owner.projectId);
+        return { kind: "success" as const, externalId: "tg-mid" };
+      },
+    };
+    const vk = scripted("vk", [{ kind: "success", externalId: "must-not-send" }]);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: createAdapterRegistry([telegram, vk]),
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-archive-mid", new Date("2026-10-15T12:00:00.000Z"));
+    const stored = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, include: { targets: true } });
+    expect(telegram.calls).toBe(1);
+    expect(vk.calls).toBe(0);
+    expect(stored.targets.find((target) => target.platform === "telegram")?.status).toBe("published");
+    expect(stored.targets.find((target) => target.platform === "vk")?.status).toBe("cancelled");
+    expect(stored.status).toBe("published");
+    expect((await prisma.publishJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("completed");
   });
 
 
