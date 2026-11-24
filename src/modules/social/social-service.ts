@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 
-import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
+import { AccessError, assertActiveProject, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import { getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { lockWorkspaceMetric } from "@/modules/billing/usage";
@@ -121,6 +121,12 @@ export function createSocialService(
     };
   }
 
+  async function assertProjectIsActive(workspaceId: string, projectId: string | null | undefined) {
+    if (!projectId) return;
+    const project = await db.project.findUnique({ where: { id: projectId } });
+    assertActiveProject(workspaceId, project);
+  }
+
   async function loadBoundAccount(workspaceId: string, accountId: string) {
     const account = await db.socialAccount.findUnique({
       where: { id: accountId },
@@ -178,8 +184,7 @@ export function createSocialService(
         throw new AccessError(400, "Неизвестная платформа.");
       }
       if (input.projectId) {
-        const project = await db.project.findUnique({ where: { id: input.projectId } });
-        assertWorkspaceBound(workspaceId, project, "Проект");
+        await assertProjectIsActive(workspaceId, input.projectId);
       }
 
       const account = await db.$transaction(async (tx) => {
@@ -238,8 +243,13 @@ export function createSocialService(
         );
       }
       if (input.projectId) {
-        const project = await db.project.findUnique({ where: { id: input.projectId } });
-        assertWorkspaceBound(workspaceId, project, "Проект");
+        await assertProjectIsActive(workspaceId, input.projectId);
+      }
+
+      if (input.accountId) {
+        const existing = await db.socialAccount.findUnique({ where: { id: input.accountId } });
+        assertWorkspaceBound(workspaceId, existing, "Социальный аккаунт");
+        await assertProjectIsActive(workspaceId, existing.projectId);
       }
 
       const me = await telegram.request(token, "getMe");
@@ -360,6 +370,7 @@ export function createSocialService(
       await access.requirePermission(userId, workspaceId, "social.connect");
       rejectPassword(input);
       const account = await loadBoundAccount(workspaceId, input.accountId);
+      await assertProjectIsActive(workspaceId, account.projectId);
       if (account.platform !== "telegram") {
         throw new AccessError(400, "Этот аккаунт не Telegram.");
       }
@@ -367,8 +378,7 @@ export function createSocialService(
         throw new AccessError(400, "Сначала подключите бота токеном от @BotFather.");
       }
       if (input.projectId) {
-        const project = await db.project.findUnique({ where: { id: input.projectId } });
-        assertWorkspaceBound(workspaceId, project, "Проект");
+        await assertProjectIsActive(workspaceId, input.projectId);
       }
 
       let token: string;
@@ -492,8 +502,13 @@ export function createSocialService(
       }
       const parsed = parseVkCommunitySource(input.source);
       if (input.projectId) {
-        const project = await db.project.findUnique({ where: { id: input.projectId } });
-        assertWorkspaceBound(workspaceId, project, "Проект");
+        await assertProjectIsActive(workspaceId, input.projectId);
+      }
+
+      if (input.accountId) {
+        const existing = await db.socialAccount.findUnique({ where: { id: input.accountId } });
+        assertWorkspaceBound(workspaceId, existing, "Социальный аккаунт");
+        await assertProjectIsActive(workspaceId, existing.projectId);
       }
 
       const club = /^(club|public|event)(\d+)$/i.exec(parsed.screenName);
