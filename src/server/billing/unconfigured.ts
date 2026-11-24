@@ -1,18 +1,16 @@
 import { AccessError } from "@/modules/access/permissions";
+import { COMMERCIAL_BILLING_DISABLED_MESSAGE } from "@/modules/cabinet/commercial";
 import type { BillingProvider } from "@/server/billing/types";
 
 export function createUnconfiguredBillingProvider(): BillingProvider {
   return {
-    name: "unconfigured",
+    name: "disabled",
     ready: false,
     async createCheckout() {
-      throw new AccessError(
-        400,
-        "Оплата недоступна: задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY. Редирект не считается оплатой.",
-      );
+      throw new AccessError(403, COMMERCIAL_BILLING_DISABLED_MESSAGE);
     },
     async verifyWebhook() {
-      throw new AccessError(400, "Проверка webhook недоступна: задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY.");
+      throw new AccessError(403, COMMERCIAL_BILLING_DISABLED_MESSAGE);
     },
   };
 }

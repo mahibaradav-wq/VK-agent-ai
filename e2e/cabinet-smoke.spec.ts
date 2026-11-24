@@ -12,7 +12,7 @@ test("cabinet pages follow the approved menu", async ({ page }) => {
   await expect(page.getByRole("navigation", { name: "Кабинет" }).getByRole("link", { name: /API/ })).toBeVisible();
   await page.getByRole("navigation", { name: "Кабинет" }).getByRole("link", { name: /API/ }).click();
   await expect(page).toHaveURL(/\/app\/balance/);
-  await expect(page.getByText("ChatGPT")).toBeVisible();
+  await expect(page.getByText("ChatGPT", { exact: true })).toBeVisible();
   await page.goto("/app");
   await expect(page.getByRole("link", { name: "Публикации" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Подписка" })).toHaveCount(0);
@@ -25,7 +25,7 @@ test("cabinet pages follow the approved menu", async ({ page }) => {
   await expect(page.getByText(/без токена публикация не имитируется/i)).toBeVisible();
 
   await page.goto("/app/studio");
-  await expect(page.getByRole("heading", { name: "Пост + визуал" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Пост + визуал", level: 1 })).toBeVisible();
   await expect(page.getByRole("button", { name: "Сгенерировать текст" })).toHaveCount(0);
   await expect(page.getByText("Здесь лежит неопубликованный пост")).toHaveCount(0);
   await page.getByRole("button", { name: "Карусель" }).click();
@@ -35,7 +35,7 @@ test("cabinet pages follow the approved menu", async ({ page }) => {
   await expect(page).toHaveURL(/\/app\/studio/);
 
   await page.goto("/app/products");
-  await expect(page.getByText(/Ozon, Wildberries/i)).toBeVisible();
+  await expect(page.getByText(/Ozon, Wildberries/i).first()).toBeVisible();
 
   await page.goto("/app/calendar");
   await expect(page.getByText("Календарь").first()).toBeVisible();

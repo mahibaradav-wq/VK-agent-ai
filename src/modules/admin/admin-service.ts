@@ -2,19 +2,11 @@ import type { PrismaClient } from "@prisma/client";
 
 import { AccessError } from "@/modules/access/permissions";
 import { canMutatePlatform, parsePlatformAdminRole, requirePlatformAdmin } from "@/modules/admin/access";
-import { ensureCanonicalPlans } from "@/modules/billing/plans";
+import { COMMERCIAL_BILLING_DISABLED_MESSAGE } from "@/modules/cabinet/commercial";
 import { getAiStatus } from "@/server/ai";
-import { getBillingStatus } from "@/server/billing";
 import { getEmailStatus } from "@/server/notifications";
 import { getPublishQueue } from "@/server/queue";
 import { storage } from "@/server/storage";
-
-function asLimit(value: number, label: string) {
-  if (!Number.isInteger(value) || value < 1 || value > 1_000_000) {
-    throw new AccessError(400, `Лимит «${label}» должен быть целым числом от 1.`);
-  }
-  return value;
-}
 
 export function createAdminService(db: PrismaClient) {
   async function requireAdmin(userId: string) {
@@ -75,7 +67,6 @@ export function createAdminService(db: PrismaClient) {
         take: 200,
         include: {
           members: true,
-          subscription: { include: { plan: true } },
           _count: { select: { posts: true, socialAccounts: true } },
         },
       });
@@ -86,55 +77,17 @@ export function createAdminService(db: PrismaClient) {
         members: row.members.length,
         posts: row._count.posts,
         socialAccounts: row._count.socialAccounts,
-        plan: row.subscription?.plan.slug ?? "start",
-        subscriptionStatus: row.subscription?.status ?? "free",
-        paidAt: row.subscription?.paidAt ?? null,
       }));
     },
 
     async listPlans(userId: string) {
       await requireAdmin(userId);
-      await ensureCanonicalPlans(db);
-      return db.plan.findMany({
-        where: { slug: { in: ["start", "team", "business"] } },
-        orderBy: { slug: "asc" },
-      });
+      throw new AccessError(403, COMMERCIAL_BILLING_DISABLED_MESSAGE);
     },
 
-    async updatePlanLimits(
-      userId: string,
-      slug: string,
-      input: {
-        projects: number;
-        socialAccounts: number;
-        members: number;
-        postsPerMonth: number;
-      },
-    ) {
-      const actor = await requireSuperadmin(userId);
-      const plan = await db.plan.findUnique({ where: { slug } });
-      if (!plan || !["start", "team", "business"].includes(slug)) {
-        throw new AccessError(404, "Тариф не найден.");
-      }
-      const updated = await db.plan.update({
-        where: { id: plan.id },
-        data: {
-          projects: asLimit(input.projects, "проекты"),
-          socialAccounts: asLimit(input.socialAccounts, "аккаунты"),
-          members: asLimit(input.members, "участники"),
-          postsPerMonth: asLimit(input.postsPerMonth, "публикации"),
-        },
-      });
-      await db.auditLog.create({
-        data: {
-          action: "UPDATE_PLAN_LIMITS",
-          entityType: "plan",
-          entityId: updated.id,
-          actorId: actor.user.id,
-          details: `${slug}:${updated.projects}/${updated.socialAccounts}/${updated.members}/${updated.postsPerMonth}`,
-        },
-      });
-      return updated;
+    async updatePlanLimits(userId: string) {
+      await requireAdmin(userId);
+      throw new AccessError(403, COMMERCIAL_BILLING_DISABLED_MESSAGE);
     },
 
     async listIntegrations(userId: string) {
@@ -162,12 +115,10 @@ export function createAdminService(db: PrismaClient) {
           note: ai.ready && ai.imageReady ? `${ai.model} / ${ai.imageModel}` : "ключ модели не задан",
         },
         {
-          name: "Биллинг",
-          ready: getBillingStatus().ready,
-          provider: getBillingStatus().provider,
-          note: getBillingStatus().ready
-            ? `провайдер ${getBillingStatus().provider}`
-            : "ЮKassa не задана",
+          name: "Платежи",
+          ready: false,
+          provider: "disabled",
+          note: "личный кабинет не продаёт тарифы",
         },
         {
           name: "Почта",

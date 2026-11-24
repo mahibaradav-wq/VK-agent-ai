@@ -98,7 +98,6 @@ npm run build
 - `/admin` — обзор платформы (только PlatformAdmin)
 - `/admin/users` — пользователи и выдача ролей админки
 - `/admin/workspaces` — все рабочие пространства
-- `/admin/plans` — лимиты тарифов
 - `/admin/integrations` — статусы интеграций без секретов
 - `/admin/queues` — очередь публикаций
 - `/admin/errors` — сбойные задачи и аккаунты

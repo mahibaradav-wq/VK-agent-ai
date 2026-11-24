@@ -34,12 +34,10 @@
 
 ## Биллинг
 
-- Предпочтительный провайдер — ЮKassa (`YOOKASSA_SHOP_ID` + `YOOKASSA_SECRET_KEY`) для самозанятого или ИП.
-- `/app/subscription` открывает `confirmation_url` ЮKassa. Редирект назад не ставит paid.
-- Webhook `POST /api/webhooks/billing`: статус берётся повторным `GET /payments/{id}`, не из тела уведомления.
-- Без ключей ЮKassa кнопка оплаты показывает настройку и не имитирует успех.
-- `BILLING_WEBHOOK_SECRET` — только тестовый HMAC-стенд.
-- Replay того же `PaymentEvent` не меняет подписку.
+- Личный кабинет не продаёт тарифы и не принимает ЮKassa.
+- `BILLING_CHECKOUT_ENABLED`, `YOOKASSA_*` и `BILLING_WEBHOOK_SECRET` не включают оплату.
+- `/api/subscription` и `/api/webhooks/billing` отвечают 410.
+- Таблицы `Plan` / `Subscription` / `CheckoutSession` / `PaymentEvent` оставлены в PostgreSQL без рабочих сценариев. Учёт AI идёт через `UsageRecord`.
 
 ## Хранилище
 

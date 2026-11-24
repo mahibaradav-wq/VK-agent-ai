@@ -21,14 +21,11 @@ export default async function AdminWorkspacesPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Админка" title="Workspaces" description="Тариф и состав каждого пространства." />
+      <PageHeader eyebrow="Админка" title="Workspaces" description="Состав каждого пространства. Тарифы не используются." />
       <Container className="grid gap-4 pb-20">
         {data.map((workspace) => (
           <Card key={workspace.id}>
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">
-              {workspace.plan} · {workspace.subscriptionStatus}
-              {workspace.paidAt ? " · оплачен" : " · не оплачен"}
-            </p>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-dark">личный кабинет</p>
             <h2 className="mt-2 text-xl font-black text-ink">{workspace.name}</h2>
             <p className="mt-2 text-sm text-ink/70">
               участников {workspace.members} · публикаций {workspace.posts} · аккаунтов {workspace.socialAccounts}

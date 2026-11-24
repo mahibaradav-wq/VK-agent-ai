@@ -18,7 +18,8 @@ import {
   videoFrameCount,
 } from "@/modules/ai/visual";
 import { createAiConnectionService } from "@/modules/ai/provider-service";
-import { getUsage, releaseUsage, reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
+import { getUsage, lockWorkspaceMetric, releaseUsage, reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
+import { assertPaidAiAllowed, cabinetMonthlyAiLimit } from "@/server/ai/live-guard";
 import { createMediaService } from "@/modules/media/media-service";
 import { defaultPublishPlatforms, parsePlatforms, parseStoredPlatforms } from "@/modules/posts/platforms";
 import { createPostService } from "@/modules/posts/post-service";
@@ -152,6 +153,7 @@ export function createAiService(
   const media = createMediaService(db, storageDriver);
   const connections = options?.connections ?? createAiConnectionService(db);
   const injected = options?.provider;
+  const skipPaidGate = Boolean(injected || options?.connections);
   const monthlyLimit = options?.monthlyLimit ?? DEFAULT_MONTHLY_LIMIT;
   const now = options?.now ?? (() => new Date());
 
@@ -218,7 +220,51 @@ export function createAiService(
     if (options?.monthlyLimit != null) {
       return options.monthlyLimit;
     }
-    return monthlyLimit;
+    if (skipPaidGate) {
+      return monthlyLimit;
+    }
+    return cabinetMonthlyAiLimit() ?? 0;
+  }
+
+  async function beginPaidAi(workspaceId: string, units: number, exhaustedMessage: string) {
+    if (!skipPaidGate) {
+      try {
+        assertPaidAiAllowed();
+      } catch (error) {
+        if (error instanceof AccessError) {
+          await db.auditLog.create({
+            data: {
+              action: "AI_PAID_DENIED",
+              entityType: "workspace",
+              entityId: workspaceId,
+              details: error.message.slice(0, 180),
+            },
+          });
+        }
+        throw error;
+      }
+    }
+
+    const at = now();
+    const limit = await resolveLimit(workspaceId);
+    try {
+      return await db.$transaction(async (tx) => {
+        await lockWorkspaceMetric(tx, workspaceId, USAGE_METRICS.ai);
+        return reserveUsage(tx, workspaceId, USAGE_METRICS.ai, limit, at, exhaustedMessage, units);
+      });
+    } catch (error) {
+      if (!skipPaidGate && error instanceof AccessError) {
+        await db.auditLog.create({
+          data: {
+            action: "AI_PAID_DENIED",
+            entityType: "workspace",
+            entityId: workspaceId,
+            details: "budget_exhausted",
+          },
+        });
+      }
+      throw error;
+    }
   }
 
   return {
@@ -304,15 +350,11 @@ export function createAiService(
         );
       }
 
-      const at = now();
       const limit = await resolveLimit(workspaceId);
-      const periodStart = await reserveUsage(
-        db,
+      const periodStart = await beginPaidAi(
         workspaceId,
-        USAGE_METRICS.ai,
-        limit,
-        at,
-        `Лимит AI-генераций на месяц исчерпан (${limit}).`,
+        1,
+        `Общий лимит AI-запросов кабинета на месяц исчерпан (${limit}).`,
       );
       try {
         const generated = await callWithFallback(workspaceId, role, (item) =>
@@ -505,22 +547,17 @@ export function createAiService(
         );
       }
 
-      const at = now();
       const limit = await resolveLimit(workspaceId);
-      const periodStart = await reserveUsage(
-        db,
+      const periodStart = await beginPaidAi(
         workspaceId,
-        USAGE_METRICS.ai,
-        limit,
-        at,
-        visualKind === "carousel"
-          ? `Агенту нужны ${usageUnits} генерации (${publishPlatforms.length > 1 ? "тексты Telegram и ВК" : "текст"} и ${slideCount} карточек). Лимит AI на месяц исчерпан (${limit}).`
-          : visualKind === "video"
-            ? `Агенту нужны ${usageUnits} генерации (${publishPlatforms.length > 1 ? "тексты Telegram и ВК" : "текст"} и ${slideCount} кадров ролика ${videoSeconds} с). Лимит AI на месяц исчерпан (${limit}).`
-          : publishPlatforms.length > 1
-            ? `Агенту нужны ${usageUnits} генерации (текст Telegram, текст ВК и визуал). Лимит AI на месяц исчерпан (${limit}).`
-            : `Агенту нужны две генерации (текст и визуал). Лимит AI на месяц исчерпан (${limit}).`,
         usageUnits,
+        visualKind === "carousel"
+          ? `Агенту нужны ${usageUnits} генерации (${publishPlatforms.length > 1 ? "тексты Telegram и ВК" : "текст"} и ${slideCount} карточек). Общий лимит AI кабинета исчерпан (${limit}).`
+          : visualKind === "video"
+            ? `Агенту нужны ${usageUnits} генерации (${publishPlatforms.length > 1 ? "тексты Telegram и ВК" : "текст"} и ${slideCount} кадров ролика ${videoSeconds} с). Общий лимит AI кабинета исчерпан (${limit}).`
+          : publishPlatforms.length > 1
+            ? `Агенту нужны ${usageUnits} генерации (текст Telegram, текст ВК и визуал). Общий лимит AI кабинета исчерпан (${limit}).`
+            : `Агенту нужны две генерации (текст и визуал). Общий лимит AI кабинета исчерпан (${limit}).`,
       );
 
       try {
@@ -694,16 +731,11 @@ export function createAiService(
       const slideCount = existingVideo ? videoFrameCount(defaultVideoSeconds) : Math.max(1, post.media.length);
       const platforms = defaultPublishPlatforms(post.targets.map((target) => target.platform));
       const usageUnits = (rewriteText ? platforms.length : 0) + (rewriteVisual ? slideCount : 0);
-      const at = now();
       const limit = await resolveLimit(workspaceId);
-      const periodStart = await reserveUsage(
-        db,
+      const periodStart = await beginPaidAi(
         workspaceId,
-        USAGE_METRICS.ai,
-        limit,
-        at,
-        `Лимит AI на месяц исчерпан (${limit}).`,
         usageUnits,
+        `Общий лимит AI-запросов кабинета на месяц исчерпан (${limit}).`,
       );
       try {
         let title = version.title;

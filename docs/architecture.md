@@ -212,7 +212,6 @@ flowchart LR
 | `/admin` | Обзор |
 | `/admin/users` | Пользователи |
 | `/admin/workspaces` | Workspaces |
-| `/admin/plans` | Тарифы |
 | `/admin/integrations` | Интеграции |
 | `/admin/queues` | Очереди |
 | `/admin/audit` | Audit log |
@@ -231,8 +230,8 @@ flowchart LR
 | `/api/ai` | AI requests |
 | `/api/analytics` | Analytics |
 | `/api/team` | Team and invitations |
-| `/api/subscription` | Subscription state |
-| `/api/webhooks/billing` | Billing webhooks |
+| `/api/subscription` | Коммерческая подписка исключена (410) |
+| `/api/webhooks/billing` | Коммерческий webhook исключён (410) |
 | `/api/webhooks/social/[platform]` | Social callbacks/webhooks |
 
 ## 7. Модель данных

@@ -71,12 +71,18 @@ export default async function ConnectionsPage() {
         ) : (
           <StatusBanner tone="warning">Выберите проект, чтобы подключить магазины.</StatusBanner>
         )}
+        {accounts.some((account) => !account.projectId) ? (
+          <StatusBanner tone="warning">
+            Есть токен без проекта. Он хранится, но публикация не берёт его автоматически — подключите ВК и Telegram у
+            конкретного клуба.
+          </StatusBanner>
+        ) : null}
         <SocialAccountsBoard
           workspaceId={activeMembership.workspaceId}
           projectId={activeProject?.id}
           canConnect={hasPermission(activeMembership.role, "social.connect")}
           accounts={accounts
-            .filter((account) => !activeProject || account.projectId === activeProject.id || !account.projectId)
+            .filter((account) => Boolean(activeProject && account.projectId === activeProject.id))
             .map((account) => ({
               id: account.id,
               platform: account.platform,

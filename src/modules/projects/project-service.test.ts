@@ -135,4 +135,45 @@ describe("starter project", () => {
     }
     expect(await prisma.project.count({ where: { workspaceId, archivedAt: null } })).toBe(PERSONAL_ACTIVE_PROJECT_LIMIT);
   });
+
+  it("restores an archived project unless the active cap is already full", async () => {
+    const address = email("project-restore");
+    await auth.register(address, "password123");
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { email: address },
+      include: { memberships: true },
+    });
+    const workspaceId = user.memberships[0]?.workspaceId ?? "";
+    const extra = await projects.create(user.id, workspaceId, { name: "Второй" });
+    await projects.archive(user.id, workspaceId, extra.id);
+    const restored = await projects.restore(user.id, workspaceId, extra.id);
+    expect(restored.archivedAt).toBeNull();
+
+    await projects.archive(user.id, workspaceId, extra.id);
+    await Promise.all(
+      Array.from({ length: PERSONAL_ACTIVE_PROJECT_LIMIT - 1 }, (_, index) =>
+        projects.create(user.id, workspaceId, { name: `Заполнение ${index + 1}` }),
+      ),
+    );
+    await expect(projects.restore(user.id, workspaceId, extra.id)).rejects.toMatchObject({
+      status: 400,
+      message: /не больше 10 активных проектов/,
+    });
+
+    const archived = await projects.listArchived(user.id, workspaceId);
+    expect(archived.map((item) => item.id)).toContain(extra.id);
+    expect((await projects.list(user.id, workspaceId)).map((item) => item.id)).not.toContain(extra.id);
+
+    const strangerAddress = email("project-restore-stranger");
+    await auth.register(strangerAddress, "password123");
+    const stranger = await prisma.user.findUniqueOrThrow({
+      where: { email: strangerAddress },
+      include: { memberships: true },
+    });
+    const strangerWorkspaceId = stranger.memberships[0]?.workspaceId ?? "";
+    await expect(projects.listArchived(stranger.id, strangerWorkspaceId)).resolves.toEqual([]);
+    await expect(projects.restore(stranger.id, strangerWorkspaceId, extra.id)).rejects.toMatchObject({
+      status: 403,
+    });
+  });
 });

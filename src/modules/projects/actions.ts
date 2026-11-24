@@ -68,11 +68,29 @@ export async function archiveProject(formData: FormData) {
       readField(formData, "workspaceId"),
       readField(formData, "projectId"),
     );
+    revalidatePath("/app");
     revalidatePath("/app/projects");
   } catch (error) {
     if (error instanceof AccessError) {
       throw error;
     }
     throw new AccessError(403, "Не удалось архивировать проект.");
+  }
+}
+
+export async function restoreProject(formData: FormData) {
+  try {
+    await createProjectService(prisma).restore(
+      await requireUserId(),
+      readField(formData, "workspaceId"),
+      readField(formData, "projectId"),
+    );
+    revalidatePath("/app");
+    revalidatePath("/app/projects");
+  } catch (error) {
+    if (error instanceof AccessError) {
+      throw error;
+    }
+    throw new AccessError(403, "Не удалось восстановить проект.");
   }
 }

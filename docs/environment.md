@@ -18,9 +18,10 @@
 | Переменная | Назначение |
 |---|---|
 | `AUTH_DEV_MAILBOX=true` | Письма подтверждения, сброса, приглашений и уведомлений пишутся в `/dev/mailbox` |
-| `AUTH_ALLOW_PUBLIC_REGISTRATION=false` | Закрывает публичную регистрацию. Первый владелец на пустой БД и приглашённые email проходят |
+| `AUTH_ALLOW_PUBLIC_REGISTRATION=true` | Открывает публичную регистрацию. Без флага после первого владельца остаются только приглашения |
 | `STORAGE_DRIVER=local` | Файлы в `LOCAL_STORAGE_DIR` (по умолчанию `./data/media`) |
-| `AI_LIVE_ENABLED=true` | Разрешает платные вызовы OpenAI и чтение баланса. Пока флаг не `true`, live-запросы не идут |
+| `AI_LIVE_ENABLED=true` | Разрешает платные вызовы OpenAI вместе с `AI_MONTHLY_HARD_LIMIT`. Пока оба не заданы, live-запросы не идут |
+| `AI_MONTHLY_HARD_LIMIT` | Общий месячный лимит платных AI-операций кабинета (целое ≥ 1) |
 
 В production `AUTH_DEV_MAILBOX` не задают. Иначе стенд писем станет публичной утечкой токенов. Для личного кабинета после первого владельца задайте `AUTH_ALLOW_PUBLIC_REGISTRATION=false`. `AI_LIVE_ENABLED` не включайте, пока не согласован числовой бюджет.
 
@@ -31,8 +32,6 @@
 | `TOKEN_ENCRYPTION_KEY` | Отдельный случайный ключ AES-256 для токенов соцаккаунтов; обязателен в production, минимум 32 символа, не совпадает с `AUTH_SECRET` | В development допускается fallback на `AUTH_SECRET`; в production шифрование без отдельного ключа блокируется. Старые токены можно расшифровать legacy-ключом `AUTH_SECRET`. |
 | `REDIS_URL` + `QUEUE_DRIVER=redis` | BullMQ | Задачи пишутся в PostgreSQL, диспетчер Redis не стартует |
 | `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_IMAGE_MODEL` | запасной AI-провайдер, если в кабинете нет подключённого провайдера | UI предлагает подключить ChatGPT; без ключа генерация не имитируется. Счётчик usage безлимитен (`0`) и не является бюджетом |
-| `YOOKASSA_SHOP_ID` + `YOOKASSA_SECRET_KEY` | ЮKassa. В личном кабинете checkout из UI выключен, таблицы не удаляются | Checkout не имитирует оплату |
-| `BILLING_WEBHOOK_SECRET` | запасной HMAC-стенд для тестов | Не нужен, если задана ЮKassa |
 | `ADMIN_EMAILS` | Email через запятую → Superadmin при первом заходе в `/admin` | Админка пуста, пока роль не выдана |
 | `EMAIL_API_KEY`, `EMAIL_API_URL`, `EMAIL_FROM` | Внешняя почта уведомлений | Без mailbox и без ключа письмо не отправляется |
 | `STORAGE_DRIVER=s3` и `S3_*` | Объектное хранилище | Локальный диск или отказ загрузки |

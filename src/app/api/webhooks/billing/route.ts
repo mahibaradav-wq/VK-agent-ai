@@ -1,16 +1,21 @@
-import { AccessError } from "@/modules/access/permissions";
-import { createBillingService } from "@/modules/billing/billing-service";
-import { prisma } from "@/server/db/prisma";
+import { commercialBillingGoneResponse } from "@/modules/cabinet/commercial";
 
-export async function POST(request: Request) {
-  const rawBody = await request.text();
-  const signature = request.headers.get("x-billing-signature") ?? "";
-  try {
-    const result = await createBillingService(prisma).handleWebhook(rawBody, signature);
-    return Response.json({ ok: true, replay: result.replay, status: result.status });
-  } catch (error) {
-    const message = error instanceof AccessError ? error.message : "Webhook отклонён.";
-    const status = error instanceof AccessError ? error.status : 502;
-    return Response.json({ ok: false, error: message }, { status });
-  }
+export async function GET() {
+  return commercialBillingGoneResponse();
+}
+
+export async function POST() {
+  return commercialBillingGoneResponse();
+}
+
+export async function PUT() {
+  return commercialBillingGoneResponse();
+}
+
+export async function PATCH() {
+  return commercialBillingGoneResponse();
+}
+
+export async function DELETE() {
+  return commercialBillingGoneResponse();
 }

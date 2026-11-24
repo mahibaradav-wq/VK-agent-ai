@@ -22,8 +22,9 @@ export default function PricingPage() {
       <Container className="max-w-2xl pb-20">
         <Card className="grid gap-4">
           <p className="text-sm leading-6 text-ink/80">
-            Таблицы Plan/Subscription и webhook ЮKassa остаются в коде для обратимости и не удаляются.
-            В целевом сценарии оплата, смена тарифа и публичная витрина цен не используются.
+            Оплата, смена тарифа и витрина цен из приложения исключены. Checkout ЮKassa и
+            `BILLING_CHECKOUT_ENABLED` ничего не включают. Таблицы Plan/Subscription остаются в
+            PostgreSQL без рабочих сценариев, чтобы не ломать историю миграций.
           </p>
           <p className="text-sm leading-6 text-ink/80">
             Войдите в кабинет или вернитесь на главную. Новый аккаунт на рабочем сайте создаётся только

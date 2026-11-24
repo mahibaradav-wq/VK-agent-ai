@@ -1,5 +1,7 @@
 "use server";
 
+import { COMMERCIAL_BILLING_DISABLED_MESSAGE } from "@/modules/cabinet/commercial";
+
 export type BillingFormState = {
   status: "idle" | "invalid" | "success";
   message: string;
@@ -7,19 +9,13 @@ export type BillingFormState = {
 
 const personalCabinetBilling: BillingFormState = {
   status: "invalid",
-  message: "Личный кабинет не продаёт тарифы. Checkout ЮKassa и смена подписки из UI выключены.",
+  message: COMMERCIAL_BILLING_DISABLED_MESSAGE,
 };
 
-export async function startPlanCheckout(
-  _prev: BillingFormState,
-  _formData: FormData,
-): Promise<BillingFormState> {
+export async function startPlanCheckout(): Promise<BillingFormState> {
   return personalCabinetBilling;
 }
 
-export async function cancelSubscription(
-  _prev: BillingFormState,
-  _formData: FormData,
-): Promise<BillingFormState> {
+export async function cancelSubscription(): Promise<BillingFormState> {
   return personalCabinetBilling;
 }

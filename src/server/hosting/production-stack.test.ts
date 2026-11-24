@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 function read(path: string) {
@@ -19,6 +19,8 @@ describe("production hosting stack", () => {
   const home = read("src/app/page.tsx");
   const pricing = read("src/app/pricing/page.tsx");
   const studio = read("src/app/app/studio/page.tsx");
+  const projectsHome = read("src/app/app/page.tsx");
+  const registerPage = read("src/app/register/page.tsx");
 
   it("builds the app image and applies migrations before start", () => {
     expect(dockerfile).toContain("npx prisma generate && npm run build");
@@ -49,6 +51,7 @@ describe("production hosting stack", () => {
     expect(envExample).toContain("AUTH_SECRET=");
     expect(envExample).toContain("POSTGRES_PASSWORD=");
     expect(envExample).toMatch(/# AUTH_DEV_MAILBOX=/);
+    expect(envExample).toMatch(/# AI_MONTHLY_HARD_LIMIT=/);
     expect(envExample).not.toMatch(/^AUTH_DEV_MAILBOX=true$/m);
     expect(upScript).toContain("AUTH_DEV_MAILBOX нельзя включать");
     expect(deploy).toContain("Первый аккаунт на рабочем сайте подтверждается сразу");
@@ -82,10 +85,25 @@ describe("production hosting stack", () => {
   });
 
   it("hides commercial pricing and checkout from the personal-cabinet UI", () => {
+    const billingIndex = read("src/server/billing/index.ts");
+    const adminNav = read("src/app/admin/layout.tsx");
     expect(nav).not.toContain('href: "/pricing"');
     expect(home).not.toContain("PricingTable");
     expect(pricing).not.toContain("PricingTable");
     expect(pricing).toContain("Коммерческие тарифы не продаются");
+    expect(projectsHome).toContain("restoreProject");
+    expect(projectsHome).toContain("archiveProject");
+    expect(registerPage).toContain("isPublicRegistrationOpen");
+    expect(adminNav).not.toContain("/admin/plans");
+    expect(billingIndex).not.toContain("yookassa");
+    expect(billingIndex).not.toContain("BILLING_CHECKOUT_ENABLED");
+    expect(envExample).not.toContain("YOOKASSA_SHOP_ID=");
+    expect(envExample).not.toContain("BILLING_CHECKOUT_ENABLED");
+    expect(existsSync("src/modules/billing/plans.ts")).toBe(false);
+    expect(existsSync("src/components/marketing/pricing-table.tsx")).toBe(false);
+    expect(existsSync("src/components/app/subscription-board.tsx")).toBe(false);
+    expect(existsSync("src/server/billing/yookassa.ts")).toBe(false);
+    expect(existsSync("src/server/billing/hmac-provider.ts")).toBe(false);
   });
 
   it("does not start image generation when Studio loads", () => {

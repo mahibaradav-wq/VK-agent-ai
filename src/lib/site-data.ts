@@ -11,8 +11,6 @@ import {
   UsersRound,
 } from "lucide-react";
 
-import { marketingPlans } from "@/modules/billing/plans";
-
 export const siteConfig = {
   name: "Polka Social",
   description:
@@ -111,8 +109,6 @@ export const homeHighlights = [
     icon: Send,
   },
 ];
-
-export const pricingPlans = marketingPlans();
 
 export const faqs = [
   {

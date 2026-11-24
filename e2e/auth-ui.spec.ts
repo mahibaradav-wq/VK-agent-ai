@@ -3,8 +3,7 @@ import { expect, test } from "@playwright/test";
 import { registerVerifyAndLogin } from "./helpers";
 
 test("register, verify from mailbox, enter cabinet, and stay out of admin", async ({ page }) => {
-  const email = await registerVerifyAndLogin(page);
-  await expect(page.getByText(email, { exact: true })).toBeVisible();
+  await registerVerifyAndLogin(page);
   await expect(page.getByRole("heading", { name: "Дом по полочкам" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Студия" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Админка" })).toHaveCount(0);

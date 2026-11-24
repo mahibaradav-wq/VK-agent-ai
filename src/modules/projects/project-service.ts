@@ -1,13 +1,13 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 
-import { AccessError, assertActiveProject } from "@/modules/access/permissions";
+import { AccessError, assertActiveProject, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
-import { getWorkspacePlanLimits } from "@/modules/billing/plans";
+import { PERSONAL_ACTIVE_PROJECT_LIMIT } from "@/modules/cabinet/limits";
 import { lockWorkspaceMetric } from "@/modules/billing/usage";
 
 export const STARTER_PROJECT_NAME = "Дом по полочкам";
 export const STARTER_PROJECT_DESCRIPTION = "Клуб ВК и Telegram-канал этого проекта.";
-export const PERSONAL_ACTIVE_PROJECT_LIMIT = 10;
+export { PERSONAL_ACTIVE_PROJECT_LIMIT };
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
@@ -62,6 +62,14 @@ export function createProjectService(db: PrismaClient) {
       });
     },
 
+    async listArchived(userId: string, workspaceId: string) {
+      await access.requirePermission(userId, workspaceId, "project.view");
+      return db.project.findMany({
+        where: { workspaceId, archivedAt: { not: null } },
+        orderBy: { archivedAt: "desc" },
+      });
+    },
+
     async get(userId: string, workspaceId: string, projectId: string) {
       await access.requirePermission(userId, workspaceId, "project.view");
       return loadBoundProject(workspaceId, projectId);
@@ -80,10 +88,6 @@ export function createProjectService(db: PrismaClient) {
         const used = await tx.project.count({ where: { workspaceId, archivedAt: null } });
         if (used >= PERSONAL_ACTIVE_PROJECT_LIMIT) {
           throw new AccessError(400, `Можно держать не больше ${PERSONAL_ACTIVE_PROJECT_LIMIT} активных проектов.`);
-        }
-        const limits = await getWorkspacePlanLimits(tx, workspaceId);
-        if (used >= limits.projects) {
-          throw new AccessError(400, `Лимит проектов тарифа исчерпан (${limits.projects}).`);
         }
         return tx.project.create({
           data: {
@@ -132,6 +136,27 @@ export function createProjectService(db: PrismaClient) {
       return db.project.update({
         where: { id: projectId },
         data: { archivedAt: new Date() },
+      });
+    },
+
+    async restore(userId: string, workspaceId: string, projectId: string) {
+      await access.requirePermission(userId, workspaceId, "project.archive");
+      const project = await db.project.findUnique({ where: { id: projectId } });
+      assertWorkspaceBound(workspaceId, project, "Проект");
+      if (!project.archivedAt) {
+        return project;
+      }
+
+      return db.$transaction(async (tx) => {
+        await lockWorkspaceMetric(tx, workspaceId, "projects");
+        const used = await tx.project.count({ where: { workspaceId, archivedAt: null } });
+        if (used >= PERSONAL_ACTIVE_PROJECT_LIMIT) {
+          throw new AccessError(400, `Можно держать не больше ${PERSONAL_ACTIVE_PROJECT_LIMIT} активных проектов.`);
+        }
+        return tx.project.update({
+          where: { id: projectId },
+          data: { archivedAt: null },
+        });
       });
     },
   };
