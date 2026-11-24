@@ -57,15 +57,16 @@ from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
 name = sys.argv[1]
-url = None
-for line in Path(".env").read_text().splitlines():
-    if line.startswith("DATABASE_URL="):
-        url = line.split("=", 1)[1]
-        break
+url = os.environ.get("DATABASE_URL")
+if not url and Path(".env").exists():
+    for line in Path(".env").read_text().splitlines():
+        if line.startswith("DATABASE_URL="):
+            url = line.split("=", 1)[1]
+            break
 if not url:
     raise SystemExit(0)
 parsed = urlparse(url)
-admin = urlunparse(parsed._replace(path="/postgres"))
+admin = urlunparse(parsed)
 subprocess.run(["psql", admin, "-v", "ON_ERROR_STOP=1", "-c", f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{name}';"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 subprocess.run(["psql", admin, "-v", "ON_ERROR_STOP=1", "-c", f'DROP DATABASE IF EXISTS "{name}";'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 PY
@@ -113,21 +114,21 @@ echo "cabinet-photo" >"$MEDIA/photo.txt"
 : >"$STATE/worker.running"
 
 readarray -t pg_fields < <(python3 - "$PROBE_DB" <<'PY'
-import sys
+import os, sys, subprocess
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
-import subprocess
 
 name = sys.argv[1]
-url = None
-for line in Path(".env").read_text().splitlines():
-    if line.startswith("DATABASE_URL="):
-        url = line.split("=", 1)[1]
-        break
+url = os.environ.get("DATABASE_URL")
+if not url and Path(".env").exists():
+    for line in Path(".env").read_text().splitlines():
+        if line.startswith("DATABASE_URL="):
+            url = line.split("=", 1)[1]
+            break
 if not url:
-    raise SystemExit("DATABASE_URL missing from .env")
+    raise SystemExit("DATABASE_URL is required in the environment or .env")
 parsed = urlparse(url)
-admin = urlunparse(parsed._replace(path="/postgres"))
+admin = urlunparse(parsed)
 subprocess.run(["psql", admin, "-v", "ON_ERROR_STOP=1", "-c", f'DROP DATABASE IF EXISTS "{name}";'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 subprocess.run(["psql", admin, "-v", "ON_ERROR_STOP=1", "-c", f'CREATE DATABASE "{name}";'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 print(parsed.hostname or "127.0.0.1")
