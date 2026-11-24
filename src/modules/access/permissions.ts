@@ -183,3 +183,14 @@ export function assertWorkspaceBound<T extends { workspaceId: string }>(
     throw new AccessError(403, `${label} принадлежит другому рабочему пространству.`);
   }
 }
+
+
+export function assertActiveProject<T extends { workspaceId: string; archivedAt: Date | null }>(
+  workspaceId: string,
+  project: T | null,
+): asserts project is T {
+  assertWorkspaceBound(workspaceId, project, "Проект");
+  if (project.archivedAt) {
+    throw new AccessError(409, "Архивный проект нельзя открыть или изменить. Выберите активный проект.");
+  }
+}

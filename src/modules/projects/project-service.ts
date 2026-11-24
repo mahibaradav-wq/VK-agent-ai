@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 
-import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
+import { AccessError, assertActiveProject } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import { getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { lockWorkspaceMetric } from "@/modules/billing/usage";
@@ -48,10 +48,7 @@ export function createProjectService(db: PrismaClient) {
 
   async function loadBoundProject(workspaceId: string, projectId: string) {
     const project = await db.project.findUnique({ where: { id: projectId } });
-    assertWorkspaceBound(workspaceId, project, "Проект");
-    if (project.archivedAt) {
-      throw new AccessError(409, "Архивный проект нельзя открыть или изменить. Выберите активный проект.");
-    }
+    assertActiveProject(workspaceId, project);
     return project;
   }
 

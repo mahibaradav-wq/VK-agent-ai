@@ -1,6 +1,6 @@
 import type { PrismaClient, ShopKind } from "@prisma/client";
 
-import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
+import { AccessError, assertActiveProject, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import { fetchShopCard } from "@/modules/products/shop-fetch";
 import { parseShopProductUrl, ShopUrlError } from "@/modules/products/shop-url";
@@ -26,7 +26,7 @@ export function createProductService(db: PrismaClient) {
 
   async function loadProject(workspaceId: string, projectId: string) {
     const project = await db.project.findUnique({ where: { id: projectId } });
-    assertWorkspaceBound(workspaceId, project, "Проект");
+    assertActiveProject(workspaceId, project);
     return project;
   }
 
@@ -102,6 +102,7 @@ export function createProductService(db: PrismaClient) {
       if (product.projectId !== projectId || product.consumedAt) {
         throw new AccessError(404, "Товар не найден в этом проекте.");
       }
+      await loadProject(workspaceId, product.projectId);
       const snapshot = await fetchShopCard(product.canonicalUrl);
       return db.shopProduct.update({
         where: { id: product.id },
@@ -120,6 +121,7 @@ export function createProductService(db: PrismaClient) {
       if (product.projectId !== projectId || product.consumedAt) {
         throw new AccessError(404, "Товар не найден в этом проекте.");
       }
+      await loadProject(workspaceId, product.projectId);
       const snapshot = await fetchShopCard(product.canonicalUrl);
       return db.shopProduct.update({
         where: { id: product.id },
@@ -141,6 +143,7 @@ export function createProductService(db: PrismaClient) {
       if (post.projectId !== product.projectId) {
         throw new AccessError(403, "Товар принадлежит другому проекту.");
       }
+      await loadProject(workspaceId, product.projectId);
       return db.shopProduct.update({
         where: { id: product.id },
         data: { postId: post.id, consumedAt: product.consumedAt ?? new Date() },
@@ -154,6 +157,7 @@ export function createProductService(db: PrismaClient) {
       if (product.projectId !== projectId) {
         throw new AccessError(404, "Товар не найден в этом проекте.");
       }
+      await loadProject(workspaceId, product.projectId);
       await db.shopProduct.delete({ where: { id: product.id } });
     },
 

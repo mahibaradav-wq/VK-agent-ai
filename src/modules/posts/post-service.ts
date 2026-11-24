@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient, PostStatus, PostTargetStatus } from "@prisma/client";
 
-import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
+import { AccessError, assertActiveProject, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import { getWorkspacePlanLimits } from "@/modules/billing/plans";
 import { reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
@@ -52,12 +52,19 @@ const studioInFlightStatuses: PostStatus[] = ["queued", "publishing"];
 export function createPostService(db: PrismaClient) {
   const access = createAccessService(db);
 
+  async function loadBoundProject(workspaceId: string, projectId: string) {
+    const project = await db.project.findUnique({ where: { id: projectId } });
+    assertActiveProject(workspaceId, project);
+    return project;
+  }
+
   async function loadBoundPost(workspaceId: string, postId: string) {
     const post = await db.post.findUnique({
       where: { id: postId },
       include: postInclude,
     });
     assertWorkspaceBound(workspaceId, post, "Публикация");
+    assertActiveProject(workspaceId, post.project);
     return post;
   }
 
@@ -66,8 +73,15 @@ export function createPostService(db: PrismaClient) {
 
     async list(userId: string, workspaceId: string, projectId?: string) {
       await access.requirePermission(userId, workspaceId, "post.view");
+      if (projectId) {
+        await loadBoundProject(workspaceId, projectId);
+      }
       return db.post.findMany({
-        where: { workspaceId, projectId: projectId || undefined },
+        where: {
+          workspaceId,
+          projectId: projectId || undefined,
+          project: { is: { archivedAt: null } },
+        },
         include: postInclude,
         orderBy: { updatedAt: "desc" },
       });
@@ -93,6 +107,7 @@ export function createPostService(db: PrismaClient) {
       if (!projectId) {
         return [];
       }
+      await loadBoundProject(workspaceId, projectId);
       const inflight = await db.post.findMany({
         where: {
           workspaceId,
@@ -131,6 +146,7 @@ export function createPostService(db: PrismaClient) {
 
     async clearUnscheduledStudioCards(userId: string, workspaceId: string, projectId: string, exceptPostId?: string) {
       await access.requirePermission(userId, workspaceId, "post.update");
+      await loadBoundProject(workspaceId, projectId);
       const where = this.studioCardWhere(workspaceId, projectId, exceptPostId);
       const leftover = await db.post.findMany({ where, select: { id: true } });
       if (leftover.length === 0) {
@@ -159,6 +175,7 @@ export function createPostService(db: PrismaClient) {
         return { cleared: 0 };
       }
       await access.requirePermission(userId, workspaceId, "post.update");
+      await loadBoundProject(workspaceId, projectId);
       const leftover = await db.post.findMany({
         where: this.studioCardWhere(workspaceId, projectId),
         select: { id: true },
@@ -200,8 +217,7 @@ export function createPostService(db: PrismaClient) {
 
     async create(userId: string, workspaceId: string, projectId: string, title?: string) {
       await access.requirePermission(userId, workspaceId, "post.create");
-      const project = await db.project.findUnique({ where: { id: projectId } });
-      assertWorkspaceBound(workspaceId, project, "Проект");
+      await loadBoundProject(workspaceId, projectId);
 
       const nextTitle = title?.trim() || "Черновик";
       const post = await db.$transaction(async (tx) => {
