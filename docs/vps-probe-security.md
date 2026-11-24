@@ -2,9 +2,11 @@
 
 Probe (`VPS_RUNTIME=probe`) нужен только для изолированных тестов backup, restore и migrate. Это **не** режим работы VPS и **не** доказательство безопасности само по себе.
 
-Скрипты не подключаются к PostgreSQL, пока не пройдена allowlist-проверка. При любой ошибке выполнение прекращается. `DROP SCHEMA public CASCADE` в restore вызывается только после этой проверки.
+Скрипты не подключаются к PostgreSQL, пока не пройдена allowlist-проверка **и** не очищено окружение libpq. При любой ошибке выполнение прекращается до запуска `psql` / `pg_dump` / `pg_isready` / `pg_restore` / `prisma migrate deploy`. `DROP SCHEMA public CASCADE` в restore вызывается только после этих проверок.
 
-## Что разрешено
+Инвентаризация вызовов: [vps-probe-libpq-inventory.md](vps-probe-libpq-inventory.md).
+
+## Allowlist цели
 
 Одновременно должны выполняться все условия:
 
@@ -15,19 +17,28 @@ Probe (`VPS_RUNTIME=probe`) нужен только для изолирован�
 | User | `polka` |
 | Database | `polka_vps_probe` или `polka_vps_probe_<id>` (`[A-Za-z0-9]+` после `_`) |
 
-Имя `postgres` — это служебное имя контейнера CI. Если оно не резолвится в loopback, живое подключение отклоняется (fail-closed). На VPS сервис Compose тоже называется `postgres`, но production-база `polka_social` в probe запрещена.
+`PROBE_DATABASE_URL` разбирается без печати пароля. Query-параметры запрещены.
 
-`PROBE_DATABASE_URL` разбирается без печати пароля. Query-параметры (`?host=`, `sslmode` и любые другие) запрещены: иначе libpq мог бы подменить хост.
+## Изоляция окружения libpq
+
+Проверенный `localhost` недостаточен: унаследованные переменные libpq могут подменить адрес. Перед каждым клиентом:
+
+1. `vps_probe_assert_isolated_target` или `vps_probe_assert_isolated_url`.
+2. `vps_probe_refuse_inherited_libpq` — любой непустой `PG*` в окружении родителя → отказ **без** запуска клиента (`PGHOSTADDR`, `PGSERVICE`, `PGSERVICEFILE`, `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `PGOPTIONS`, и любые другие `PG*`).
+3. Запуск через `vps_probe_exec` / `vps_probe_migrate_deploy`: `env -i` с только `PATH`, `HOME`, опционально `LANG`/`LC_*`/`TMPDIR`/`TERM`, и `PGPASSWORD` из `PROBE_PGPASSWORD` (для клиентов) либо `DATABASE_URL` из проверенного `PROBE_DATABASE_URL` (для Prisma). Параметры `-h/-p/-U/-d` передаются явно.
+
+Production Compose-путь не использует этот wrapper: клиенты идут через `docker compose exec` внутри контейнера postgres.
 
 ## Что запрещено
 
 - публичные IPv4 и IPv6;
-- неизвестные DNS-имена, в том числе production-hostname;
-- production-подобные имена БД (`polka_social`, `postgres`, `production` и любые, не совпадающие с шаблоном);
+- неизвестные DNS-имена и production-hostname;
+- production-подобные имена БД;
 - пустой хост, неверный порт, отсутствующий пользователь или имя БД;
-- защита «по подстроке» вроде `24dom-po-polochkam` / `timeweb` — её нет; неизвестный адрес отклоняется, потому что его нет в allowlist.
+- любой унаследованный `PG*`, в том числе `PGHOSTADDR` / service-файлы;
+- защита «по подстроке» hostname — её нет.
 
-Пароль, полный `DATABASE_URL` и другие секреты в сообщения об ошибках не выводятся.
+Пароль, полный `DATABASE_URL` и другие секреты в сообщения об ошибках не выводятся. Тесты `PROBE_CLIENT_LOG` подтверждают, что при BLOCK клиент не стартовал.
 
 ## Как проверять
 

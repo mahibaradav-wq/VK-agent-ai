@@ -1,95 +1,83 @@
-# Итоговый отчёт: усиление безопасности VPS readiness
+# Итоговый отчёт: изоляция libpq в probe-режиме (PR #62)
 
-Дата: 24 ноября 2026, Europe/Moscow.
+Дата: 25 ноября 2026, Europe/Moscow.
 
 **Итоговый статус: READY WITH WARNINGS**
 
-Отдельный PR поверх PR #60. Merge, deploy, SSH, обследование реального VPS не выполнялись.
+Отдельный PR поверх PR #61. Merge, deploy, SSH, обследование реального VPS не выполнялись.
 
 ## Идентификаторы
 
 | Поле | Значение |
 |---|---|
-| Исходный SHA (PR #60) | `62751d0ebe37b48632f19977aa1b1dff36760463` |
-| База PR #60 | `cursor/vps-readiness-ee77` от PR #59 `ed014ba8f049511438a565606abc13e30dd21ac6` |
-| Рабочая ветка | `cursor/vps-readiness-hardening-ee77` |
-| Конечный SHA | `48ee19f82ece2ff53d32048a827a73b0dcb83e07` |
-| Функциональный SHA | `28df4752a405c31715fc92c89f1f0290369d092f` |
+| Исходный SHA (PR #61) | `3926043974618362d6b523fed96a77c1c3cd4685` |
+| База | `cursor/vps-readiness-hardening-ee77` |
+| Рабочая ветка | `cursor/vps-probe-libpq-hardening-ee77` |
+| PR | [#62](https://github.com/mahibaradav-wq/VK-agent-ai/pull/62) |
+| Конечный SHA | `542343867d2306e679ddc5db38c163ce380a2c37` |
 | `main` | не менялся |
-| PR #59 / #60 | не объединялись |
+| PR #59 / #60 / #61 | не объединялись |
 
-GitHub CI Test: SUCCESS [45486551352](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45486551352).  
-GitHub VPS readiness: SUCCESS [45486551423](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45486551423) (syntax, SSH-guard, prisma, lint, typecheck, test, probe, build, image, Playwright e2e, secret-scan).
+GitHub CI Test: SUCCESS [45492197878](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45492197878).  
+GitHub VPS readiness: SUCCESS [45492197911](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45492197911) (syntax, SSH-guard, prisma, lint, typecheck, test, probe, build, image, Playwright e2e, secret-scan).
 
 ## Изменённые файлы
 
-- `scripts/lib/vps-common.sh` — строгая probe-allowlist, проверка до любого SQL
-- `scripts/backup-vps.sh`, `scripts/restore-vps.sh`, `scripts/vps-migrate.sh` — вызывают allowlist вместо подстрок hostname
-- `scripts/vps-pull.sh` — `--plan` только читает состояние
-- `scripts/tests/vps-ops.test.sh`, `src/server/hosting/vps-ops.test.ts`, `src/server/hosting/production-stack.test.ts`
-- `.github/workflows/deploy-vps.yml` — отключён, без SSH
-- `.github/workflows/vps-readiness.yml` — любой `ssh-action` в workflows запрещён
-- `docs/vps-probe-security.md` (новый)
+- `scripts/lib/vps-common.sh` — `vps_probe_refuse_inherited_libpq`, `vps_probe_exec`, `vps_probe_migrate_deploy`
+- `scripts/vps-migrate.sh` — migrate только через изолированный wrapper
+- `scripts/tests/vps-ops.test.sh` — тесты обхода libpq + `PROBE_CLIENT_LOG`
+- `src/server/hosting/production-stack.test.ts`
+- `docs/vps-probe-security.md`, `docs/vps-probe-libpq-inventory.md`
 - `docs/vps-readiness-audit.md`, `docs/vps-readiness-final-report.md`
-- `docs/runbooks/restore-validation.md`, `docs/runbooks/rollback.md`
-- `docs/deploy.md`, `docs/security.md`
 
-## Что исправлено
+## Реализация изоляции
 
-1. Probe больше не ищет подстроки `24dom-po-polochkam` / `timeweb`. Разрешены только loopback-IP или имена `localhost`/`postgres` с резолвом только в loopback, порт `5432`, пользователь `polka`, БД `polka_vps_probe` / `polka_vps_probe_<id>`. `VPS_RUNTIME=probe` недостаточно. `DROP SCHEMA` и `prisma migrate deploy` не идут до проверки. URL с query-параметрами отклоняется. Пароль и `DATABASE_URL` в ошибки не печатаются.
-2. GitHub Deploy VPS не содержит SSH-action и не пересобирает сервисы. Любой `workflow_dispatch` завершается отказом. Workflow **не запускался**.
-3. `vps-pull.sh --plan` не создаёт каталоги, не пишет `previous-sha`, не делает `git fetch`/checkout, backup, migrate, restart. Если целевой ref нет локально — отказ с пояснением.
+1. Allowlist цели (host/port/user/db) как в PR #61.
+2. Отказ, если в окружении родителя есть **любой** `PG*` (`PGHOSTADDR`, `PGSERVICE`, `PGSERVICEFILE`, `PGOPTIONS`, конфликтующие `PGHOST`/`PGPORT`/`PGUSER`/`PGDATABASE`, и прочие).
+3. Клиенты запускаются через `env -i` с `PATH`/`HOME`/(locale)/`PGPASSWORD` из `PROBE_PGPASSWORD` и явными `-h/-p/-U/-d`.
+4. Prisma: `env -i` + только проверенный `DATABASE_URL=$PROBE_DATABASE_URL`.
+5. `PROBE_CLIENT_LOG` отмечает факт запуска клиента; BLOCK-тесты требуют пустой лог.
 
-## Результаты тестов (локально, 24 ноября 2026, Europe/Moscow)
+Compose/production не затронуты.
+
+## Результаты тестов (локально)
 
 | Проверка | Результат |
 |---|---|
-| `npm run lint` | PASS |
-| `npm run typecheck` | PASS |
-| `npm test` | PASS 52 files / 253 tests |
-| `npm run test:vps` | PASS 68 сценариев |
-| `npm run build` | PASS |
-| `npx prisma validate` | PASS |
-| `bash -n` VPS-скрипты | PASS |
-| localhost + тестовая БД | PASS |
-| hostname CI `postgres` в allowlist | PASS |
-| публичный IPv4 / IPv6 | BLOCK |
-| неизвестный DNS / production hostname | BLOCK |
-| production-подобное имя БД | BLOCK |
-| пустой хост / неверный порт / нет пользователя | BLOCK |
-| restore/DROP до проверки | BLOCK |
-| migrate с production URL в probe | BLOCK |
-| секреты в stdout/stderr отказа | не выводились |
-| `--plan` не меняет Git, файлы, каталоги | PASS |
-| Deploy VPS не может SSH | PASS |
-| GitHub **CI Test** `48ee19f` | SUCCESS [45486551352](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45486551352) |
-| GitHub **VPS readiness** `48ee19f` | SUCCESS [45486551423](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45486551423) |
-| secret-scan workflow | PASS (шаг VPS readiness) |
-
-Тесты не использовали production credentials и не ходили на production PostgreSQL: только `localhost`/`127.0.0.1` и БД `polka_vps_probe_*`.
+| localhost / 127.0.0.1 / ::1 + тестовая БД | PASS |
+| PGHOSTADDR public IPv4 / IPv6 / documentation IP | BLOCK, клиент не запущен |
+| PGHOSTADDR без PROBE host | BLOCK |
+| PGSERVICE / PGSERVICEFILE / PGOPTIONS | BLOCK |
+| конфликтующие PGHOST/PGPORT/PGUSER/PGDATABASE | BLOCK |
+| лишний `PGCHANNELBINDING` | BLOCK |
+| DROP SCHEMA при PGHOSTADDR | BLOCK до SQL |
+| production URL / PGSERVICE в probe migrate | BLOCK до prisma |
+| утечка пароля / URL | не обнаружена |
+| `npm run test:vps` | PASS 84 |
+| `npm ci` / prisma generate / validate / lint / typecheck / test / build / `bash -n` | PASS |
+| GitHub **CI Test** `5423438` | SUCCESS |
+| GitHub **VPS readiness** `5423438` | SUCCESS (e2e + secret-scan) |
 
 ## Подтверждения запретов
 
 - SSH не использовался.
-- GitHub Deploy VPS не запускался.
-- production DATABASE_URL, `.env` production, Docker Compose на VPS, Prisma migrate на production не выполнялись.
-- Платный OpenAI, публикации VK/Telegram не вызывались.
-- `main` не менялся; PR #59 и #60 не объединялись.
+- Deploy / GitHub Deploy VPS не запускались.
+- production DATABASE_URL, `.env` production, миграции production не выполнялись.
+- Платный OpenAI, VK/Telegram live не вызывались.
+- `main` не менялся; PR #61 не объединялся.
 
-## Оставшиеся BLOCKED и WARNING
+## Оставшиеся ограничения
 
 | Тема | Статус |
 |---|---|
-| Docker Compose backup/restore на этом агенте | BLOCKED — нет Docker |
-| Реальный VPS, IPv6 daemon, overlay compose на сервере | BLOCKED, нужно обследование владельцем |
-| Cron и off-site копии | не создавались |
-| Worker без HTTP healthcheck | WARNING |
-| Production `.env` не читался | намеренно |
-| GitHub Deploy VPS отключён до решения владельца | WARNING / ожидаемо |
-| Имя `postgres` в allowlist, но живой коннект только если резолв = loopback | fail-closed |
+| Docker Compose backup на агенте | BLOCKED — нет Docker |
+| Реальный VPS | не обследовался |
+| Harness CREATE/DROP probe-БД через admin `DATABASE_URL` | вне wrapper; только локальная тестовая БД |
+| Worker без HTTP health | WARNING |
+| Обследование VPS | запрещено этим заданием |
 
 ## Готовность
 
-**READY WITH WARNINGS.** Следующий этап (обследование VPS, ручной `--plan`/`--apply`) — только после отдельного подтверждения владельца.
+**READY WITH WARNINGS.** Сценарии обхода через libpq закрыты в коде и автотестах. Переход к обследованию VPS — только после независимой проверки и отдельного подтверждения владельца.
 
 Не merge. Не deploy. Не SSH.

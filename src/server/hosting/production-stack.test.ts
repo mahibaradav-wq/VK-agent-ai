@@ -14,6 +14,7 @@ describe("production hosting stack", () => {
   const upScript = read("scripts/vps-up.sh");
   const commonScript = read("scripts/lib/vps-common.sh");
   const pullScript = read("scripts/vps-pull.sh");
+  const migrateScript = read("scripts/vps-migrate.sh");
   const restoreScript = read("scripts/restore-vps.sh");
   const ci = read(".github/workflows/ci.yml");
   const deployWorkflow = read(".github/workflows/deploy-vps.yml");
@@ -102,8 +103,14 @@ describe("production hosting stack", () => {
     expect(deployWorkflow).not.toContain("docker compose");
     expect(deployWorkflow).not.toContain("up -d --build");
     expect(commonScript).toContain("vps_probe_assert_isolated_target");
+    expect(commonScript).toContain("vps_probe_exec");
+    expect(commonScript).toContain("vps_probe_migrate_deploy");
+    expect(commonScript).toContain("vps_probe_refuse_inherited_libpq");
+    expect(commonScript).toContain("env -i");
     expect(commonScript).not.toContain("24dom-po-polochkam");
     expect(commonScript).not.toContain("timeweb");
+    expect(migrateScript).toContain("vps_probe_migrate_deploy");
+    expect(migrateScript).not.toMatch(/DATABASE_URL="\$PROBE_DATABASE_URL" npx prisma migrate deploy/);
     expect(pullScript).toContain("read_only_preflight");
     expect(pullScript).toContain("--plan is read-only");
   });
