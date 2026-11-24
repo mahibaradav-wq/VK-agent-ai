@@ -18,7 +18,7 @@ function email(label: string) {
   return `${label}.${Date.now()}.${Math.random().toString(16).slice(2)}@example.test`;
 }
 
-async function expectAccess(promise: Promise<unknown>, status: 400 | 403 | 404, message: RegExp) {
+async function expectAccess(promise: Promise<unknown>, status: 400 | 403 | 404 | 409, message: RegExp) {
   const error = await promise.then(
     () => {
       throw new Error("expected AccessError");
@@ -188,5 +188,30 @@ describe("content calendar", () => {
       404,
       /не найдено/,
     );
+  });
+
+  it("hides archived project posts and blocks rescheduling them", async () => {
+    const owner = await registerOwner("cal-archived");
+    const post = await calendar.createOnDate(owner.userId, owner.workspaceId, owner.projectId, {
+      date: "2026-10-22",
+      timezone: "Europe/Moscow",
+      title: "Архивная публикация",
+    });
+    await projects.archive(owner.userId, owner.workspaceId, owner.projectId);
+
+    await expectAccess(
+      calendar.schedule(owner.userId, owner.workspaceId, post.id, {
+        localDateTime: "2026-10-23T12:00",
+        timezone: "Europe/Moscow",
+      }),
+      409,
+      /Архивный проект/,
+    );
+    const listed = await calendar.list(owner.userId, owner.workspaceId, {
+      from: new Date("2026-10-20T00:00:00.000Z"),
+      to: new Date("2026-10-30T00:00:00.000Z"),
+      timezone: "Europe/Moscow",
+    });
+    expect(listed).toHaveLength(0);
   });
 });
