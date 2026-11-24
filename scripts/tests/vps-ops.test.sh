@@ -49,6 +49,24 @@ assert_file_missing() {
   fi
 }
 
+assert_fail_no_secret() {
+  local name="$1" needle="$2"
+  shift 2
+  if "$@" >/tmp/vps-ops-cmd.out 2>/tmp/vps-ops-cmd.err; then
+    log_fail "$name (expected failure)"
+    return
+  fi
+  if grep -F "$needle" /tmp/vps-ops-cmd.out /tmp/vps-ops-cmd.err >/dev/null 2>&1; then
+    log_fail "$name leaked secret material"
+    return
+  fi
+  if grep -E 'postgresql://[^[:space:]]+' /tmp/vps-ops-cmd.out /tmp/vps-ops-cmd.err >/dev/null 2>&1; then
+    log_fail "$name leaked a database URL"
+    return
+  fi
+  log_pass "$name"
+}
+
 cleanup() {
   if [[ -n "$PROBE_DB" ]]; then
     python3 - "$PROBE_DB" <<'PY' >/dev/null 2>&1 || true
@@ -87,10 +105,56 @@ log_pass "bash -n all VPS scripts"
 # shellcheck source=../lib/vps-common.sh
 source scripts/lib/vps-common.sh
 
-assert_fail "probe refuses production host" \
-  bash -c 'source scripts/lib/vps-common.sh && vps_refuse_production_probe 24dom-po-polochkam.ru'
-assert_ok "probe allows local host" \
-  bash -c 'source scripts/lib/vps-common.sh && vps_refuse_production_probe localhost'
+assert_ok "localhost with isolated test database" \
+  bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_ci vps_probe_assert_isolated_target'
+assert_ok "127.0.0.1 with isolated test database" \
+  bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST=127.0.0.1 PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe vps_probe_assert_isolated_target'
+assert_ok "CI container hostname is allowlisted" \
+  bash -c 'source scripts/lib/vps-common.sh && vps_probe_host_allowlisted postgres'
+assert_fail "public IPv4 is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST=8.8.8.8 PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 vps_probe_assert_isolated_target'
+assert_fail "public IPv6 is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST=2001:4860:4860::8888 PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 vps_probe_assert_isolated_target'
+assert_fail "unknown DNS hostname is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST=db.example.test PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 vps_probe_assert_isolated_target'
+assert_fail "production hostname is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST=24dom-po-polochkam.ru PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 vps_probe_assert_isolated_target'
+assert_fail "production-like database name is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_social vps_probe_assert_isolated_target'
+assert_fail "empty probe host is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST= PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 vps_probe_assert_isolated_target'
+assert_fail "incorrect probe port is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=1 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_1 vps_probe_assert_isolated_target'
+assert_fail "missing probe user is blocked" \
+  bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER= PROBE_PGDATABASE=polka_vps_probe_1 vps_probe_assert_isolated_target'
+assert_fail "VPS_RUNTIME=probe is not enough without fields" \
+  bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe vps_probe_assert_isolated_target'
+assert_fail "schema drop refuses before isolated target checks" \
+  bash -c 'source scripts/lib/vps-common.sh && export VPS_RUNTIME=probe PROBE_PGHOST=8.8.8.8 PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_x PROBE_PGPASSWORD=should-not-appear && vps_reset_public_schema'
+assert_fail_no_secret "probe migrate rejects production URL without leaking secrets" "not-a-real-secret" \
+  env VPS_RUNTIME=probe FIRST_INSTALL=YES \
+  PROBE_DATABASE_URL='postgresql://polka:not-a-real-secret@24dom-po-polochkam.ru:5432/polka_social' \
+  bash scripts/vps-migrate.sh
+assert_fail_no_secret "probe migrate rejects production-like database on localhost" "not-a-real-secret" \
+  env VPS_RUNTIME=probe FIRST_INSTALL=YES \
+  PROBE_DATABASE_URL='postgresql://polka:not-a-real-secret@localhost:5432/polka_social' \
+  bash scripts/vps-migrate.sh
+
+if grep -E '24dom-po-polochkam|timeweb' scripts/lib/vps-common.sh >/dev/null; then
+  log_fail "probe allowlist must not depend on production hostname substrings"
+else
+  log_pass "probe allowlist does not use production hostname substrings"
+fi
+if grep -E 'uses:[[:space:]]*[[:alnum:]_.-]+/ssh-action|appleboy/ssh-action' .github/workflows/deploy-vps.yml >/dev/null; then
+  log_fail "GitHub Deploy VPS still has an SSH action"
+else
+  log_pass "GitHub Deploy VPS cannot SSH"
+fi
+if grep -E 'up -d --build|docker compose' .github/workflows/deploy-vps.yml >/dev/null; then
+  log_fail "GitHub Deploy VPS still rebuilds production services"
+else
+  log_pass "GitHub Deploy VPS does not rebuild production services"
+fi
 
 assert_fail "password with @ is rejected" \
   bash -c 'source scripts/lib/vps-common.sh && vps_validate_password_charset "ab@cd"'
@@ -153,6 +217,12 @@ export PROBE_MEDIA_DIR="$MEDIA"
 export PROBE_STATE_DIR="$STATE"
 export BACKUP_DIR="$BACKUP"
 export PROBE_DATABASE_URL
+
+assert_fail "probe backup missing host never reaches PostgreSQL" \
+  env -u PROBE_PGHOST VPS_RUNTIME=probe PROBE_PGPORT="$PROBE_PGPORT" PROBE_PGUSER="$PROBE_PGUSER" \
+  PROBE_PGDATABASE="$PROBE_PGDATABASE" PROBE_PGPASSWORD="$PROBE_PGPASSWORD" \
+  PROBE_MEDIA_DIR="$MEDIA" PROBE_STATE_DIR="$STATE" BACKUP_DIR="$BACKUP" \
+  bash scripts/backup-vps.sh
 
 assert_ok "isolated migrate on empty probe db" \
   env FIRST_INSTALL=YES bash scripts/vps-migrate.sh
@@ -354,10 +424,64 @@ exit 0
 EOF
 chmod +x "$WORK/bin/docker"
 
-assert_ok "vps-pull --plan preflight with fake docker" \
+plan_state_dir="$WORK/vps-state"
+plan_missing_backup="$WORK/plan-backup-does-not-exist"
+head_before="$(git rev-parse HEAD)"
+status_before="$(git status --porcelain)"
+env_hash_before="$(sha256sum "$ENV_PROBE" | awk '{print $1}')"
+compose_hash_before="$(sha256sum "$WORK/docker-compose.prod.yml" | awk '{print $1}')"
+repo_state_before=""
+if [[ -e "$ROOT/.vps-state" ]]; then
+  repo_state_before="$(find "$ROOT/.vps-state" -type f -print | sort | xargs -r sha256sum)"
+fi
+assert_file_missing "plan state dir absent before --plan" "$plan_state_dir"
+assert_file_missing "plan backup dir absent before --plan" "$plan_missing_backup"
+
+assert_ok "vps-pull --plan is read-only preflight" \
   env PATH="$WORK/bin:$PATH" VPS_APP_DIR="$ROOT" COMPOSE_FILE="$WORK/docker-compose.prod.yml" \
-  ENV_FILE="$ENV_PROBE" BACKUP_DIR="$BACKUP" VPS_STATE_DIR="$WORK/vps-state" \
+  ENV_FILE="$ENV_PROBE" BACKUP_DIR="$plan_missing_backup" VPS_STATE_DIR="$plan_state_dir" \
   VPS_SKIP_GIT_CLEAN=true bash scripts/vps-pull.sh --plan
+
+assert_file_missing "--plan did not create state dir" "$plan_state_dir"
+assert_file_missing "--plan did not create backup dir" "$plan_missing_backup"
+head_after="$(git rev-parse HEAD)"
+status_after="$(git status --porcelain)"
+env_hash_after="$(sha256sum "$ENV_PROBE" | awk '{print $1}')"
+compose_hash_after="$(sha256sum "$WORK/docker-compose.prod.yml" | awk '{print $1}')"
+repo_state_after=""
+if [[ -e "$ROOT/.vps-state" ]]; then
+  repo_state_after="$(find "$ROOT/.vps-state" -type f -print | sort | xargs -r sha256sum)"
+fi
+if [[ "$head_before" == "$head_after" ]]; then
+  log_pass "--plan did not change Git HEAD"
+else
+  log_fail "--plan changed Git HEAD"
+fi
+if [[ "$status_before" == "$status_after" ]]; then
+  log_pass "--plan did not change git status"
+else
+  log_fail "--plan changed git status"
+fi
+if [[ "$env_hash_before" == "$env_hash_after" && "$compose_hash_before" == "$compose_hash_after" ]]; then
+  log_pass "--plan did not change env or compose files"
+else
+  log_fail "--plan changed env or compose files"
+fi
+if [[ "$repo_state_before" == "$repo_state_after" ]]; then
+  log_pass "--plan did not write repo .vps-state"
+else
+  log_fail "--plan wrote repo .vps-state"
+fi
+if [[ -e "$ROOT/.vps-state/previous-sha" ]]; then
+  # Allow a pre-existing file, but --plan must not have created it in this run
+  :
+fi
+
+assert_fail "--plan does not git fetch a missing ref" \
+  env PATH="$WORK/bin:$PATH" VPS_APP_DIR="$ROOT" COMPOSE_FILE="$WORK/docker-compose.prod.yml" \
+  ENV_FILE="$ENV_PROBE" BACKUP_DIR="$plan_missing_backup" VPS_STATE_DIR="$plan_state_dir" \
+  VPS_SKIP_GIT_CLEAN=true bash scripts/vps-pull.sh --plan definitely-not-a-git-ref-xyz
+assert_file_missing "--plan missing-ref did not create state dir" "$plan_state_dir"
 
 assert_ok "vps-rollback --plan A" bash scripts/vps-rollback.sh --plan A
 assert_ok "vps-rollback --plan B" bash scripts/vps-rollback.sh --plan B

@@ -49,8 +49,8 @@ jobs:
         run: bash -n scripts/lib/vps-common.sh scripts/backup-vps.sh scripts/restore-vps.sh scripts/vps-up.sh scripts/vps-pull.sh scripts/vps-migrate.sh scripts/vps-rollback.sh scripts/tests/vps-ops.test.sh
       - name: Refuse VPS SSH in this workflow
         run: |
-          if grep -E 'uses:[[:space:]]*appleboy/ssh-action' .github/workflows/vps-readiness.yml .github/workflows/ci.yml; then
-            echo "CI and readiness workflows must not SSH to the VPS." >&2
+          if grep -E 'uses:[[:space:]]*[[:alnum:]_.-]+/ssh-action' .github/workflows/*.yml; then
+            echo "No GitHub workflow may SSH to the VPS." >&2
             exit 1
           fi
       - run: npm ci

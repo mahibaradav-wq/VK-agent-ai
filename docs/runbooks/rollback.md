@@ -4,7 +4,7 @@
 
 Ключи `AUTH_SECRET` / `TOKEN_ENCRYPTION_KEY` в `.env.production` **не** откатываются из Git: их нет в репозитории и нет в backup-архиве. Менять ключи при откате нельзя, иначе перестанут читаться токены соцаккаунтов.
 
-Предыдущий SHA пишется в `.vps-state/previous-sha` на шаге `--apply` у `vps-pull.sh`. Предыдущий образ тегируется как `polka-social:prod-prev`.
+Предыдущий SHA пишется в `.vps-state/previous-sha` только на шаге `--apply` у `vps-pull.sh`. `--plan` этот файл не создаёт и Git не меняет. Предыдущий образ тегируется как `polka-social:prod-prev` также только при `--apply`.
 
 ```bash
 bash scripts/vps-rollback.sh --plan A

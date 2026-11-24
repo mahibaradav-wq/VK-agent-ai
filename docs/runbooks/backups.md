@@ -26,7 +26,7 @@ BACKUP_DIR=/opt/polka-social-backups bash scripts/backup-vps.sh
 5. Пишет SHA-256 manifest, выставляет права `700` на каталог и `600` на файлы.
 6. Возвращает ранее работавшие app/worker даже при ошибке копирования; частичная копия удаляется и не помечается успешной.
 
-Изолированная проверка без Docker и без production volumes: `npm run test:vps`. Подробности отказов — [restore-validation.md](restore-validation.md).
+Изолированная проверка без Docker и без production volumes: `npm run test:vps`. Probe подключается только к allowlist localhost/loopback и БД `polka_vps_probe*`; `VPS_RUNTIME=probe` само по себе недостаточно. Модель: [vps-probe-security.md](../vps-probe-security.md). Подробности отказов — [restore-validation.md](restore-validation.md).
 
 Ожидается короткий перерыв в доступности приложения на время копирования. PostgreSQL остаётся запущенным.
 

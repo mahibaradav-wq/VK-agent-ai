@@ -30,7 +30,7 @@ if [[ "$VPS_RUNTIME" == "probe" ]]; then
   : "${PROBE_MEDIA_DIR:?Set PROBE_MEDIA_DIR}"
   : "${PROBE_STATE_DIR:?Set PROBE_STATE_DIR}"
   PROBE_PGPASSWORD="${PROBE_PGPASSWORD:-}"
-  vps_refuse_production_probe "$PROBE_PGHOST$PROBE_PGDATABASE$PROBE_MEDIA_DIR" || exit 1
+  vps_probe_assert_isolated_target || exit 1
 else
   vps_require_cmd docker || exit 1
   vps_require_file "$COMPOSE_FILE" "$ENV_FILE" || exit 1

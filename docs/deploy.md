@@ -139,7 +139,7 @@ bash scripts/vps-pull.sh --plan <ветка-или-sha>
 bash scripts/vps-pull.sh --apply <ветка-или-sha>
 ```
 
-`--plan` проверяет git, Docker, место и env, ничего не выкладывает. `--apply` сначала делает backup; без успешного manifest migrate и checkout не идут. Локальный overlay `docker-compose.timeweb.yml` подхватывается, если файл есть на VPS (в git его нет). Остановка: `npm run hosting:down`. Откат: [runbooks/rollback.md](runbooks/rollback.md).
+`--plan` только читает состояние: git, Docker, свободное место (без `mkdir`), ключи env, наличие целевого ref **уже локально**. Он не пишет `previous-sha`, не создаёт каталоги, не делает `git fetch` / checkout, backup, migrate и restart. Если ref нужно сначала скачать — `--plan` останавливается с сообщением. `--apply` записывает SHA, делает backup и только после успешного manifest — checkout, сборку, `vps-migrate.sh` и health-check. Локальный overlay `docker-compose.timeweb.yml` подхватывается, если файл есть на VPS (в git его нет). Остановка: `npm run hosting:down`. Откат: [runbooks/rollback.md](runbooks/rollback.md).
 
 Проверьте вход, что `/dev/mailbox` закрыт, и что `/admin` недоступен обычному Owner. Первый аккаунт на рабочем сайте подтверждается сразу, без письма. Superadmin: `ADMIN_EMAILS` с email уже зарегистрированного пользователя.
 
@@ -170,15 +170,15 @@ echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILh3zvl5RyoqR5SDpLTB+MrmDy2amBvOF5921r
 
 Задание подготовки VPS **не подключается по SSH и не выкладывает сайт**. Ключ на сервер не добавлялся. Следующий этап — только после отдельного подтверждения владельца.
 
-### Постоянная выкладка из GitHub Actions
+### GitHub Deploy VPS — отключён
 
-На своём компьютере создайте **отдельную** пару ключей (`ssh-keygen -t ed25519 -f polka-deploy -N ""`). Публичный ключ (`polka-deploy.pub`) тоже добавьте в Timeweb. Закрытый ключ не присылайте в чат: положите его в GitHub → Settings → Secrets and variables → Actions:
+Workflow `.github/workflows/deploy-vps.yml` больше не открывает SSH и не запускает `docker compose up --build`. Любой `workflow_dispatch` завершается отказом. Так нельзя обойти `vps-pull.sh --plan` / backup / `--apply` / отдельную миграцию.
 
-| Secret | Значение |
-|---|---|
-| `VPS_HOST` | `24dom-po-polochkam.ru` |
-| `VPS_USER` | `root` |
-| `VPS_PATH` | `/opt/polka-social` |
-| `VPS_SSH_KEY` | содержимое файла `polka-deploy` целиком |
+Будущая выкладка с GitHub возможна только после **отдельного разрешения владельца**. До этого production deploy — только вручную на VPS:
 
-Затем GitHub → Actions → **Deploy VPS** → Run workflow. На сервере вручную: `bash scripts/vps-pull.sh <ветка>`.
+```bash
+bash scripts/vps-pull.sh --plan <ветка-или-sha>
+bash scripts/vps-pull.sh --apply <ветка-или-sha>
+```
+
+Секреты `VPS_HOST` / `VPS_SSH_KEY` для GitHub пока не используются этим workflow. Не запускайте **Deploy VPS** «для проверки».

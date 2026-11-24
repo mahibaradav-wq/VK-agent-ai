@@ -13,12 +13,12 @@ export PROBE_PGHOST=127.0.0.1
 export PROBE_PGPORT=5432
 export PROBE_PGUSER=polka
 # пароль только в окружении процесса, не в git
-export PROBE_PGDATABASE=polka_vps_probe
+export PROBE_PGDATABASE=polka_vps_probe_manual
 export PROBE_MEDIA_DIR=/tmp/polka-probe-media
 export PROBE_STATE_DIR=/tmp/polka-probe-state
 export BACKUP_DIR=/tmp/polka-probe-backups
 export FIRST_INSTALL=YES
-export PROBE_DATABASE_URL="postgresql://polka:…@127.0.0.1:5432/polka_vps_probe"
+export PROBE_DATABASE_URL="postgresql://polka:…@127.0.0.1:5432/polka_vps_probe_manual"
 
 createdb "$PROBE_PGDATABASE"
 mkdir -p "$PROBE_MEDIA_DIR" "$PROBE_STATE_DIR"
@@ -33,7 +33,7 @@ CONFIRM_RESTORE=YES RESTORE_CONFIRM=RESTORE \
 
 Автоматический набор: `npm run test:vps` / `bash scripts/tests/vps-ops.test.sh`. Он создаёт `polka_vps_probe_<pid>`, мигрирует схему, снимает копию, меняет данные, восстанавливает и удаляет probe-БД.
 
-Скрипт отказывается работать, если host/path содержит `24dom-po-polochkam` или `timeweb`.
+Probe подключается только к allowlist: loopback / `localhost` / резолвящийся в loopback `postgres`, порт `5432`, пользователь `polka`, база `polka_vps_probe` или `polka_vps_probe_<id>`. `VPS_RUNTIME=probe` само по себе недостаточно. Подстроки production-hostname больше не используются. Модель: [vps-probe-security.md](../vps-probe-security.md).
 
 ## Production restore (только по решению владельца)
 
