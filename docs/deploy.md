@@ -5,7 +5,12 @@
 
 ## Что проверено локально/CI и что нет
 
-Проверяется в CI (`npm test`, `typecheck`, `lint`, `build`, `prisma migrate`, `bash -n` скриптов):
+Проверяется в GitHub Actions:
+
+- workflow **CI** (`ubuntu-latest`): `npm test`, `typecheck`, `lint`, `prisma migrate`, `bash -n` скриптов;
+- workflow **VPS readiness** (`ubuntu-24.04`, без SSH): то же плюс `npm run build`, `npm run test:vps`, Playwright e2e, проверка состава Docker image и отсутствие секретов в git.
+
+Playwright 1.56 не ставит Chromium на `ubuntu-latest` (26.04), поэтому readiness закреплён на 24.04.
 
 - очередь публикаций и stale/manual VK на mocked адаптерах;
 - изоляция workspace/project и архив проекта;

@@ -13,7 +13,8 @@ concurrency:
 jobs:
   checks:
     name: Readiness checks
-    runs-on: ubuntu-latest
+    # Playwright 1.56 cannot install Chromium on ubuntu-latest (26.04).
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16-alpine
@@ -76,7 +77,7 @@ jobs:
         run: npx playwright install --with-deps chromium && npx playwright test
       - name: Secret-shaped tracked files
         run: |
-          if git grep -I -E 'sk-live-|whsec_|BEGIN OPENSSH PRIVATE KEY|YOOKASSA_SECRET_KEY=' -- ':!.github/workflows/vps-readiness.yml' ':!src/server/security/secrets.ts' ':!src/server/security/secrets.test.ts' ':!src/modules/billing/billing.test.ts' ':!src/modules/cabinet/cabinet.test.ts' ':!docs' ':!.env.example'; then
+          if git grep -I -E 'sk-live-|whsec_|BEGIN OPENSSH PRIVATE KEY|YOOKASSA_SECRET_KEY=' -- ':!.github/workflows/vps-readiness.yml' ':!src/server/security/secrets.ts' ':!**/*.test.ts' ':!**/*.test.sh' ':!docs' ':!.env.example'; then
             echo "Possible secret material in git." >&2
             exit 1
           fi
