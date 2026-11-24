@@ -71,6 +71,7 @@ describe("starter project", () => {
     await projects.archive(user.id, workspaceId, project.id);
 
     await expect(posts.get(user.id, workspaceId, post.id)).rejects.toMatchObject({ status: 409 });
+    await expect(posts.list(user.id, workspaceId, project.id)).rejects.toMatchObject({ status: 409 });
     await expect(posts.create(user.id, workspaceId, project.id, "Новый черновик")).rejects.toMatchObject({
       status: 409,
     });
@@ -84,6 +85,7 @@ describe("starter project", () => {
     await expect(watch.collectIdeas(user.id, workspaceId, { projectId: project.id })).rejects.toMatchObject({
       status: 409,
     });
+    await expect(watch.listIdeas(user.id, workspaceId, project.id)).rejects.toMatchObject({ status: 409 });
     await expect(products.list(user.id, workspaceId, project.id)).rejects.toMatchObject({ status: 409 });
   });
 
