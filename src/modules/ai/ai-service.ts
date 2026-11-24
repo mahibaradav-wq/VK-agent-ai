@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 
-import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
+import { AccessError, assertActiveProject, assertWorkspaceBound } from "@/modules/access/permissions";
 import { OPENAI_IMAGE_REGION_MESSAGE, OPENAI_REGION_MESSAGE, isOpenAiRegionError } from "@/server/ai/errors";
 import { createAccessService } from "@/modules/access/access-service";
 import { parseKind, parseLength, parseTone } from "@/modules/ai/kinds";
@@ -287,7 +287,7 @@ export function createAiService(
       const platform = input.platform ? parsePlatforms([input.platform])[0] ?? "" : "";
       if (input.projectId) {
         const project = await db.project.findUnique({ where: { id: input.projectId } });
-        assertWorkspaceBound(workspaceId, project, "Проект");
+        assertActiveProject(workspaceId, project);
       }
       const role = kind === "ideas" ? "ideas" : "copy";
       const provider = await providerFor(workspaceId, role);
@@ -362,7 +362,7 @@ export function createAiService(
         );
       }
       const project = await db.project.findUnique({ where: { id: projectId } });
-      assertWorkspaceBound(workspaceId, project, "Проект");
+      assertActiveProject(workspaceId, project);
       if (!request.projectId || request.projectId !== projectId) {
         throw new AccessError(403, "AI-запрос принадлежит другому проекту. Выберите проект, для которого выполнялась генерация.");
       }
@@ -459,7 +459,7 @@ export function createAiService(
         throw new AccessError(400, "Выберите проект, чтобы агент создал черновик с визуалом.");
       }
       const project = await db.project.findUnique({ where: { id: input.projectId } });
-      assertWorkspaceBound(workspaceId, project, "Проект");
+      assertActiveProject(workspaceId, project);
 
       const tone = parseTone(input.tone ?? "");
       const length = parseLength(input.length ?? "");
