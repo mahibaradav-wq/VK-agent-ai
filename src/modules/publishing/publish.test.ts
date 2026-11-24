@@ -28,7 +28,7 @@ function email(label: string) {
   return `${label}.${Date.now()}.${Math.random().toString(16).slice(2)}@example.test`;
 }
 
-async function expectAccess(promise: Promise<unknown>, status: 400 | 403 | 404, message: RegExp) {
+async function expectAccess(promise: Promise<unknown>, status: 400 | 403 | 404 | 409, message: RegExp) {
   const error = await promise.then(
     () => {
       throw new Error("expected AccessError");
@@ -555,5 +555,51 @@ describe("publishing queue", () => {
     expect(results.some((item) => !item.skipped)).toBe(true);
     expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).status).toBe("failed");
     expect((await prisma.publishJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("failed");
+  });
+
+
+  it("stops queued jobs and due schedules when their project is archived", async () => {
+    const owner = await registerOwner("pub-archived");
+    const post = await draftWithTargets(owner, ["telegram"], "Архивная публикация");
+    await approveCurrent(owner, post.id);
+    const telegram = scripted("telegram", [{ kind: "success", externalId: "must-not-send" }]);
+    const queue = createInlineQueue();
+    const publishing = createPublishService(prisma, {
+      queue,
+      adapters: createAdapterRegistry([telegram]),
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+
+    const scheduled = await calendar.createOnDate(owner.userId, owner.workspaceId, owner.projectId, {
+      date: "2026-01-01",
+      timezone: "Europe/Moscow",
+      title: "Архивное расписание",
+    });
+    await posts.saveDraft(owner.userId, owner.workspaceId, scheduled.id, {
+      title: "Архивное расписание",
+      body: "Не должно попасть в очередь",
+      platforms: ["telegram"],
+      mediaIds: [],
+    });
+    await approveCurrent(owner, scheduled.id);
+    await calendar.schedule(owner.userId, owner.workspaceId, scheduled.id, {
+      localDateTime: "2026-01-01T12:00",
+      timezone: "Europe/Moscow",
+    });
+
+    await projects.archive(owner.userId, owner.workspaceId, owner.projectId);
+    const processed = await publishing.processJob(job.id, "worker-archived", new Date("2026-10-15T12:00:00.000Z"));
+    const storedPost = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, include: { targets: true } });
+    const storedJob = await prisma.publishJob.findUniqueOrThrow({ where: { id: job.id } });
+    const due = await publishing.enqueueDueSchedules(new Date("2026-10-15T12:00:00.000Z"), owner.workspaceId);
+
+    expect(telegram.calls).toBe(0);
+    expect(storedPost.status).toBe("cancelled");
+    expect(storedPost.targets[0]?.status).toBe("cancelled");
+    expect(storedJob.status).toBe("failed");
+    expect(storedJob.lastError).toMatch(/Проект архивирован/);
+    expect(processed.job?.status).toBe("failed");
+    expect(due).toHaveLength(0);
+    expect(await prisma.publishJob.count({ where: { postId: scheduled.id } })).toBe(0);
   });
 });
