@@ -19,7 +19,7 @@ function email(label: string) {
   return `${label}.${Date.now()}.${Math.random().toString(16).slice(2)}@example.test`;
 }
 
-async function expectAccess(promise: Promise<unknown>, status: 400 | 403 | 404, message: RegExp) {
+async function expectAccess(promise: Promise<unknown>, status: 400 | 403 | 404 | 409, message: RegExp) {
   const error = await promise.then(
     () => {
       throw new Error("expected AccessError");
@@ -197,6 +197,40 @@ describe("analytics dashboard and collection", () => {
       analytics.dashboard(owner.userId, owner.workspaceId, { projectId: other.projectId }),
       403,
       /другому рабочему пространству/,
+    );
+  });
+
+  it("does not collect or display analytics for archived projects", async () => {
+    const owner = await registerOwner("an-archived");
+    const transport = scriptedTelegram({
+      getMe: { ok: true, result: { id: 3, is_bot: true, username: "archived_bot" } },
+      getChat: { ok: true, result: { id: -10077, title: "Архивный канал" } },
+      getChatMemberCount: { ok: true, result: 77 },
+    });
+    const social = createSocialService(prisma, { telegram: transport });
+    const account = await social.connectTelegram(owner.userId, owner.workspaceId, {
+      token: BOT_TOKEN,
+      chatId: "-10077",
+      projectId: owner.projectId,
+    });
+    await projects.archive(owner.userId, owner.workspaceId, owner.projectId);
+
+    const analytics = createAnalyticsService(prisma, { telegram: transport });
+    const callsBeforeCollection = transport.calls.length;
+    await expectAccess(
+      analytics.collect(owner.userId, owner.workspaceId, { socialAccountId: account.id }),
+      409,
+      /Архивный проект/,
+    );
+    expect(transport.calls.slice(callsBeforeCollection).some((call) => call.method === "getChatMemberCount")).toBe(false);
+
+    const bulk = await analytics.collect(owner.userId, owner.workspaceId);
+    expect(bulk.collected).toHaveLength(0);
+    expect(bulk.skipped[0]?.reason).toMatch(/Проект архивирован/);
+    await expectAccess(
+      analytics.dashboard(owner.userId, owner.workspaceId, { projectId: owner.projectId }),
+      409,
+      /Архивный проект/,
     );
   });
 });
