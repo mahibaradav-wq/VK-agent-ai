@@ -13,11 +13,13 @@
 | Исходный SHA (PR #60) | `62751d0ebe37b48632f19977aa1b1dff36760463` |
 | База PR #60 | `cursor/vps-readiness-ee77` от PR #59 `ed014ba8f049511438a565606abc13e30dd21ac6` |
 | Рабочая ветка | `cursor/vps-readiness-hardening-ee77` |
-| Конечный SHA | `28df4752a405c31715fc92c89f1f0290369d092f` |
+| Конечный SHA | `48ee19f82ece2ff53d32048a827a73b0dcb83e07` |
+| Функциональный SHA | `28df4752a405c31715fc92c89f1f0290369d092f` |
 | `main` | не менялся |
 | PR #59 / #60 | не объединялись |
 
-GitHub CI и VPS readiness — после push этого SHA.
+GitHub CI Test: SUCCESS [45486551352](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45486551352).  
+GitHub VPS readiness: SUCCESS [45486551423](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45486551423) (syntax, SSH-guard, prisma, lint, typecheck, test, probe, build, image, Playwright e2e, secret-scan).
 
 ## Изменённые файлы
 
@@ -60,8 +62,9 @@ GitHub CI и VPS readiness — после push этого SHA.
 | секреты в stdout/stderr отказа | не выводились |
 | `--plan` не меняет Git, файлы, каталоги | PASS |
 | Deploy VPS не может SSH | PASS |
-| GitHub CI / VPS readiness | ожидает push `28df475` |
-| secret-scan workflow | в составе VPS readiness |
+| GitHub **CI Test** `48ee19f` | SUCCESS [45486551352](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45486551352) |
+| GitHub **VPS readiness** `48ee19f` | SUCCESS [45486551423](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45486551423) |
+| secret-scan workflow | PASS (шаг VPS readiness) |
 
 Тесты не использовали production credentials и не ходили на production PostgreSQL: только `localhost`/`127.0.0.1` и БД `polka_vps_probe_*`.
 
