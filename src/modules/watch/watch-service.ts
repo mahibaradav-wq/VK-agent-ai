@@ -604,6 +604,10 @@ export function createWatchService(
 
     async listIdeas(userId: string, workspaceId: string, projectId: string | null) {
       await access.requirePermission(userId, workspaceId, "ai.view");
+      if (projectId) {
+        const project = await db.project.findUnique({ where: { id: projectId } });
+        assertActiveProject(workspaceId, project);
+      }
       const rows = await db.aIRequest.findMany({
         where: { workspaceId, projectId, kind: WATCH_IDEAS_KIND },
         orderBy: { createdAt: "desc" },
