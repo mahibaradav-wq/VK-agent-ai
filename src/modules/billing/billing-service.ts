@@ -12,6 +12,7 @@ import {
 } from "@/modules/billing/plans";
 import { getUsage, USAGE_METRICS } from "@/modules/billing/usage";
 import { deliverNotifications } from "@/modules/notifications/dispatch";
+import { COMMERCIAL_BILLING_DISABLED_MESSAGE, isCommercialBillingEnabled } from "@/modules/cabinet/commercial";
 import { getBillingProvider, type BillingProvider } from "@/server/billing";
 
 const subscriptionInclude = { plan: true } satisfies Prisma.SubscriptionInclude;
@@ -34,12 +35,20 @@ export function createBillingService(
     provider?: BillingProvider;
     now?: () => Date;
     siteUrl?: string;
+    allowCommercial?: boolean;
   },
 ) {
   const access = createAccessService(db);
   const provider = options?.provider ?? getBillingProvider();
   const now = options?.now ?? (() => new Date());
   const siteUrl = options?.siteUrl ?? process.env.AUTH_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+
+  function assertCommercialBilling() {
+    if (options?.allowCommercial === true || isCommercialBillingEnabled()) {
+      return;
+    }
+    throw new AccessError(403, COMMERCIAL_BILLING_DISABLED_MESSAGE);
+  }
 
   async function loadSubscription(workspaceId: string) {
     await ensureCanonicalPlans(db);
@@ -201,6 +210,7 @@ export function createBillingService(
     },
 
     async startCheckout(userId: string, workspaceId: string, planSlug: string) {
+      assertCommercialBilling();
       await access.requirePermission(userId, workspaceId, "billing.manage");
       if (!provider.ready) {
         throw new AccessError(
@@ -262,6 +272,7 @@ export function createBillingService(
     },
 
     async cancel(userId: string, workspaceId: string) {
+      assertCommercialBilling();
       await access.requirePermission(userId, workspaceId, "billing.manage");
       const subscription = await loadSubscription(workspaceId);
       if (!isPaid(subscription)) {
@@ -285,6 +296,7 @@ export function createBillingService(
     },
 
     async handleWebhook(rawBody: string, signatureHeader: string) {
+      assertCommercialBilling();
       const event = await provider.verifyWebhook(rawBody, signatureHeader);
       if (event.type === "payment.succeeded") {
         if (!event.checkoutSessionId) {

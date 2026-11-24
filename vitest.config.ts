@@ -9,6 +9,7 @@ export default defineConfig({
     exclude: ["e2e/**", "node_modules/**", ".next/**"],
     env: {
       DATABASE_URL: process.env.DATABASE_URL ?? "postgresql://polka:polka_dev_password@localhost:5432/polka_social",
+      AUTH_ALLOW_PUBLIC_REGISTRATION: "true",
     },
   },
   resolve: {

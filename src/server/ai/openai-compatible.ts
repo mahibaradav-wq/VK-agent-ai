@@ -17,7 +17,7 @@ import {
   readErrorBody,
 } from "@/server/ai/errors";
 import { createAiFetch } from "@/server/http/outbound-fetch";
-import { assertAiLiveEnabled } from "@/server/ai/live-guard";
+import { assertPaidAiAllowed } from "@/server/ai/live-guard";
 import { detectMediaType, isVideoMime, MAX_MEDIA_BYTES } from "@/modules/media/file-validation";
 import type { AiGenerateInput, AiGenerateOutput, AiImageInput, AiImageOutput, AiProvider } from "@/server/ai/types";
 
@@ -161,7 +161,7 @@ export function createOpenAiCompatibleProvider(options: {
     imageReady,
     async generate(input: AiGenerateInput): Promise<AiGenerateOutput> {
       if (!usingInjectedFetch) {
-        assertAiLiveEnabled();
+        assertPaidAiAllowed();
       }
       const complete = async (userContent: string) => {
         let response: Response;
@@ -246,7 +246,7 @@ export function createOpenAiCompatibleProvider(options: {
     },
     async generateImage(input: AiImageInput): Promise<AiImageOutput> {
       if (!usingInjectedFetch) {
-        assertAiLiveEnabled();
+        assertPaidAiAllowed();
       }
       if (!imageReady) {
         throw new AccessError(

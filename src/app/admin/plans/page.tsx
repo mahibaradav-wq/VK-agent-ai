@@ -28,8 +28,13 @@ export default async function AdminPlansPage() {
       <PageHeader
         eyebrow="Админка"
         title="Тарифы"
-        description="Ресурсные лимиты в БД не затираются каталогом после правки. Superadmin меняет их с записью в audit."
+        description="Таблица Plan сохранена для обратимости. Рабочий личный кабинет не берёт отсюда лимиты проектов и постов."
       />
+      <Container className="pb-6">
+        <StatusBanner tone="info">
+          Операционные лимиты кабинета заданы в коде: 10 активных проектов. Checkout и смена тарифа выключены.
+        </StatusBanner>
+      </Container>
       <Container className="grid gap-5 pb-20 lg:grid-cols-3">
         {data.map((plan) => (
           <Card key={plan.id} className="grid gap-4">

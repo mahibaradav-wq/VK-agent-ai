@@ -7,8 +7,9 @@ import { StatusBanner } from "@/components/ui/status-banner";
 import { createPageMetadata } from "@/lib/metadata";
 import { getAppContext } from "@/modules/access/app-context";
 import { hasPermission } from "@/modules/access/permissions";
-import { createProject } from "@/modules/projects/actions";
-import { createStarterProjectIfMissing } from "@/modules/projects/project-service";
+import { PERSONAL_ACTIVE_PROJECT_LIMIT } from "@/modules/cabinet/limits";
+import { archiveProject, createProject, restoreProject } from "@/modules/projects/actions";
+import { createProjectService, createStarterProjectIfMissing } from "@/modules/projects/project-service";
 import { selectProject } from "@/modules/workspaces/actions";
 import { prisma } from "@/server/db/prisma";
 import { SetupForm } from "@/components/forms/setup-form";
@@ -48,6 +49,11 @@ export default async function ProjectsHomePage() {
     : [[], []];
 
   const canCreate = activeMembership ? hasPermission(activeMembership.role, "project.create") : false;
+  const canArchive = activeMembership ? hasPermission(activeMembership.role, "project.archive") : false;
+  const archived =
+    activeMembership && canArchive
+      ? await createProjectService(prisma).listArchived(session.user.id, activeMembership.workspaceId)
+      : [];
 
   return (
     <>
@@ -77,21 +83,56 @@ export default async function ProjectsHomePage() {
                   {lastAt ? ` · последний ${lastAt.toLocaleString("ru-RU")}` : ""}
                 </p>
                 {activeMembership ? (
-                  <form action={selectProject}>
-                    <input type="hidden" name="workspaceId" value={activeMembership.workspaceId} />
-                    <input type="hidden" name="projectId" value={project.id} />
-                    <input type="hidden" name="next" value="/app/calendar" />
-                    <Button>Открыть календарь</Button>
-                  </form>
+                  <div className="flex flex-wrap gap-3">
+                    <form action={selectProject}>
+                      <input type="hidden" name="workspaceId" value={activeMembership.workspaceId} />
+                      <input type="hidden" name="projectId" value={project.id} />
+                      <input type="hidden" name="next" value="/app/calendar" />
+                      <Button>Открыть календарь</Button>
+                    </form>
+                    {canArchive ? (
+                      <form action={archiveProject}>
+                        <input type="hidden" name="workspaceId" value={activeMembership.workspaceId} />
+                        <input type="hidden" name="projectId" value={project.id} />
+                        <Button type="submit" variant="secondary">
+                          В архив
+                        </Button>
+                      </form>
+                    ) : null}
+                  </div>
                 ) : null}
               </Card>
             );
           })}
+          {archived.length > 0 ? (
+            <div className="grid gap-3">
+              <h2 className="text-lg font-black text-ink">Архив</h2>
+              {archived.map((project) => (
+                <Card key={project.id} className="grid gap-3">
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-ink/50">Архив</p>
+                  <h2 className="text-xl font-black text-ink/80">{project.name}</h2>
+                  <p className="text-sm text-ink/60">Не участвует в лимите, пока не восстановлен.</p>
+                  {activeMembership ? (
+                    <form action={restoreProject}>
+                      <input type="hidden" name="workspaceId" value={activeMembership.workspaceId} />
+                      <input type="hidden" name="projectId" value={project.id} />
+                      <Button type="submit" variant="secondary">
+                        Восстановить
+                      </Button>
+                    </form>
+                  ) : null}
+                </Card>
+              ))}
+            </div>
+          ) : null}
         </div>
         {canCreate && activeMembership ? (
           <Card>
             <h2 className="text-xl font-black text-ink">Новый проект</h2>
-            <p className="mt-2 text-sm text-ink/70">Название и цвет. Клуб и канал подключите сразу после создания, в Подключениях.</p>
+            <p className="mt-2 text-sm text-ink/70">
+              Название и цвет. Клуб и канал подключите сразу после создания, в Подключениях. Активных проектов не
+              больше {PERSONAL_ACTIVE_PROJECT_LIMIT}.
+            </p>
             <div className="mt-4">
               <SetupForm
                 action={createProject}

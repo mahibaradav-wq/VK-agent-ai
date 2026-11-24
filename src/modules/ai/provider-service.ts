@@ -106,9 +106,34 @@ export function createAiConnectionService(
   const fetchImpl = options?.fetchImpl;
 
   async function loadRows(workspaceId: string) {
-    return db.workspaceAiConnection.findMany({
+    const local = await db.workspaceAiConnection.findMany({
       where: { workspaceId, status: "connected" },
       orderBy: { createdAt: "asc" },
+    });
+    if (local.length > 0) {
+      return local;
+    }
+
+    const owner = await db.workspaceMember.findFirst({
+      where: { workspaceId, role: "Owner" },
+      select: { userId: true },
+    });
+    if (!owner) {
+      return [];
+    }
+
+    const owned = await db.workspaceMember.findMany({
+      where: { userId: owner.userId, role: "Owner" },
+      select: { workspaceId: true },
+    });
+    const workspaceIds = owned.map((item) => item.workspaceId);
+    if (workspaceIds.length === 0) {
+      return [];
+    }
+
+    return db.workspaceAiConnection.findMany({
+      where: { workspaceId: { in: workspaceIds }, status: "connected", provider: "openai" },
+      orderBy: { updatedAt: "desc" },
     });
   }
 

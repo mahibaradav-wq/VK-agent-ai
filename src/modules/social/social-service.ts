@@ -2,7 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 
 import { AccessError, assertActiveProject, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
-import { getWorkspacePlanLimits } from "@/modules/billing/plans";
+import { PERSONAL_CABINET_LIMITS } from "@/modules/cabinet/limits";
 import { lockWorkspaceMetric } from "@/modules/billing/usage";
 import { decryptToken, encryptToken } from "@/server/crypto/token-cipher";
 import { FIRST_SOCIAL_PLATFORM } from "@/modules/social/catalog";
@@ -189,12 +189,11 @@ export function createSocialService(
 
       const account = await db.$transaction(async (tx) => {
         await lockWorkspaceMetric(tx, workspaceId, "social_accounts");
-        const limits = await getWorkspacePlanLimits(tx, workspaceId);
         const used = await tx.socialAccount.count({
           where: { workspaceId, status: { not: "disconnected" } },
         });
-        if (used >= limits.socialAccounts) {
-          throw new AccessError(400, `Лимит социальных аккаунтов тарифа исчерпан (${limits.socialAccounts}).`);
+        if (used >= PERSONAL_CABINET_LIMITS.socialAccounts) {
+          throw new AccessError(400, `Лимит социальных аккаунтов кабинета исчерпан (${PERSONAL_CABINET_LIMITS.socialAccounts}).`);
         }
         const created = await tx.socialAccount.create({
           data: {
@@ -302,12 +301,11 @@ export function createSocialService(
           });
         } else {
           await lockWorkspaceMetric(tx, workspaceId, "social_accounts");
-          const limits = await getWorkspacePlanLimits(tx, workspaceId);
           const used = await tx.socialAccount.count({
             where: { workspaceId, status: { not: "disconnected" } },
           });
-          if (used >= limits.socialAccounts) {
-            throw new AccessError(400, `Лимит социальных аккаунтов тарифа исчерпан (${limits.socialAccounts}).`);
+          if (used >= PERSONAL_CABINET_LIMITS.socialAccounts) {
+            throw new AccessError(400, `Лимит социальных аккаунтов кабинета исчерпан (${PERSONAL_CABINET_LIMITS.socialAccounts}).`);
           }
           saved = await tx.socialAccount.create({
             data: {
@@ -608,12 +606,11 @@ export function createSocialService(
           });
         } else {
           await lockWorkspaceMetric(tx, workspaceId, "social_accounts");
-          const limits = await getWorkspacePlanLimits(tx, workspaceId);
           const used = await tx.socialAccount.count({
             where: { workspaceId, status: { not: "disconnected" } },
           });
-          if (used >= limits.socialAccounts) {
-            throw new AccessError(400, `Лимит социальных аккаунтов тарифа исчерпан (${limits.socialAccounts}).`);
+          if (used >= PERSONAL_CABINET_LIMITS.socialAccounts) {
+            throw new AccessError(400, `Лимит социальных аккаунтов кабинета исчерпан (${PERSONAL_CABINET_LIMITS.socialAccounts}).`);
           }
           saved = await tx.socialAccount.create({
             data: {

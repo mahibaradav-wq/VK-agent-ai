@@ -2,18 +2,24 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { AccessError } from "@/modules/access/permissions";
 import { fetchAiBalance } from "@/server/ai/balance";
-import { assertAiLiveEnabled, isAiLiveEnabled } from "@/server/ai/live-guard";
+import { assertAiLiveEnabled, assertPaidAiAllowed, cabinetMonthlyAiLimit, isAiLiveEnabled } from "@/server/ai/live-guard";
 import { createOpenAiCompatibleProvider } from "@/server/ai/openai-compatible";
 import { probeAiApiKey } from "@/server/ai/probe";
 
 describe("paid AI live guard", () => {
-  const previous = process.env.AI_LIVE_ENABLED;
+  const previousLive = process.env.AI_LIVE_ENABLED;
+  const previousLimit = process.env.AI_MONTHLY_HARD_LIMIT;
 
   afterEach(() => {
-    if (previous === undefined) {
+    if (previousLive === undefined) {
       delete process.env.AI_LIVE_ENABLED;
     } else {
-      process.env.AI_LIVE_ENABLED = previous;
+      process.env.AI_LIVE_ENABLED = previousLive;
+    }
+    if (previousLimit === undefined) {
+      delete process.env.AI_MONTHLY_HARD_LIMIT;
+    } else {
+      process.env.AI_MONTHLY_HARD_LIMIT = previousLimit;
     }
   });
 
@@ -78,5 +84,21 @@ describe("paid AI live guard", () => {
     expect(result.remainingUsd).toBeNull();
     expect(result.source).toBe("none");
     expect(result.message).toMatch(/AI-запросы выключены/);
+  });
+
+  it("blocks live calls when the cabinet budget is unset even if AI_LIVE_ENABLED is true", async () => {
+    process.env.AI_LIVE_ENABLED = "true";
+    delete process.env.AI_MONTHLY_HARD_LIMIT;
+    expect(cabinetMonthlyAiLimit()).toBeNull();
+    expect(() => assertPaidAiAllowed()).toThrow(/AI_MONTHLY_HARD_LIMIT/);
+    const live = createOpenAiCompatibleProvider({
+      apiKey: "sk-test-not-used",
+      baseUrl: "https://example.test/v1",
+      model: "gpt-4o-mini",
+    });
+    await expect(live.generate({ kind: "headline", prompt: "полка", tone: "neutral", length: "medium", platform: "vk" })).rejects.toMatchObject({
+      status: 403,
+      message: /AI_MONTHLY_HARD_LIMIT/,
+    });
   });
 });

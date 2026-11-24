@@ -18,7 +18,7 @@ export function listedAdminEmails() {
 }
 
 export function isPublicRegistrationOpen() {
-  return process.env.AUTH_ALLOW_PUBLIC_REGISTRATION !== "false";
+  return process.env.AUTH_ALLOW_PUBLIC_REGISTRATION === "true";
 }
 
 class ClosedRegistrationError extends Error {

@@ -54,6 +54,7 @@ function signedBody(secret: string, body: unknown, timestamp = Math.floor(Date.n
 
 describe("billing and subscriptions", () => {
   beforeAll(async () => {
+    process.env.BILLING_CHECKOUT_ENABLED = "true";
     await prisma.$connect();
     await ensureCanonicalPlans(prisma);
   });
@@ -272,7 +273,7 @@ describe("billing and subscriptions", () => {
     expect((await billing.getState(owner.userId, owner.workspaceId)).paid).toBe(false);
   });
 
-  it("enforces plan resource limits and atomic usage reservation under parallel requests", async () => {
+  it("does not let a commercial plan row cap personal-cabinet projects and still reserves usage atomically", async () => {
     const owner = await registerOwner("bill-limit");
     const tiny = await prisma.plan.create({
       data: {
@@ -295,11 +296,8 @@ describe("billing and subscriptions", () => {
       data: { planId: tiny.id },
     });
 
-    await expectAccess(
-      projects.create(owner.userId, owner.workspaceId, { name: "Второй проект" }),
-      400,
-      /Лимит проектов тарифа/,
-    );
+    const second = await projects.create(owner.userId, owner.workspaceId, { name: "Второй проект" });
+    expect(second.name).toBe("Второй проект");
 
     const metric = `parallel_${owner.workspaceId}`;
     const results = await Promise.allSettled(

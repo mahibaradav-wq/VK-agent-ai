@@ -217,7 +217,7 @@ describe("AI assistant", () => {
     await expectAccess(
       ai.generate(owner.userId, owner.workspaceId, { kind: "ideas", prompt: "ещё суп" }),
       400,
-      /Лимит AI-генераций/,
+      /Общий лимит AI-запросов кабинета/,
     );
     expect(await prisma.aIRequest.count({ where: { workspaceId: owner.workspaceId } })).toBe(1);
     expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(1);

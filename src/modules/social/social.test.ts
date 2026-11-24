@@ -295,11 +295,14 @@ describe("social accounts", () => {
     expect(global.projectId).toBeNull();
     await prisma.postTarget.updateMany({
       where: { postId: postB.id },
-      data: { status: "failed", lastError: null },
+      data: { status: "failed", lastError: null, socialAccountId: global.id },
     });
-    await publishing.enqueue(owner.userId, owner.workspaceId, postB.id);
-    await publishing.processJob(job.id, "worker-no-global");
+    const retry = await publishing.enqueue(owner.userId, owner.workspaceId, postB.id);
+    await publishing.processJob(retry.id, "worker-no-global");
     expect(transport.calls.some((item) => item.method === "sendMessage")).toBe(false);
+    expect((await prisma.publishAttempt.findFirstOrThrow({ where: { jobId: retry.id } })).errorCode).toBe(
+      "integration_not_configured",
+    );
   });
 
   it("connects a bot token without a channel and does not call getChat", async () => {
@@ -534,6 +537,7 @@ describe("social accounts", () => {
     const account = await social.connectTelegram(owner.userId, owner.workspaceId, {
       token: BOT_TOKEN,
       chatId: "77",
+      projectId: owner.projectId,
     });
     const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Длинный");
     await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
@@ -812,6 +816,7 @@ describe("social accounts", () => {
     const connected = await social.connectVk(owner.userId, owner.workspaceId, {
       token: VK_COMMUNITY_TOKEN,
       source: "https://vk.com/club242155421",
+      projectId: owner.projectId,
     });
     expect(connected.status).toBe("connected");
     expect(connected.platform).toBe("vk");
@@ -861,6 +866,7 @@ describe("social accounts", () => {
     await social.connectVk(owner.userId, owner.workspaceId, {
       token: VK_COMMUNITY_TOKEN,
       source: "https://vk.com/club242155421",
+      projectId: owner.projectId,
     });
     const products = createProductService(prisma);
     const product = await products.addFromUrl(
@@ -903,6 +909,7 @@ describe("social accounts", () => {
     await socialB.connectVk(ownerB.userId, ownerB.workspaceId, {
       token: VK_COMMUNITY_TOKEN,
       source: "https://vk.com/club242155421",
+      projectId: ownerB.projectId,
     });
     const productB = await createProductService(prisma).addFromUrl(
       ownerB.userId,
@@ -956,6 +963,7 @@ describe("social accounts", () => {
     await social.connectVk(owner.userId, owner.workspaceId, {
       token: VK_COMMUNITY_TOKEN,
       source: "https://vk.com/club242155421",
+      projectId: owner.projectId,
     });
     const media = createMediaService(prisma, createLocalStorage(storageDir));
     const asset = await media.upload(owner.userId, owner.workspaceId, {
@@ -1016,6 +1024,7 @@ describe("social accounts", () => {
     await social.connectVk(owner.userId, owner.workspaceId, {
       token: VK_COMMUNITY_TOKEN,
       source: "https://vk.com/club242155421",
+      projectId: owner.projectId,
     });
     const mp4 = await encodeSlideshowMp4({ frames: [png, png], seconds: 4, aspect: "9:16" });
     const media = createMediaService(prisma, createLocalStorage(storageDir));
@@ -1069,6 +1078,7 @@ describe("social accounts", () => {
     await social.connectVk(owner.userId, owner.workspaceId, {
       token: VK_COMMUNITY_TOKEN,
       source: "https://vk.com/club242155421",
+      projectId: owner.projectId,
     });
     const media = createMediaService(prisma, createLocalStorage(storageDir));
     const assets = [];
@@ -1127,6 +1137,7 @@ describe("social accounts", () => {
       token: VK_COMMUNITY_TOKEN,
       photoToken: VK_PHOTO_USER_TOKEN,
       source: "https://vk.com/club242155421",
+      projectId: owner.projectId,
     });
     expect(connected.capabilities.some((item) => item.name === "publish_carousel" && item.enabled)).toBe(true);
     const media = createMediaService(prisma, createLocalStorage(storageDir));
@@ -1179,6 +1190,7 @@ describe("social accounts", () => {
     const connected = await social.connectVk(owner.userId, owner.workspaceId, {
       token: VK_PHOTO_USER_TOKEN,
       source: "https://vk.com/club242155421",
+      projectId: owner.projectId,
     });
     expect(connected.capabilities.some((item) => item.name === "publish_carousel" && item.enabled)).toBe(true);
     const media = createMediaService(prisma, createLocalStorage(storageDir));
@@ -1264,6 +1276,7 @@ describe("social accounts", () => {
       token: "",
       photoToken: VK_PHOTO_USER_TOKEN,
       source: "https://vk.com/club242155421",
+      projectId: owner.projectId,
     });
     expect(connected.status).toBe("connected");
     expect(connected.capabilities.some((item) => item.name === "publish_carousel" && item.enabled)).toBe(true);
@@ -1300,6 +1313,7 @@ describe("social accounts", () => {
     await social.connectVk(owner.userId, owner.workspaceId, {
       token: VK_COMMUNITY_TOKEN,
       source: "https://vk.com/club242155421",
+      projectId: owner.projectId,
     });
     const media = createMediaService(prisma, createLocalStorage(storageDir));
     const assets = [];
@@ -1363,6 +1377,7 @@ describe("social accounts", () => {
     await social.connectVk(owner.userId, owner.workspaceId, {
       token: VK_COMMUNITY_TOKEN,
       source: "https://vk.com/club242155421",
+      projectId: owner.projectId,
     });
     const media = createMediaService(prisma, createLocalStorage(storageDir));
     const asset = await media.upload(owner.userId, owner.workspaceId, {
@@ -1427,6 +1442,7 @@ describe("social accounts", () => {
     await social.connectVk(owner.userId, owner.workspaceId, {
       token: VK_COMMUNITY_TOKEN,
       source: "https://vk.com/club242155421",
+      projectId: owner.projectId,
     });
     const media = createMediaService(prisma, createLocalStorage(storageDir));
     const asset = await media.upload(owner.userId, owner.workspaceId, {
@@ -1473,6 +1489,7 @@ describe("social accounts", () => {
     await social.connectVk(owner.userId, owner.workspaceId, {
       token: VK_COMMUNITY_TOKEN,
       source: "https://vk.com/club242155421",
+      projectId: owner.projectId,
     });
     const media = createMediaService(prisma, createLocalStorage(storageDir));
     const asset = await media.upload(owner.userId, owner.workspaceId, {
@@ -1565,6 +1582,7 @@ describe("social accounts", () => {
     await social.connectVk(owner.userId, owner.workspaceId, {
       token: VK_COMMUNITY_TOKEN,
       source: "https://vk.com/club242155421",
+      projectId: owner.projectId,
     });
     const media = createMediaService(prisma, createLocalStorage(storageDir));
     const asset = await media.upload(owner.userId, owner.workspaceId, {

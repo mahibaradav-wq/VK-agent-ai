@@ -19,6 +19,8 @@ describe("production hosting stack", () => {
   const home = read("src/app/page.tsx");
   const pricing = read("src/app/pricing/page.tsx");
   const studio = read("src/app/app/studio/page.tsx");
+  const projectsHome = read("src/app/app/page.tsx");
+  const registerPage = read("src/app/register/page.tsx");
 
   it("builds the app image and applies migrations before start", () => {
     expect(dockerfile).toContain("npx prisma generate && npm run build");
@@ -49,6 +51,7 @@ describe("production hosting stack", () => {
     expect(envExample).toContain("AUTH_SECRET=");
     expect(envExample).toContain("POSTGRES_PASSWORD=");
     expect(envExample).toMatch(/# AUTH_DEV_MAILBOX=/);
+    expect(envExample).toMatch(/# AI_MONTHLY_HARD_LIMIT=/);
     expect(envExample).not.toMatch(/^AUTH_DEV_MAILBOX=true$/m);
     expect(upScript).toContain("AUTH_DEV_MAILBOX нельзя включать");
     expect(deploy).toContain("Первый аккаунт на рабочем сайте подтверждается сразу");
@@ -86,6 +89,9 @@ describe("production hosting stack", () => {
     expect(home).not.toContain("PricingTable");
     expect(pricing).not.toContain("PricingTable");
     expect(pricing).toContain("Коммерческие тарифы не продаются");
+    expect(projectsHome).toContain("restoreProject");
+    expect(projectsHome).toContain("archiveProject");
+    expect(registerPage).toContain("isPublicRegistrationOpen");
   });
 
   it("does not start image generation when Studio loads", () => {

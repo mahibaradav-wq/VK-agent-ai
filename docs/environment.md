@@ -18,9 +18,10 @@
 | Переменная | Назначение |
 |---|---|
 | `AUTH_DEV_MAILBOX=true` | Письма подтверждения, сброса, приглашений и уведомлений пишутся в `/dev/mailbox` |
-| `AUTH_ALLOW_PUBLIC_REGISTRATION=false` | Закрывает публичную регистрацию. Первый владелец на пустой БД и приглашённые email проходят |
+| `AUTH_ALLOW_PUBLIC_REGISTRATION=true` | Открывает публичную регистрацию. Без флага после первого владельца остаются только приглашения |
 | `STORAGE_DRIVER=local` | Файлы в `LOCAL_STORAGE_DIR` (по умолчанию `./data/media`) |
-| `AI_LIVE_ENABLED=true` | Разрешает платные вызовы OpenAI и чтение баланса. Пока флаг не `true`, live-запросы не идут |
+| `AI_LIVE_ENABLED=true` | Разрешает платные вызовы OpenAI вместе с `AI_MONTHLY_HARD_LIMIT`. Пока оба не заданы, live-запросы не идут |
+| `AI_MONTHLY_HARD_LIMIT` | Общий месячный лимит платных AI-операций кабинета (целое ≥ 1) |
 
 В production `AUTH_DEV_MAILBOX` не задают. Иначе стенд писем станет публичной утечкой токенов. Для личного кабинета после первого владельца задайте `AUTH_ALLOW_PUBLIC_REGISTRATION=false`. `AI_LIVE_ENABLED` не включайте, пока не согласован числовой бюджет.
 

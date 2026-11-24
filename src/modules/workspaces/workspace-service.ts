@@ -2,7 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 
 import { AccessError, canAssignRole, parseWorkspaceRole } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
-import { getWorkspacePlanLimits } from "@/modules/billing/plans";
+import { PERSONAL_CABINET_LIMITS } from "@/modules/cabinet/limits";
 import { lockWorkspaceMetric } from "@/modules/billing/usage";
 
 export function createWorkspaceService(db: PrismaClient) {
@@ -48,10 +48,9 @@ export function createWorkspaceService(db: PrismaClient) {
 
       const member = await db.$transaction(async (tx) => {
         await lockWorkspaceMetric(tx, workspaceId, "members");
-        const limits = await getWorkspacePlanLimits(tx, workspaceId);
         const used = await tx.workspaceMember.count({ where: { workspaceId } });
-        if (used >= limits.members) {
-          throw new AccessError(400, `Лимит участников тарифа исчерпан (${limits.members}).`);
+        if (used >= PERSONAL_CABINET_LIMITS.members) {
+          throw new AccessError(400, `Лимит участников кабинета исчерпан (${PERSONAL_CABINET_LIMITS.members}).`);
         }
         return tx.workspaceMember.create({
           data: { workspaceId, userId: user.id, role: nextRole },
