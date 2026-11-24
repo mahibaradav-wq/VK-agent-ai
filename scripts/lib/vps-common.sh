@@ -194,9 +194,11 @@ vps_dump_database() {
     sleep "$BACKUP_PAUSE_SECONDS"
   fi
   if [[ "${VPS_RUNTIME:-compose}" == "probe" ]]; then
-    PGPASSWORD="$PROBE_PGPASSWORD" pg_dump -Fc --no-owner --no-acl \
+    # Plain SQL so a newer client can restore into PostgreSQL 16 (custom dumps
+    # from PG17+ emit SET transaction_timeout, which 16 rejects).
+    PGPASSWORD="$PROBE_PGPASSWORD" pg_dump --format=plain --no-owner --no-acl \
       -h "$PROBE_PGHOST" -p "$PROBE_PGPORT" -U "$PROBE_PGUSER" -d "$PROBE_PGDATABASE" \
-      >"$dest"
+      | grep -v transaction_timeout >"$dest"
     return
   fi
   vps_compose exec -T postgres sh -lc 'pg_dump -Fc --no-owner --no-acl -U "$POSTGRES_USER" "$POSTGRES_DB"' >"$dest"
@@ -205,8 +207,11 @@ vps_dump_database() {
 vps_list_dump() {
   local dump="$1"
   if [[ "${VPS_RUNTIME:-compose}" == "probe" ]]; then
-    pg_restore --list "$dump" >/dev/null
-    return
+    if grep -q '^-- PostgreSQL database dump' "$dump"; then
+      return 0
+    fi
+    echo "Probe dump is not a readable PostgreSQL SQL dump." >&2
+    return 1
   fi
   vps_compose exec -T postgres pg_restore --list <"$dump" >/dev/null
 }
@@ -228,9 +233,8 @@ vps_restore_database() {
   fi
   vps_reset_public_schema
   if [[ "${VPS_RUNTIME:-compose}" == "probe" ]]; then
-    PGPASSWORD="$PROBE_PGPASSWORD" pg_restore --no-owner --no-privileges --single-transaction \
-      -h "$PROBE_PGHOST" -p "$PROBE_PGPORT" -U "$PROBE_PGUSER" -d "$PROBE_PGDATABASE" \
-      "$dump"
+    PGPASSWORD="$PROBE_PGPASSWORD" psql -h "$PROBE_PGHOST" -p "$PROBE_PGPORT" -U "$PROBE_PGUSER" -d "$PROBE_PGDATABASE" \
+      -v ON_ERROR_STOP=1 -f "$dump" >/dev/null
     return
   fi
   vps_compose exec -T postgres sh -lc 'pg_restore --no-owner --no-privileges --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <"$dump"
