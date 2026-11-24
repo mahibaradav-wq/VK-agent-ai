@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient, PublishAttemptKind, PublishJobStatus } from "@prisma/client";
 
-import { AccessError, assertWorkspaceBound } from "@/modules/access/permissions";
+import { AccessError, assertActiveProject, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import { assertApprovedVersion } from "@/modules/collaboration/approval";
 import { createCollaborationService } from "@/modules/collaboration/collaboration-service";
@@ -88,10 +88,46 @@ export function createPublishService(
   async function loadBoundPost(workspaceId: string, postId: string) {
     const post = await db.post.findUnique({
       where: { id: postId },
-      include: postLoadInclude,
+      include: { ...postLoadInclude, project: true },
     });
     assertWorkspaceBound(workspaceId, post, "Публикация");
+    assertActiveProject(workspaceId, post.project);
     return post;
+  }
+
+
+  async function stopArchivedProjectJob(jobId: string) {
+    const job = await db.publishJob.findUnique({ where: { id: jobId }, include: jobInclude });
+    if (!job?.post.project.archivedAt) return false;
+
+    const reason = "Проект архивирован. Публикация остановлена; проверьте внешние площадки вручную, если отправка уже начиналась.";
+    await db.$transaction(async (tx) => {
+      const targets = await tx.postTarget.findMany({ where: { postId: job.postId }, select: { status: true } });
+      const hasInFlight = targets.some((target) => target.status === "publishing");
+      await tx.postTarget.updateMany({
+        where: { postId: job.postId, status: { in: ["draft", "pending_approval", "approved", "scheduled", "queued", "failed"] } },
+        data: { status: "cancelled", lastError: reason },
+      });
+      if (hasInFlight) {
+        await tx.postTarget.updateMany({
+          where: { postId: job.postId, status: "publishing" },
+          data: { status: "requires_manual_check", lastError: reason },
+        });
+      }
+      await tx.post.update({
+        where: { id: job.postId },
+        data: { status: hasInFlight ? "requires_manual_check" : "cancelled" },
+      });
+      await tx.publishJob.updateMany({
+        where: { id: job.id, status: { in: ["pending", "claimed", "processing"] } },
+        data: {
+          status: hasInFlight ? "requires_manual_check" : "failed",
+          nextAttemptAt: null,
+          lastError: reason,
+        },
+      });
+    });
+    return true;
   }
 
   async function dispatch(jobId: string, delayMs = 0) {
@@ -391,7 +427,7 @@ export function createPublishService(
         where: {
           workspaceId: workspaceId || undefined,
           startsAt: { lte: at },
-          post: { status: "scheduled" },
+          post: { status: "scheduled", project: { is: { archivedAt: null } } },
         },
         include: { post: { include: postLoadInclude } },
       });
@@ -444,6 +480,12 @@ export function createPublishService(
       }
 
       try {
+      if (await stopArchivedProjectJob(jobId)) {
+        return {
+          skipped: false as const,
+          job: await db.publishJob.findUnique({ where: { id: jobId }, include: jobInclude }),
+        };
+      }
       await db.publishJob.update({
         where: { id: jobId },
         data: { status: "processing" },
@@ -485,10 +527,12 @@ export function createPublishService(
       });
 
       for (const target of eligible) {
+        if (await stopArchivedProjectJob(jobId)) break;
         await db.postTarget.update({
           where: { id: target.id },
           data: { status: "publishing" },
         });
+        if (await stopArchivedProjectJob(jobId)) break;
 
         const startedAt = now();
         let outcome: PublishOutcome;

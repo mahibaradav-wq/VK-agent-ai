@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import type { Prisma, PrismaClient, WorkspaceRole } from "@prisma/client";
 
-import { AccessError, assertWorkspaceBound, canAssignRole, parseWorkspaceRole } from "@/modules/access/permissions";
+import { AccessError, assertActiveProject, assertWorkspaceBound, canAssignRole, parseWorkspaceRole } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import { hashToken, isValidEmail } from "@/modules/auth/auth-service";
 import { getWorkspacePlanLimits } from "@/modules/billing/plans";
@@ -40,6 +40,7 @@ export function createCollaborationService(
       },
     });
     assertWorkspaceBound(workspaceId, post, "Публикация");
+    assertActiveProject(workspaceId, post.project);
     return post;
   }
 
@@ -87,7 +88,7 @@ export function createCollaborationService(
     const unique = [...new Set(projectIds.filter(Boolean))];
     for (const projectId of unique) {
       const project = await tx.project.findUnique({ where: { id: projectId } });
-      assertWorkspaceBound(workspaceId, project, "Проект");
+      assertActiveProject(workspaceId, project);
       await tx.projectAccess.upsert({
         where: { projectId_userId: { projectId, userId } },
         create: { workspaceId, projectId, userId },
@@ -128,7 +129,7 @@ export function createCollaborationService(
       if (role === "Approver") {
         for (const projectId of input.projectIds ?? []) {
           const project = await db.project.findUnique({ where: { id: projectId } });
-          assertWorkspaceBound(workspaceId, project, "Проект");
+          assertActiveProject(workspaceId, project);
         }
       }
       const invitation = pending
