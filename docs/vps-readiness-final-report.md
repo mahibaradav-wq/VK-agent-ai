@@ -13,10 +13,13 @@
 | Исходный SHA (PR #61) | `3926043974618362d6b523fed96a77c1c3cd4685` |
 | База | `cursor/vps-readiness-hardening-ee77` |
 | Рабочая ветка | `cursor/vps-probe-libpq-hardening-ee77` |
+| PR | [#62](https://github.com/mahibaradav-wq/VK-agent-ai/pull/62) |
+| Конечный SHA | `542343867d2306e679ddc5db38c163ce380a2c37` |
 | `main` | не менялся |
 | PR #59 / #60 / #61 | не объединялись |
 
-Конечный SHA и URL PR — после push и создания PR. GitHub CI / VPS readiness — на итоговом HEAD.
+GitHub CI Test: SUCCESS [45492197878](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45492197878).  
+GitHub VPS readiness: SUCCESS [45492197911](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45492197911) (syntax, SSH-guard, prisma, lint, typecheck, test, probe, build, image, Playwright e2e, secret-scan).
 
 ## Изменённые файлы
 
@@ -51,7 +54,9 @@ Compose/production не затронуты.
 | production URL / PGSERVICE в probe migrate | BLOCK до prisma |
 | утечка пароля / URL | не обнаружена |
 | `npm run test:vps` | PASS 84 |
-| прочие регрессии | после полного прогона ниже |
+| `npm ci` / prisma generate / validate / lint / typecheck / test / build / `bash -n` | PASS |
+| GitHub **CI Test** `5423438` | SUCCESS |
+| GitHub **VPS readiness** `5423438` | SUCCESS (e2e + secret-scan) |
 
 ## Подтверждения запретов
 
