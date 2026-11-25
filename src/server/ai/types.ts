@@ -24,6 +24,8 @@ export type AiGenerateOutput = {
   model: string;
   inputTokens?: number;
   outputTokens?: number;
+  /** Successful paid HTTP calls made for this generate (chat/completions). */
+  paidCalls?: number;
 };
 
 export const aiImageSizes = ["1024x1024", "1024x1536", "1536x1024"] as const;
@@ -39,6 +41,8 @@ export type AiImageOutput = {
   mimeType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
   provider: string;
   model: string;
+  /** Successful paid HTTP calls made for this image (images/generations). */
+  paidCalls?: number;
 };
 
 export type AiProvider = {

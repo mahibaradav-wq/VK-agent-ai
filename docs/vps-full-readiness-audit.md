@@ -24,6 +24,7 @@
 | F2 | `User.sessionVersion` + invalidate JWT после reset (Node path) |
 | F3 | Secure cookies в production |
 | G1 | Post generate резервирует 2 AI unit (revise) |
+| G2 | Agent AI + Studio revise: reserve max (draft+revise × platforms + visuals), charge `paidCalls`, release unused, grow on fallback (см. `docs/pr64-ai-usage-audit.md`) |
 | H1 | Нет blind-resend Telegram при `error_code===0` |
 | H2 | `SOCIAL_PUBLISH_LIVE` fail-closed при `POLKA_REQUIRE_PROD_SECRETS` |
 
@@ -31,8 +32,8 @@
 
 - Реальная сборка/запуск образа и права volume `media_data` не подтверждены на Engine.
 - Worker healthcheck отсутствует; мониторинг диска/cron backup — на операторе.
-- Agent AI usage может недоучитывать revise на live OpenAI (standalone post — исправлено).
 - CSP `unsafe-inline`/`unsafe-eval`, in-memory rate limit — приняты для 1× Node.
+- Edge case: если после уже оплаченного fallback-вызова месячный лимит не даёт дорастить резерв, метрика может недозаписать этот последний вызов (см. audit).
 
 ## CI follow-up
 

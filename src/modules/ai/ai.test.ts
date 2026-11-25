@@ -661,7 +661,8 @@ describe("AI assistant", () => {
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
     expect(await prisma.mediaAsset.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
     expect(await prisma.aIRequest.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
-    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(0);
+    // Default Agent platforms = telegram+vk: both text calls already paid before image fails.
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(2);
   });
 
   it("needs two free AI units for the agent and blocks a Viewer", async () => {
@@ -677,7 +678,7 @@ describe("AI assistant", () => {
         projectId: owner.projectId,
       }),
       400,
-      /текст Telegram, текст ВК/,
+      /Агенту нужны до \d+ AI-вызовов|Общий лимит AI/,
     );
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
 
