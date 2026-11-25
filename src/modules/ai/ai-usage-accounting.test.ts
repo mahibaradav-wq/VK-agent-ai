@@ -6,7 +6,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { AccessError } from "@/modules/access/permissions";
 import { createAiService } from "@/modules/ai/ai-service";
-import { attachPaidCalls } from "@/modules/ai/usage-units";
+import {
+  attachPaidCalls,
+  classifyPaidHttpOutcome,
+  paidCallsForHttpClass,
+} from "@/modules/ai/usage-units";
 import { agentUsageUnits, studioReviseReserveUnits } from "@/modules/ai/visual";
 import { createAuthService } from "@/modules/auth/auth-service";
 import { createProjectService } from "@/modules/projects/project-service";
@@ -452,5 +456,273 @@ describe("AI usage accounting", () => {
     expect(backupCalls).toBe(1);
     // Failed openai attempt (1) + backup success (1); reserve grows to cover both.
     expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(2);
+  });
+});
+
+describe("AI fallback reservation gate", () => {
+  let storageDir = "";
+
+  beforeAll(async () => {
+    storageDir = await mkdtemp(path.join(os.tmpdir(), "polka-ai-fallback-"));
+  });
+
+  function dualProviders(options?: { firstPaid?: number; backupPaid?: number; backupFail?: boolean }) {
+    let openaiCalls = 0;
+    let backupCalls = 0;
+    const firstPaid = options?.firstPaid ?? 1;
+    const backupPaid = options?.backupPaid ?? 1;
+    const openai: AiProvider = {
+      name: "openai",
+      model: "gpt",
+      imageModel: "img",
+      ready: true,
+      imageReady: true,
+      async generate() {
+        openaiCalls += 1;
+        throw attachPaidCalls(new AccessError(400, OPENAI_REGION_MESSAGE), firstPaid);
+      },
+      async generateImage() {
+        openaiCalls += 1;
+        throw attachPaidCalls(new AccessError(400, OPENAI_REGION_MESSAGE), firstPaid);
+      },
+    };
+    const backup: AiProvider = {
+      name: "backup",
+      model: "backup-model",
+      imageModel: "backup-img",
+      ready: true,
+      imageReady: true,
+      async generate() {
+        backupCalls += 1;
+        if (options?.backupFail) {
+          throw attachPaidCalls(new AccessError(400, "backup down"), backupPaid);
+        }
+        return { ...sample, provider: "backup", paidCalls: backupPaid };
+      },
+      async generateImage() {
+        backupCalls += 1;
+        if (options?.backupFail) {
+          throw attachPaidCalls(new AccessError(400, "backup image down"), backupPaid);
+        }
+        return { ...sampleImage, provider: "backup", paidCalls: backupPaid };
+      },
+    };
+    const connections = {
+      resolveProvider: async () => openai,
+      listProviders: async () => [openai, backup],
+      rememberError: async () => undefined,
+      openaiRegionBlocked: async () => false,
+    };
+    return { openaiCalls: () => openaiCalls, backupCalls: () => backupCalls, connections };
+  }
+
+  it("classifies HTTP vs network paid outcomes", () => {
+    expect(paidCallsForHttpClass(classifyPaidHttpOutcome({ httpReached: true }))).toBe(1);
+    expect(
+      paidCallsForHttpClass(classifyPaidHttpOutcome({ httpReached: false, networkFailed: true })),
+    ).toBe(0);
+    expect(paidCallsForHttpClass(classifyPaidHttpOutcome({ httpReached: false }))).toBe(0);
+  });
+
+  it("fallback with enough limit charges failed attempt + success", async () => {
+    const owner = await registerOwner("fb-enough");
+    const dual = dualProviders();
+    const ai = createAiService(prisma, {
+      connections: dual.connections as never,
+      monthlyLimit: 5,
+      storage: createLocalStorage(storageDir),
+    });
+    await ai.generate(owner.userId, owner.workspaceId, { kind: "ideas", prompt: "запас есть" });
+    expect(dual.openaiCalls()).toBe(1);
+    expect(dual.backupCalls()).toBe(1);
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(2);
+  });
+
+  it("fallback with insufficient limit refuses before second provider", async () => {
+    const owner = await registerOwner("fb-nolimit");
+    const dual = dualProviders();
+    // ideas reserves 1; first paid failure fills it; second attempt cannot grow.
+    const ai = createAiService(prisma, {
+      connections: dual.connections as never,
+      monthlyLimit: 1,
+      storage: createLocalStorage(storageDir),
+    });
+    await expectAccess(
+      ai.generate(owner.userId, owner.workspaceId, { kind: "ideas", prompt: "нет запаса" }),
+      400,
+      /лимит AI|исчерпан/i,
+    );
+    expect(dual.openaiCalls()).toBe(1);
+    expect(dual.backupCalls()).toBe(0);
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(1);
+  });
+
+  it("failed first provider with actual spend keeps the charge", async () => {
+    const owner = await registerOwner("fb-first-spend");
+    const dual = dualProviders({ backupFail: true });
+    const ai = createAiService(prisma, {
+      connections: dual.connections as never,
+      monthlyLimit: 5,
+      storage: createLocalStorage(storageDir),
+    });
+    await expectAccess(
+      ai.generate(owner.userId, owner.workspaceId, { kind: "headline", prompt: "оба падают" }),
+      400,
+      /backup down|регион|OpenAI|лимит/i,
+    );
+    expect(dual.openaiCalls()).toBe(1);
+    expect(dual.backupCalls()).toBe(1);
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(2);
+  });
+
+  it("successful second provider after billable first failure", async () => {
+    const owner = await registerOwner("fb-second-ok");
+    const dual = dualProviders({ firstPaid: 1, backupPaid: 1 });
+    const ai = createAiService(prisma, {
+      connections: dual.connections as never,
+      monthlyLimit: 4,
+      storage: createLocalStorage(storageDir),
+    });
+    const row = await ai.generate(owner.userId, owner.workspaceId, { kind: "cta", prompt: "кнопка" });
+    expect(row.provider).toBe("backup");
+    expect(dual.backupCalls()).toBe(1);
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(2);
+  });
+
+  it("partial multi-image error keeps successful frames charged", async () => {
+    const owner = await registerOwner("fb-partial-img");
+    let images = 0;
+    const provider = countingProvider({ textCalls: [1] });
+    const original = provider.generateImage.bind(provider);
+    provider.generateImage = async (input) => {
+      images += 1;
+      if (images === 1) {
+        return original(input);
+      }
+      throw attachPaidCalls(new AccessError(400, "второй кадр упал"), 1);
+    };
+    const ai = createAiService(prisma, {
+      provider,
+      monthlyLimit: 20,
+      storage: createLocalStorage(storageDir),
+    });
+    await expectAccess(
+      ai.composeAgentPost(owner.userId, owner.workspaceId, {
+        prompt: "карусель с обрывом",
+        platform: "telegram",
+        projectId: owner.projectId,
+        visualKind: "carousel",
+        carouselCount: 3,
+      }),
+      400,
+      /второй кадр упал/,
+    );
+    // text (1) + first image (1) + failed second image attempt (1) = 3; third never starts.
+    expect(images).toBe(2);
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(3);
+  });
+
+  it("error after successful text keeps text charge and skips unpaid visuals", async () => {
+    const owner = await registerOwner("fb-text-then-fail");
+    const provider = countingProvider({ textCalls: [1], failImageAfter: 0, imageFailPaid: 1 });
+    const ai = createAiService(prisma, {
+      provider,
+      monthlyLimit: 10,
+      storage: createLocalStorage(storageDir),
+    });
+    await expectAccess(
+      ai.composeAgentPost(owner.userId, owner.workspaceId, {
+        prompt: "текст есть картинка нет",
+        platform: "telegram",
+        projectId: owner.projectId,
+      }),
+      400,
+      /Падение после успешного визуала/,
+    );
+    expect(provider.chatCalls).toBe(1);
+    expect(provider.imageCalls).toBe(1);
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(2);
+  });
+
+  it("parallel fallbacks at limit boundary cannot exceed the workspace limit", async () => {
+    const owner = await registerOwner("fb-parallel");
+    const make = () => dualProviders();
+    const a = make();
+    const b = make();
+    // Each path needs 2 units (fail+success). Limit 3 → at most one full fallback success.
+    const aiA = createAiService(prisma, {
+      connections: a.connections as never,
+      monthlyLimit: 3,
+      storage: createLocalStorage(storageDir),
+    });
+    const aiB = createAiService(prisma, {
+      connections: b.connections as never,
+      monthlyLimit: 3,
+      storage: createLocalStorage(storageDir),
+    });
+    const results = await Promise.allSettled([
+      aiA.generate(owner.userId, owner.workspaceId, { kind: "ideas", prompt: "параллель A" }),
+      aiB.generate(owner.userId, owner.workspaceId, { kind: "ideas", prompt: "параллель B" }),
+    ]);
+    const ok = results.filter((item) => item.status === "fulfilled").length;
+    const bad = results.filter((item) => item.status === "rejected").length;
+    expect(ok + bad).toBe(2);
+    expect(ok).toBeLessThanOrEqual(1);
+    expect((await aiA.usage(owner.userId, owner.workspaceId)).used).toBeLessThanOrEqual(3);
+  });
+
+  it("released unused reserve matches actual calls after success", async () => {
+    const owner = await registerOwner("fb-release");
+    const provider = countingProvider({ textCalls: [1] });
+    const ai = createAiService(prisma, {
+      provider,
+      monthlyLimit: 10,
+      storage: createLocalStorage(storageDir),
+    });
+    // Agent reserves 3 (2 text + 1 image) but scripted text spends 1 → used ends at 2.
+    await ai.composeAgentPost(owner.userId, owner.workspaceId, {
+      prompt: "отпустить лишнее",
+      platform: "telegram",
+      projectId: owner.projectId,
+    });
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(2);
+  });
+
+  it("no stuck reserve after failed op settles", async () => {
+    const owner = await registerOwner("fb-unstuck");
+    let calls = 0;
+    const provider: AiProvider = {
+      name: "boom-then-ok",
+      model: "x",
+      imageModel: "x",
+      ready: true,
+      imageReady: true,
+      async generate() {
+        calls += 1;
+        if (calls === 1) {
+          throw attachPaidCalls(new AccessError(400, "сразу отказ"), 0);
+        }
+        return { ...sample, paidCalls: 1 };
+      },
+      async generateImage() {
+        throw new AccessError(400, "no");
+      },
+    };
+    const ai = createAiService(prisma, {
+      provider,
+      monthlyLimit: 5,
+      storage: createLocalStorage(storageDir),
+    });
+    await expectAccess(
+      ai.generate(owner.userId, owner.workspaceId, { kind: "ideas", prompt: "без траты" }),
+      400,
+      /сразу отказ/,
+    );
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(0);
+    await ai.generate(owner.userId, owner.workspaceId, {
+      kind: "ideas",
+      prompt: "после сбоя снова можно",
+    });
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(1);
   });
 });

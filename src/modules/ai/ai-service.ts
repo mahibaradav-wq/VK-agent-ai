@@ -6,6 +6,8 @@ import { createAccessService } from "@/modules/access/access-service";
 import { parseKind, parseLength, parseTone } from "@/modules/ai/kinds";
 import { encodeSlideshowMp4 } from "@/modules/ai/video-encode";
 import {
+  attemptReserveUnits,
+  MAX_POST_COMPLETION_CALLS,
   paidCallsFromError,
   paidCallsFromResult,
   textGenerateReserveUnits,
@@ -172,18 +174,44 @@ export function createAiService(
 
   type PaidAccount = { workspaceId: string; periodStart: Date; reserved: number; charged: number };
 
+  type FallbackBilling = {
+    account: PaidAccount;
+    exhaustedMessage: string;
+    /** Worst-case paid units for the next provider attempt. */
+    attemptUnits: number;
+  };
+
   async function settlePaidAi(account: PaidAccount) {
-    const kept = Math.min(Math.max(0, account.charged), account.reserved);
-    const unused = account.reserved - kept;
+    const charged = Math.max(0, account.charged);
+    const reserved = Math.max(0, account.reserved);
+    const kept = Math.min(charged, reserved);
+    const unused = reserved - kept;
     if (unused > 0) {
       await releaseUsage(db, account.workspaceId, USAGE_METRICS.ai, account.periodStart, unused);
     }
+    account.charged = charged;
+    account.reserved = reserved;
+  }
+
+  /** Grow reserved units before a paid attempt so spend can never outrun the metric. */
+  async function ensureReserve(account: PaidAccount, units: number, exhaustedMessage: string) {
+    if (!Number.isInteger(units) || units <= 0) {
+      return;
+    }
+    const available = Math.max(0, account.reserved - account.charged);
+    if (units <= available) {
+      return;
+    }
+    const extra = units - available;
+    await beginPaidAi(account.workspaceId, extra, exhaustedMessage);
+    account.reserved += extra;
   }
 
   async function notePaidCalls(account: PaidAccount, calls: number, exhaustedMessage: string) {
-    if (calls <= 0) {
+    if (!Number.isInteger(calls) || calls <= 0) {
       return;
     }
+    // Calls already happened: charge first, then grow if somehow under-reserved (should be rare).
     account.charged += calls;
     if (account.charged > account.reserved) {
       const extra = account.charged - account.reserved;
@@ -196,10 +224,25 @@ export function createAiService(
     workspaceId: string,
     role: "ideas" | "copy" | "image",
     fn: (provider: AiProvider) => Promise<T>,
-    onPaidCalls?: (calls: number) => void | Promise<void>,
+    billing?: FallbackBilling,
   ): Promise<T> {
     if (injected) {
-      return fn(injected);
+      if (billing) {
+        await ensureReserve(billing.account, billing.attemptUnits, billing.exhaustedMessage);
+      }
+      try {
+        return await fn(injected);
+      } catch (error) {
+        const spent = paidCallsFromError(error);
+        if (spent > 0 && billing) {
+          try {
+            await notePaidCalls(billing.account, spent, billing.exhaustedMessage);
+          } catch {
+            billing.account.charged = Math.max(billing.account.charged, spent);
+          }
+        }
+        throw error;
+      }
     }
     const providers = await connections.listProviders(workspaceId, role);
     if (providers.length === 0) {
@@ -219,14 +262,23 @@ export function createAiService(
     let last: unknown;
     let spentOnFailedAttempts = 0;
     for (const provider of providers) {
+      if (billing) {
+        // Refuse the next provider (incl. fallback) before HTTP if headroom cannot be reserved.
+        await ensureReserve(billing.account, billing.attemptUnits, billing.exhaustedMessage);
+      }
       try {
         return await fn(provider);
       } catch (error) {
         last = error;
         const spent = paidCallsFromError(error);
         spentOnFailedAttempts += spent;
-        if (spent > 0 && onPaidCalls) {
-          await onPaidCalls(spent);
+        if (spent > 0 && billing) {
+          try {
+            await notePaidCalls(billing.account, spent, billing.exhaustedMessage);
+          } catch {
+            // Keep actual spend charged even if emergency grow fails after the paid attempt.
+            billing.account.charged = Math.max(billing.account.charged, spentOnFailedAttempts);
+          }
         }
         if (isOpenAiRegionError(error) && provider.name === "openai") {
           await connections.rememberError(
@@ -409,7 +461,7 @@ export function createAiService(
           workspaceId,
           role,
           (item) => item.generate({ kind, prompt, tone, length, platform }),
-          (calls) => notePaidCalls(account, calls, exhausted),
+          { account, exhaustedMessage: exhausted, attemptUnits: attemptReserveUnits(kind) },
         );
         await notePaidCalls(account, paidCallsFromResult(generated, 1), exhausted);
         const row = await db.aIRequest.create({
@@ -646,7 +698,7 @@ export function createAiService(
                 length: target === "telegram" ? "caption" : length,
                 platform: target,
               }),
-            (calls) => notePaidCalls(account, calls, exhausted),
+            { account, exhaustedMessage: exhausted, attemptUnits: MAX_POST_COMPLETION_CALLS },
           );
           await notePaidCalls(account, paidCallsFromResult(next, 1), exhausted);
           variants[target] = {
@@ -687,7 +739,7 @@ export function createAiService(
                 prompt: slideVisualPrompt(baseVisualPrompt, index, slideCount),
                 size: imageSizeForAspect(visualAspect),
               }),
-            (calls) => notePaidCalls(account, calls, exhausted),
+            { account, exhaustedMessage: exhausted, attemptUnits: 1 },
           );
           await notePaidCalls(account, paidCallsFromResult(image, 1), exhausted);
           imageModel = image.model;
@@ -848,7 +900,7 @@ export function createAiService(
                   length: target === "telegram" ? "caption" : "medium",
                   platform: target,
                 }),
-              (calls) => notePaidCalls(account, calls, exhausted),
+              { account, exhaustedMessage: exhausted, attemptUnits: MAX_POST_COMPLETION_CALLS },
             );
             await notePaidCalls(account, paidCallsFromResult(generated, 1), exhausted);
             variants[target] = {
@@ -888,7 +940,7 @@ export function createAiService(
                   prompt: slideVisualPrompt(baseVisualPrompt, index, slideCount),
                   size: imageSizeForAspect(visualAspect),
                 }),
-              (calls) => notePaidCalls(account, calls, exhausted),
+              { account, exhaustedMessage: exhausted, attemptUnits: 1 },
             );
             await notePaidCalls(account, paidCallsFromResult(frame, 1), exhausted);
             frames.push(frame);
