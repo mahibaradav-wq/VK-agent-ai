@@ -166,7 +166,8 @@ BACKUP_VERIFIED=YES COMPOSE_FILE="$COMPOSE_FILE" ENV_FILE="$ENV_FILE" bash "$SCR
 
 docker compose "${compose_args[@]}" --env-file "$ENV_FILE" up -d app worker caddy
 
-health_attempts="${HEALTHCHECK_ATTEMPTS:-10}"
+# Compose app healthcheck start_period is 90s; default wait must cover that window.
+health_attempts="${HEALTHCHECK_ATTEMPTS:-40}"
 health_interval="${HEALTHCHECK_INTERVAL_SECONDS:-3}"
 if [[ ! "$health_attempts" =~ ^[1-9][0-9]*$ || ! "$health_interval" =~ ^[1-9][0-9]*$ ]]; then
   echo "HEALTHCHECK_ATTEMPTS and HEALTHCHECK_INTERVAL_SECONDS must be positive integers." >&2

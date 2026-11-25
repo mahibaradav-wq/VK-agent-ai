@@ -13,15 +13,25 @@ export function createBullmqQueue(redisUrl: string): QueueDriver {
     driver: "redis",
     ready: true,
     async addPublishJob(jobId, delayMs = 0) {
-      await queue.add(
-        "publish",
-        { jobId },
-        {
-          delay: delayMs,
-          removeOnComplete: 200,
-          removeOnFail: 200,
-        },
-      );
+      try {
+        await queue.add(
+          "publish",
+          { jobId },
+          {
+            // Stable id prevents duplicate BullMQ entries for the same PostgreSQL job.
+            jobId: `publish:${jobId}`,
+            delay: delayMs,
+            removeOnComplete: 200,
+            removeOnFail: 200,
+          },
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/already exists|duplicate/i.test(message)) {
+          return;
+        }
+        throw error;
+      }
     },
     async close() {
       await queue.close();

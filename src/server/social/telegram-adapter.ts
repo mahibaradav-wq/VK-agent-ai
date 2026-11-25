@@ -13,6 +13,10 @@ import {
 import { withProductLink } from "@/modules/products/shop-labels";
 import { splitTelegramText, telegramPhotoCaption } from "@/server/social/telegram-text";
 import { resolvePublishSocialAccount } from "@/server/social/resolve-account";
+import {
+  isSocialPublishLiveEnabled,
+  socialPublishLiveBlockedOutcome,
+} from "@/server/social/publish-live-guard";
 import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/social/types";
 import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
 
@@ -28,11 +32,9 @@ async function requestTelegram(
   body?: Record<string, unknown>,
   file?: TelegramFilePart | TelegramFilePart[],
 ) {
-  let result = await transport.request(token, method, body, file);
-  if (!result.ok && result.error_code === 0 && !file) {
-    result = await transport.request(token, method, body, file);
-  }
-  return result;
+  // Never blind-retry send* after a network-unknown (error_code 0): the first
+  // attempt may already have delivered, and a second call would duplicate the post.
+  return transport.request(token, method, body, file);
 }
 
 function filenameForMime(mimeType: string) {
@@ -84,12 +86,16 @@ export function createTelegramAdapter(options: {
   transport?: TelegramTransport;
   storage?: StorageDriver;
 }): SocialAdapter {
+  const usingInjectedTransport = Boolean(options.transport);
   const transport = options.transport ?? createTelegramTransport();
   const storage = options.storage ?? createStorageFromEnv();
 
   return {
     platform: "telegram",
     async publish(input: PublishInput): Promise<PublishOutcome> {
+      if (!usingInjectedTransport && !isSocialPublishLiveEnabled()) {
+        return socialPublishLiveBlockedOutcome();
+      }
       const account = await resolvePublishSocialAccount(options.db, input, "telegram");
 
       if (!account || account.workspaceId !== input.workspaceId || account.status !== "connected" || !account.encryptedToken) {

@@ -527,6 +527,51 @@ describe("social accounts", () => {
     expect(attempt.errorCode).toBe("rate_limit");
   });
 
+  it("does not blind-resend Telegram after a network-unknown sendMessage", async () => {
+    const owner = await registerOwner("soc-tg-net-unknown");
+    let sendCalls = 0;
+    const transport = scriptedTelegram((method) => {
+      if (method === "getMe") {
+        return { ok: true, result: { id: 9, is_bot: true, username: "pub_bot" } };
+      }
+      if (method === "getChat") {
+        return { ok: true, result: { id: -1004392473566, type: "channel", title: "ДОМ по полочкам" } };
+      }
+      if (method === "getChatMember") {
+        return { ok: true, result: { status: "administrator", can_post_messages: true } };
+      }
+      if (method === "sendMessage") {
+        sendCalls += 1;
+        return { ok: false, error_code: 0, description: "Сеть до api.telegram.org недоступна." };
+      }
+      return { ok: false, error_code: 400, description: `unexpected ${method}` };
+    });
+    const social = createSocialService(prisma, { telegram: transport });
+    await social.connectTelegram(owner.userId, owner.workspaceId, {
+      token: BOT_TOKEN,
+      chatId: "https://t.me/dom_po_polochkam",
+      projectId: owner.projectId,
+    });
+    const post = await posts.create(owner.userId, owner.workspaceId, owner.projectId, "Сеть");
+    await posts.saveDraft(owner.userId, owner.workspaceId, post.id, {
+      title: "Сеть",
+      body: "Текст",
+      platforms: ["telegram"],
+      mediaIds: [],
+    });
+    await approveCurrent(owner, post.id);
+    const publishing = createPublishService(prisma, {
+      queue: createInlineQueue(),
+      adapters: { get: () => createTelegramAdapter({ db: prisma, transport }) },
+    });
+    const job = await publishing.enqueue(owner.userId, owner.workspaceId, post.id);
+    await publishing.processJob(job.id, "worker-tg-net");
+    const attempt = await prisma.publishAttempt.findFirstOrThrow({ where: { jobId: job.id } });
+    expect(attempt.kind).toBe("unknown");
+    expect(attempt.errorCode).toBe("network_unknown");
+    expect(sendCalls).toBe(1);
+  });
+
   it("does not auto-retry Telegram after a partial long-text send", async () => {
     const owner = await registerOwner("soc-tg-partial");
     const connect = scriptedTelegram({

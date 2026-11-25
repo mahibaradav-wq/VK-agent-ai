@@ -28,15 +28,23 @@ describe("production hosting stack", () => {
   it("builds the app image without migrating on container start", () => {
     const migrate = read("scripts/vps-migrate.sh");
     const pull = read("scripts/vps-pull.sh");
+    const worker = read("src/server/queue/worker.ts");
     expect(pull).toContain("read_only_preflight");
     expect(dockerfile).toContain("npx prisma generate && npm run build");
     expect(dockerfile).toContain("ffmpeg");
+    expect(dockerfile).toContain("USER polka");
     expect(dockerfile).toContain('CMD ["npm", "start", "--", "--hostname", "0.0.0.0", "--port", "3000"]');
     expect(dockerfile).not.toContain("prisma migrate deploy && npm start");
     expect(migrate).toContain("prisma migrate deploy");
     expect(migrate).toContain("BACKUP_VERIFIED");
     expect(pull).toContain("--apply");
     expect(pull).toContain("backup-vps.sh");
+    expect(pull).toMatch(/HEALTHCHECK_ATTEMPTS:-40/);
+    expect(upScript).toContain("_prisma_migrations");
+    expect(upScript).toContain("vps-pull.sh");
+    expect(worker).toContain("assertProductionCabinetGuards");
+    expect(compose).toContain("stop_grace_period: 30s");
+    expect(compose).toContain('user: "10001:10001"');
   });
 
   it("does not publish PostgreSQL and health JSON names no secrets", () => {
@@ -61,7 +69,16 @@ describe("production hosting stack", () => {
     expect(caddy).toContain("reverse_proxy app:3000");
     expect(caddy).toContain("header_up X-Real-IP {remote_host}");
     expect(caddy).toContain("{$SITE_DOMAIN}");
+    expect(caddy).toContain("www.{$SITE_DOMAIN}");
     expect(caddy).toContain("Strict-Transport-Security");
+  });
+
+  it("keeps server-action origins and upload limits fail-safe for the cabinet", () => {
+    const nextConfig = read("next.config.ts");
+    expect(nextConfig).not.toContain("24dom-po-polochkam.ru");
+    expect(nextConfig).toContain('bodySizeLimit: "32mb"');
+    expect(nextConfig).toContain("localhost:3000");
+    expect(envExample).toContain("SOCIAL_PUBLISH_LIVE");
   });
 
   it("keeps production secrets out of git and blocks the mailbox stand", () => {

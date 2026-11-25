@@ -351,9 +351,11 @@ export function createAiService(
       }
 
       const limit = await resolveLimit(workspaceId);
+      // Post copy may issue a second /chat/completions revise under openai-compatible.
+      const paidUnits = kind === "post" ? 2 : 1;
       const periodStart = await beginPaidAi(
         workspaceId,
-        1,
+        paidUnits,
         `Общий лимит AI-запросов кабинета на месяц исчерпан (${limit}).`,
       );
       try {
