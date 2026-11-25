@@ -27,11 +27,13 @@ Constants / helpers:
 
 ## HTTP error classification
 
+Superseded for network failures by **PR #65** — see `docs/pr65-ai-billing-policy.md`.
+
 | Outcome | Class | Units |
 |---|---|---|
 | Provider returned HTTP (any status) | `likely_billable` | 1 |
-| Fetch threw (network / timeout / DNS) before response | `non_billable` | 0 |
-| Unknown without HTTP | `unknown` → treated as non-billable | 0 |
+| Proven never sent (DNS / connect refused) | `non_billable` | 0 |
+| Timeout / abort / unknown fetch failure | `unknown` | **1** (conservative) |
 
 Tariff rules unchanged: classification only maps transport to `paidCalls`. No double charge on attach/settle.
 

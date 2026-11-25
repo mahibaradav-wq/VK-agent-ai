@@ -19,6 +19,7 @@ import {
 import { createAiFetch } from "@/server/http/outbound-fetch";
 import {
   attachPaidCalls,
+  classifyFetchFailure,
   classifyPaidHttpOutcome,
   paidCallsForHttpClass,
   paidCallsFromError,
@@ -190,11 +191,11 @@ export function createOpenAiCompatibleProvider(options: {
               ],
             }),
           });
-        } catch {
-          // Network / timeout before HTTP — non-billable for workspace units.
+        } catch (error) {
+          // Conservative: bill unless proven the request never left the client (DNS/connect refused).
           throw attachPaidCalls(
             new AccessError(400, name === "openai" ? OPENAI_REGION_MESSAGE : AI_UNAVAILABLE_MESSAGE),
-            paidCallsForHttpClass(classifyPaidHttpOutcome({ httpReached: false, networkFailed: true })),
+            paidCallsForHttpClass(classifyFetchFailure(error)),
           );
         }
 
@@ -297,13 +298,13 @@ export function createOpenAiCompatibleProvider(options: {
           signal: AbortSignal.timeout(60_000),
           body: JSON.stringify(imageGenerationBody(imageModel, prompt, input.size ?? "1024x1024")),
         });
-      } catch {
+      } catch (error) {
         throw attachPaidCalls(
           new AccessError(
             400,
             name === "openai" ? OPENAI_REGION_MESSAGE : "Провайдер изображений недоступен. Это не замена картинки.",
           ),
-          paidCallsForHttpClass(classifyPaidHttpOutcome({ httpReached: false, networkFailed: true })),
+          paidCallsForHttpClass(classifyFetchFailure(error)),
         );
       }
 

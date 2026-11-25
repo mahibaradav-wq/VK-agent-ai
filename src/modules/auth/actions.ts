@@ -113,6 +113,10 @@ export async function resetPassword(_prev: AuthFormState, formData: FormData): P
   }
 
   const result = await service().resetPassword(readField(formData, "token"), readField(formData, "password"));
+  if (result.ok) {
+    // Drop current browser session so Edge middleware and Node agree immediately.
+    await signOut({ redirect: false });
+  }
   return {
     status: result.ok ? "success" : "invalid",
     message: result.message,
