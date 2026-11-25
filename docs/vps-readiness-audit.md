@@ -37,6 +37,7 @@ SSH, production deploy, production-миграции и чтение секрет
 | `scripts/vps-up.sh` | не проверял `TOKEN_ENCRYPTION_KEY`, charset пароля, AUTH_URL | высокий | `vps_validate_production_env_file` | исправлено |
 | `scripts/vps-pull.sh` | `--plan` писал `previous-sha` и мог `git fetch` | высокий | `--plan` только читает; fetch/запись SHA только в `--apply` | исправлено |
 | `scripts/lib/vps-common.sh` | probe отсекал production по подстрокам hostname; libpq `PG*` могли подменить адрес | высокий | allowlist + отказ при любом унаследованном `PG*` + `env -i` wrapper | исправлено |
+| `scripts/tests/vps-ops.test.sh` | admin CREATE/DROP через `DATABASE_URL`/`.env` без allowlist | высокий | только `PROBE_HARNESS_ADMIN_URL` + `vps_harness_*` + `env -i` | исправлено |
 | `scripts/backup-vps.sh` | не было проверки места, mode 600, probe-режима | средний | добавлено | исправлено |
 | `scripts/restore-vps.sh` | media wipe до успешного tar; нет сверки timestamp | высокий | staging + timestamp set; app не стартует при ошибке | исправлено |
 | `.github/workflows/ci.yml` | не проверял новые скрипты | низкий | расширен `bash -n` | исправлено |

@@ -47,6 +47,8 @@ ALLOWED_HOSTS = {"localhost", "postgres"}
 ALLOWED_PORTS = {5432}
 ALLOWED_USERS = {"polka"}
 DB_RE = re.compile(r"^polka_vps_probe(_[A-Za-z0-9]+)*$")
+# Maintenance DBs only: used to CREATE/DROP isolated polka_vps_probe_* databases.
+HARNESS_ADMIN_DB_RE = re.compile(r"^(postgres|polka_social)$")
 
 def fail(message):
     print(message, file=sys.stderr)
@@ -134,6 +136,46 @@ def parse_url():
     check_fields(host, str(parsed.port), user, database)
     return host, str(parsed.port), user, database
 
+def parse_harness_admin_url():
+    # Only PROBE_HARNESS_ADMIN_URL. Never fall back to DATABASE_URL or .env.
+    raw = os.environ.get("PROBE_HARNESS_ADMIN_URL") or ""
+    if not raw.strip():
+        fail("PROBE_HARNESS_ADMIN_URL is missing; refusing admin PostgreSQL access.")
+    if "?" in raw or "#" in raw:
+        fail("Harness admin URL must not include query parameters.")
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"postgres", "postgresql"}:
+        fail("Harness admin URL scheme is not allowed.")
+    host = parsed.hostname or ""
+    if parsed.port is None:
+        fail("Harness admin port is not allowed.")
+    user = unquote(parsed.username or "")
+    password = unquote(parsed.password or "")
+    database = unquote((parsed.path or "").lstrip("/"))
+    if "/" in database or not database:
+        fail("Harness admin database is not allowed.")
+    check_host(host)
+    try:
+        port_n = int(parsed.port)
+    except (TypeError, ValueError):
+        fail("Harness admin port is not allowed.")
+    if port_n not in ALLOWED_PORTS:
+        fail("Harness admin port is not allowed.")
+    if user not in ALLOWED_USERS:
+        fail("Harness admin user is not allowed.")
+    if not HARNESS_ADMIN_DB_RE.fullmatch(database):
+        fail("Harness admin database is not a local maintenance database.")
+    return host, str(parsed.port), user, password, database
+
+def build_probe_database_url(probe_db):
+    if not DB_RE.fullmatch(probe_db or ""):
+        fail("Probe database name is not an isolated test database.")
+    host, port, user, password, _admin_db = parse_harness_admin_url()
+    # Rebuild without printing intermediate secrets to stderr.
+    from urllib.parse import quote, urlunparse
+    netloc = "%s:%s@%s:%s" % (quote(user, safe=""), quote(password, safe=""), host, port)
+    return urlunparse(("postgresql", netloc, "/" + probe_db, "", "", ""))
+
 mode = sys.argv[1]
 if mode == "host-allowlisted":
     raise SystemExit(0 if host_allowlisted(sys.argv[2] if len(sys.argv) > 2 else "") else 1)
@@ -148,6 +190,23 @@ if mode == "parse-url":
     print(port)
     print(user)
     print(database)
+    raise SystemExit(0)
+if mode == "parse-harness-admin-url":
+    host, port, user, password, database = parse_harness_admin_url()
+    print(host)
+    print(port)
+    print(user)
+    print(password)
+    print(database)
+    raise SystemExit(0)
+if mode == "build-probe-database-url":
+    if len(sys.argv) < 3:
+        fail("Probe database name is incomplete.")
+    print(build_probe_database_url(sys.argv[2]))
+    raise SystemExit(0)
+if mode == "check-probe-db-name":
+    if len(sys.argv) < 3 or not DB_RE.fullmatch(sys.argv[2] or ""):
+        fail("Probe database name is not an isolated test database.")
     raise SystemExit(0)
 fail("Unknown probe check.")
 ' "$@"
@@ -314,6 +373,85 @@ vps_probe_migrate_deploy() {
     cd "$root"
     "${run_env[@]}" npx prisma migrate deploy
   )
+}
+
+# --- Harness admin CREATE/DROP (test suite only) ---
+# Uses PROBE_HARNESS_ADMIN_URL exclusively. Never reads .env or DATABASE_URL.
+
+vps_harness_assert_admin_url() {
+  vps_probe_python parse-harness-admin-url >/dev/null
+}
+
+vps_harness_admin_exec() {
+  local client="${1:-}"
+  shift || true
+  case "$client" in
+    psql) ;;
+    *)
+      echo "Unsupported harness admin PostgreSQL client." >&2
+      return 1
+      ;;
+  esac
+  vps_probe_refuse_inherited_libpq || return 1
+  command -v "$client" >/dev/null 2>&1 || {
+    echo "Required command not found: $client" >&2
+    return 1
+  }
+
+  local parsed host port user password database
+  parsed="$(vps_probe_python parse-harness-admin-url)" || return 1
+  host="$(printf '%s\n' "$parsed" | sed -n '1p')"
+  port="$(printf '%s\n' "$parsed" | sed -n '2p')"
+  user="$(printf '%s\n' "$parsed" | sed -n '3p')"
+  password="$(printf '%s\n' "$parsed" | sed -n '4p')"
+  database="$(printf '%s\n' "$parsed" | sed -n '5p')"
+
+  local -a run_env=()
+  local item
+  while IFS= read -r -d '' item; do
+    run_env+=("$item")
+  done < <(vps_probe_clean_env_prefix)
+  if [[ -n "$password" ]]; then
+    run_env+=("PGPASSWORD=$password")
+  fi
+
+  vps_probe_note_client "harness-$client"
+  "${run_env[@]}" "$client" \
+    -h "$host" \
+    -p "$port" \
+    -U "$user" \
+    -d "$database" \
+    "$@"
+}
+
+vps_harness_prepare_probe_database() {
+  local name="${1:?probe database name required}"
+  vps_probe_python check-probe-db-name "$name" || return 1
+  vps_probe_refuse_inherited_libpq || return 1
+  vps_harness_admin_exec psql -v ON_ERROR_STOP=1 -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$name' AND pid <> pg_backend_pid();" >/dev/null || true
+  vps_harness_admin_exec psql -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"$name\";" >/dev/null || return 1
+  vps_harness_admin_exec psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$name\";" >/dev/null || return 1
+
+  local parsed host port user password
+  parsed="$(vps_probe_python parse-harness-admin-url)" || return 1
+  host="$(printf '%s\n' "$parsed" | sed -n '1p')"
+  port="$(printf '%s\n' "$parsed" | sed -n '2p')"
+  user="$(printf '%s\n' "$parsed" | sed -n '3p')"
+  password="$(printf '%s\n' "$parsed" | sed -n '4p')"
+  PROBE_PGHOST="$host"
+  PROBE_PGPORT="$port"
+  PROBE_PGUSER="$user"
+  PROBE_PGPASSWORD="$password"
+  PROBE_PGDATABASE="$name"
+  PROBE_DATABASE_URL="$(vps_probe_python build-probe-database-url "$name")" || return 1
+}
+
+vps_harness_drop_probe_database() {
+  local name="${1:?probe database name required}"
+  vps_probe_python check-probe-db-name "$name" || return 1
+  vps_probe_refuse_inherited_libpq || return 1
+  vps_harness_admin_exec psql -v ON_ERROR_STOP=1 -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$name' AND pid <> pg_backend_pid();" >/dev/null || true
+  vps_harness_admin_exec psql -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"$name\";" >/dev/null || return 1
 }
 
 vps_check_free_bytes() {

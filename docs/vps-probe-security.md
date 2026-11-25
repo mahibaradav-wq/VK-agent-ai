@@ -6,44 +6,53 @@ Probe (`VPS_RUNTIME=probe`) нужен только для изолирован�
 
 Инвентаризация вызовов: [vps-probe-libpq-inventory.md](vps-probe-libpq-inventory.md).
 
-## Allowlist цели
-
-Одновременно должны выполняться все условия:
+## Allowlist цели probe
 
 | Поле | Allowlist |
 |---|---|
-| Host | loopback-IP (`127.0.0.0/8`, `::1`) **или** имя `localhost` / `postgres`, и это имя резолвится **только** в loopback |
+| Host | loopback-IP (`127.0.0.0/8`, `::1`) **или** имя `localhost` / `postgres`, резолв только в loopback |
 | Port | `5432` |
 | User | `polka` |
-| Database | `polka_vps_probe` или `polka_vps_probe_<id>` (`[A-Za-z0-9]+` после `_`) |
+| Database | `polka_vps_probe` или `polka_vps_probe_<id>` |
 
-`PROBE_DATABASE_URL` разбирается без печати пароля. Query-параметры запрещены.
+`PROBE_DATABASE_URL` без query-параметров. Пароль не печатается.
 
-## Изоляция окружения libpq
+## Изоляция окружения libpq (probe-клиенты)
 
-Проверенный `localhost` недостаточен: унаследованные переменные libpq могут подменить адрес. Перед каждым клиентом:
+1. `vps_probe_assert_isolated_target` / `vps_probe_assert_isolated_url`.
+2. `vps_probe_refuse_inherited_libpq` — любой `PG*` у родителя → отказ без запуска клиента.
+3. `vps_probe_exec` / `vps_probe_migrate_deploy`: `env -i` + явные `-h/-p/-U/-d` или только проверенный `DATABASE_URL`.
 
-1. `vps_probe_assert_isolated_target` или `vps_probe_assert_isolated_url`.
-2. `vps_probe_refuse_inherited_libpq` — любой непустой `PG*` в окружении родителя → отказ **без** запуска клиента (`PGHOSTADDR`, `PGSERVICE`, `PGSERVICEFILE`, `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `PGOPTIONS`, и любые другие `PG*`).
-3. Запуск через `vps_probe_exec` / `vps_probe_migrate_deploy`: `env -i` с только `PATH`, `HOME`, опционально `LANG`/`LC_*`/`TMPDIR`/`TERM`, и `PGPASSWORD` из `PROBE_PGPASSWORD` (для клиентов) либо `DATABASE_URL` из проверенного `PROBE_DATABASE_URL` (для Prisma). Параметры `-h/-p/-U/-d` передаются явно.
+## Административный harness (CREATE/DROP probe-БД)
 
-Production Compose-путь не использует этот wrapper: клиенты идут через `docker compose exec` внутри контейнера postgres.
+Тестовый suite создаёт и удаляет `polka_vps_probe_*` через:
 
-## Что запрещено
+- **только** `PROBE_HARNESS_ADMIN_URL` (не `DATABASE_URL`, не `.env`);
+- `vps_harness_assert_admin_url` / `vps_harness_admin_exec` / `vps_harness_prepare_probe_database` / `vps_harness_drop_probe_database`.
 
-- публичные IPv4 и IPv6;
-- неизвестные DNS-имена и production-hostname;
-- production-подобные имена БД;
-- пустой хост, неверный порт, отсутствующий пользователь или имя БД;
-- любой унаследованный `PG*`, в том числе `PGHOSTADDR` / service-файлы;
-- защита «по подстроке» hostname — её нет.
+Allowlist admin URL:
 
-Пароль, полный `DATABASE_URL` и другие секреты в сообщения об ошибках не выводятся. Тесты `PROBE_CLIENT_LOG` подтверждают, что при BLOCK клиент не стартовал.
+| Поле | Allowlist |
+|---|---|
+| Host | loopback / `localhost` / `postgres` (резолв только в loopback) |
+| Port | `5432` |
+| User | `polka` |
+| Database | только maintenance: `postgres` или `polka_social` |
+
+Перед CREATE/DROP: проверка URL, отказ при любом унаследованном `PG*`, затем `env -i` с явными параметрами. `PROBE_CLIENT_LOG` фиксирует запуск клиента; при BLOCK лог пуст — CREATE/DROP не выполняются.
+
+CI задаёт `PROBE_HARNESS_ADMIN_URL` на localhost. Отсутствие переменной → BLOCK до любого SQL.
+
+## Запрещено
+
+- публичные IP, неизвестные DNS, production hostname;
+- query-параметры в URL;
+- fallback на `DATABASE_URL` / чтение `.env` для admin-операций harness;
+- любой унаследованный `PG*`.
 
 ## Как проверять
 
 ```bash
+export PROBE_HARNESS_ADMIN_URL='postgresql://polka:…@127.0.0.1:5432/polka_social'
 npm run test:vps
 ```
-
-Тесты создают отдельную БД `polka_vps_probe_<pid>` на localhost. Production credentials, SSH и Docker Compose против VPS не используются.

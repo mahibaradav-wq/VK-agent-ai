@@ -29,6 +29,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://polka:polka_dev_password@localhost:5432/polka_social
+      PROBE_HARNESS_ADMIN_URL: postgresql://polka:polka_dev_password@localhost:5432/polka_social
       AUTH_SECRET: ci-auth-secret-not-for-production
       STORAGE_DRIVER: local
       LOCAL_STORAGE_DIR: ./data/media

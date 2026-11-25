@@ -106,7 +106,14 @@ describe("production hosting stack", () => {
     expect(commonScript).toContain("vps_probe_exec");
     expect(commonScript).toContain("vps_probe_migrate_deploy");
     expect(commonScript).toContain("vps_probe_refuse_inherited_libpq");
+    expect(commonScript).toContain("vps_harness_admin_exec");
+    expect(commonScript).toContain("vps_harness_prepare_probe_database");
+    expect(commonScript).toContain("PROBE_HARNESS_ADMIN_URL");
     expect(commonScript).toContain("env -i");
+    const harness = read("scripts/tests/vps-ops.test.sh");
+    expect(harness).toContain("vps_harness_prepare_probe_database");
+    expect(harness).not.toContain('Path(".env")');
+    expect(harness).not.toContain('subprocess.run(["psql"');
     expect(commonScript).not.toContain("24dom-po-polochkam");
     expect(commonScript).not.toContain("timeweb");
     expect(migrateScript).toContain("vps_probe_migrate_deploy");

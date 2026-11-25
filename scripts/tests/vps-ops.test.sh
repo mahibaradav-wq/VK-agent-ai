@@ -89,6 +89,7 @@ assert_block_no_client() {
 }
 
 # Successful probe paths must not inherit developer/CI libpq knobs or leftover PROBE_*.
+# Keep PROBE_HARNESS_ADMIN_URL — it is the only allowed admin source.
 while IFS= read -r __pg_line; do
   __pg_key="${__pg_line%%=*}"
   case "$__pg_key" in
@@ -99,27 +100,12 @@ while IFS= read -r __pg_line; do
 done < <(printenv)
 unset __pg_line __pg_key VPS_RUNTIME
 
+# shellcheck source=../lib/vps-common.sh
+source scripts/lib/vps-common.sh
+
 cleanup() {
   if [[ -n "$PROBE_DB" ]]; then
-    python3 - "$PROBE_DB" <<'PY' >/dev/null 2>&1 || true
-import os, sys, subprocess
-from pathlib import Path
-from urllib.parse import urlparse, urlunparse
-
-name = sys.argv[1]
-url = os.environ.get("DATABASE_URL")
-if not url and Path(".env").exists():
-    for line in Path(".env").read_text().splitlines():
-        if line.startswith("DATABASE_URL="):
-            url = line.split("=", 1)[1]
-            break
-if not url:
-    raise SystemExit(0)
-parsed = urlparse(url)
-admin = urlunparse(parsed)
-subprocess.run(["psql", admin, "-v", "ON_ERROR_STOP=1", "-c", f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{name}';"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-subprocess.run(["psql", admin, "-v", "ON_ERROR_STOP=1", "-c", f'DROP DATABASE IF EXISTS "{name}";'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-PY
+    vps_harness_drop_probe_database "$PROBE_DB" >/dev/null 2>&1 || true
   fi
   [[ -n "$WORK" && -d "$WORK" ]] && rm -rf "$WORK"
 }
@@ -134,8 +120,12 @@ bash -n scripts/vps-migrate.sh
 bash -n scripts/vps-rollback.sh
 log_pass "bash -n all VPS scripts"
 
-# shellcheck source=../lib/vps-common.sh
-source scripts/lib/vps-common.sh
+if grep -nE 'Path\("\.env"\)|os\.environ\.get\("DATABASE_URL"\)|subprocess\.run\(\["psql"' scripts/tests/vps-ops.test.sh \
+  | grep -vE 'log_fail|log_pass|assert_|ignores production' >/dev/null; then
+  log_fail "harness still has .env/DATABASE_URL fallback or direct subprocess psql"
+else
+  log_pass "harness has no .env/DATABASE_URL fallback or direct subprocess psql"
+fi
 
 assert_ok "localhost with isolated test database" \
   bash -c 'source scripts/lib/vps-common.sh && VPS_RUNTIME=probe PROBE_PGHOST=localhost PROBE_PGPORT=5432 PROBE_PGUSER=polka PROBE_PGDATABASE=polka_vps_probe_ci vps_probe_assert_isolated_target'
@@ -236,6 +226,84 @@ assert_fail "restore without confirmation" \
 
 assert_fail "migrate without backup proof" bash scripts/vps-migrate.sh
 
+# --- Harness admin URL isolation (before any CREATE/DROP) ---
+assert_ok "harness admin URL localhost allowlist" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@localhost:5432/polka_social' \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_assert_admin_url'
+assert_ok "harness admin URL 127.0.0.1 allowlist" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@127.0.0.1:5432/postgres' \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_assert_admin_url'
+assert_ok "harness admin URL ::1 allowlist" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@[::1]:5432/polka_social' \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_assert_admin_url'
+
+assert_block_no_client "harness admin public IPv4 is blocked" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@8.8.8.8:5432/polka_social' \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_block_no_client "harness admin public IPv6 is blocked" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@[2001:4860:4860::8888]:5432/polka_social' \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_block_no_client "harness admin production hostname is blocked" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@24dom-po-polochkam.ru:5432/polka_social' \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_block_no_client "harness admin unknown DNS is blocked" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@db.example.test:5432/polka_social' \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_fail_no_secret "harness admin production URL does not leak secrets" "not-a-real-secret" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@24dom-po-polochkam.ru:5432/polka_social' \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_block_no_client "harness admin URL with query params is blocked" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@localhost:5432/polka_social?host=/var/run/postgresql' \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_block_no_client "harness admin with PGHOSTADDR is blocked" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@localhost:5432/polka_social' PGHOSTADDR=8.8.8.8 \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_block_no_client "harness admin with PGSERVICE is blocked" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@localhost:5432/polka_social' PGSERVICE=remote_prod \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_block_no_client "harness admin with PGSERVICEFILE is blocked" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@localhost:5432/polka_social' PGSERVICEFILE=/tmp/fake.conf \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_block_no_client "harness admin with conflicting PGHOST is blocked" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@localhost:5432/polka_social' PGHOST=db.example.test \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_block_no_client "harness admin with conflicting PGPORT is blocked" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@localhost:5432/polka_social' PGPORT=6543 \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_block_no_client "harness admin with conflicting PGUSER is blocked" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@localhost:5432/polka_social' PGUSER=postgres \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_block_no_client "harness admin with conflicting PGDATABASE is blocked" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@localhost:5432/polka_social' PGDATABASE=production \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_block_no_client "harness admin missing URL is blocked" \
+  env -u PROBE_HARNESS_ADMIN_URL \
+  bash -c 'source scripts/lib/vps-common.sh && unset PROBE_HARNESS_ADMIN_URL && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_block_no_client "harness admin refuses DATABASE_URL-only fallback" \
+  env -u PROBE_HARNESS_ADMIN_URL DATABASE_URL='postgresql://polka:not-a-real-secret@localhost:5432/polka_social' \
+  bash -c 'source scripts/lib/vps-common.sh && unset PROBE_HARNESS_ADMIN_URL && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_block_no_client "harness admin refuses production-like maintenance db name" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@localhost:5432/production' \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_prepare_probe_database polka_vps_probe_block'
+assert_block_no_client "harness DROP refuses invalid admin URL" \
+  env PROBE_HARNESS_ADMIN_URL='postgresql://polka:not-a-real-secret@8.8.8.8:5432/polka_social' \
+  bash -c 'source scripts/lib/vps-common.sh && vps_harness_drop_probe_database polka_vps_probe_block'
+# Create a fake production .env that must never be read by harness admin helpers.
+HARNESS_FAKE_ROOT="$(mktemp -d /tmp/polka-harness-fake.XXXXXX)"
+cat >"$HARNESS_FAKE_ROOT/.env" <<'EOF'
+DATABASE_URL=postgresql://polka:should-not-be-read@24dom-po-polochkam.ru:5432/polka_social
+EOF
+assert_block_no_client "harness admin ignores production .env fallback" \
+  env -u PROBE_HARNESS_ADMIN_URL -u DATABASE_URL \
+  bash -c 'cd "'"$HARNESS_FAKE_ROOT"'" && source "'"$ROOT"'/scripts/lib/vps-common.sh" && unset PROBE_HARNESS_ADMIN_URL DATABASE_URL && vps_harness_prepare_probe_database polka_vps_probe_block'
+rm -rf "$HARNESS_FAKE_ROOT"
+
+if [[ -z "${PROBE_HARNESS_ADMIN_URL:-}" ]]; then
+  echo "PROBE_HARNESS_ADMIN_URL is required for live harness CREATE/DROP (set in CI)." >&2
+  exit 1
+fi
+assert_ok "live harness admin URL is allowlisted" vps_harness_assert_admin_url
+
 PROBE_DB="polka_vps_probe_$$"
 WORK="$(mktemp -d /tmp/polka-vps-ops.XXXXXX)"
 MEDIA="$WORK/media"
@@ -246,39 +314,7 @@ echo "cabinet-photo" >"$MEDIA/photo.txt"
 : >"$STATE/app.running"
 : >"$STATE/worker.running"
 
-readarray -t pg_fields < <(python3 - "$PROBE_DB" <<'PY'
-import os, sys, subprocess
-from pathlib import Path
-from urllib.parse import urlparse, urlunparse
-
-name = sys.argv[1]
-url = os.environ.get("DATABASE_URL")
-if not url and Path(".env").exists():
-    for line in Path(".env").read_text().splitlines():
-        if line.startswith("DATABASE_URL="):
-            url = line.split("=", 1)[1]
-            break
-if not url:
-    raise SystemExit("DATABASE_URL is required in the environment or .env")
-parsed = urlparse(url)
-admin = urlunparse(parsed)
-subprocess.run(["psql", admin, "-v", "ON_ERROR_STOP=1", "-c", f'DROP DATABASE IF EXISTS "{name}";'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-subprocess.run(["psql", admin, "-v", "ON_ERROR_STOP=1", "-c", f'CREATE DATABASE "{name}";'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-print(parsed.hostname or "127.0.0.1")
-print(parsed.port or 5432)
-print(parsed.username or "polka")
-print(parsed.password or "")
-print(name)
-print(urlunparse(parsed._replace(path="/" + name)))
-PY
-)
-
-PROBE_PGHOST="${pg_fields[0]}"
-PROBE_PGPORT="${pg_fields[1]}"
-PROBE_PGUSER="${pg_fields[2]}"
-PROBE_PGPASSWORD="${pg_fields[3]}"
-PROBE_PGDATABASE="${pg_fields[4]}"
-PROBE_DATABASE_URL="${pg_fields[5]}"
+assert_ok "harness prepares isolated probe database" vps_harness_prepare_probe_database "$PROBE_DB"
 
 export VPS_RUNTIME=probe
 export PROBE_PGHOST PROBE_PGPORT PROBE_PGUSER PROBE_PGPASSWORD PROBE_PGDATABASE
