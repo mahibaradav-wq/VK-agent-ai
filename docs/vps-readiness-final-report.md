@@ -13,11 +13,13 @@
 | Исходный SHA (PR #62) | `889091d2b6b6e5f7e8dfacc3321ed845e74fb92a` |
 | База | `cursor/vps-probe-libpq-hardening-ee77` |
 | Рабочая ветка | `cursor/vps-probe-harness-isolation-ee77` |
-| PR | будет #63 |
+| PR | [#63](https://github.com/mahibaradav-wq/VK-agent-ai/pull/63) |
+| Функциональный / HEAD SHA | `a76bd4e57e234680dfec2359a84076fc4ba55be5` |
 | `main` | не менялся |
 | PR #61 / #62 | не объединялись |
 
-Конечный SHA и ссылки CI — после push.
+GitHub CI Test: SUCCESS [45683243833](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45683243833).  
+GitHub VPS readiness: SUCCESS [45683243742](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45683243742) (syntax, SSH-guard, prisma, lint, typecheck, test, probe, build, image, Playwright e2e, secret-scan).
 
 ## Исправленный риск
 
@@ -47,7 +49,9 @@ Harness раньше вызывал `subprocess.run(["psql", admin])` с `DATABA
 | DROP при невалидном URL | BLOCK |
 | утечка секретов | не обнаружена |
 | `npm run test:vps` | PASS 108 |
-| полный регресс | после прогона |
+| `npm ci` / prisma generate / validate / lint / typecheck / test / build / `bash -n` | PASS |
+| GitHub **CI Test** `a76bd4e` | SUCCESS |
+| GitHub **VPS readiness** `a76bd4e` | SUCCESS (e2e + secret-scan) |
 
 ## Подтверждения запретов
 
