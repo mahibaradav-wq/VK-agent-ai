@@ -8,6 +8,7 @@ import { AccessError } from "@/modules/access/permissions";
 import { createAiService } from "@/modules/ai/ai-service";
 import {
   attachPaidCalls,
+  classifyFetchFailure,
   classifyPaidHttpOutcome,
   paidCallsForHttpClass,
 } from "@/modules/ai/usage-units";
@@ -516,12 +517,19 @@ describe("AI fallback reservation gate", () => {
     return { openaiCalls: () => openaiCalls, backupCalls: () => backupCalls, connections };
   }
 
-  it("classifies HTTP vs network paid outcomes", () => {
+  it("classifies HTTP vs network paid outcomes conservatively", () => {
     expect(paidCallsForHttpClass(classifyPaidHttpOutcome({ httpReached: true }))).toBe(1);
+    expect(paidCallsForHttpClass(classifyPaidHttpOutcome({ requestNeverSent: true }))).toBe(0);
+    // Unknown / timeout / disconnect without proof → bill 1 (do not undercount).
+    expect(paidCallsForHttpClass(classifyPaidHttpOutcome({}))).toBe(1);
+    expect(paidCallsForHttpClass(classifyFetchFailure(Object.assign(new Error("aborted"), { name: "AbortError" })))).toBe(
+      1,
+    );
     expect(
-      paidCallsForHttpClass(classifyPaidHttpOutcome({ httpReached: false, networkFailed: true })),
+      paidCallsForHttpClass(
+        classifyFetchFailure(Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" })),
+      ),
     ).toBe(0);
-    expect(paidCallsForHttpClass(classifyPaidHttpOutcome({ httpReached: false }))).toBe(0);
   });
 
   it("fallback with enough limit charges failed attempt + success", async () => {

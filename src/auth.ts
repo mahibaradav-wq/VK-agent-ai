@@ -2,6 +2,11 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 
 import { authConfig } from "@/auth.config";
+import {
+  loadUserSessionVersion,
+  resolveSessionToken,
+  stampTokenSessionVersion,
+} from "@/modules/auth/session-token";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
@@ -35,26 +40,21 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     ...authConfig.callbacks,
     async jwt({ token, user }) {
       if (user?.id) {
-        token.sub = user.id;
-        token.sessionVersion =
-          typeof (user as { sessionVersion?: unknown }).sessionVersion === "number"
-            ? (user as { sessionVersion: number }).sessionVersion
-            : 0;
-        return token;
+        return stampTokenSessionVersion(token, {
+          id: user.id,
+          sessionVersion: (user as { sessionVersion?: unknown }).sessionVersion,
+        });
       }
       if (!token.sub) {
         return token;
       }
-      // Node-only path (not Edge middleware): invalidate JWT after password reset.
+      // Node runtime (RSC/actions/API): reject JWT after password reset / missing user.
+      // Edge middleware uses /api/auth/session-check with the same resolveSessionToken rule.
       const { prisma } = await import("@/server/db/prisma");
-      const row = await prisma.user.findUnique({
-        where: { id: token.sub },
-        select: { sessionVersion: true },
-      });
-      if (!row || row.sessionVersion !== (typeof token.sessionVersion === "number" ? token.sessionVersion : 0)) {
-        return {};
-      }
-      return token;
+      const current = await loadUserSessionVersion(token.sub, (id) =>
+        prisma.user.findUnique({ where: { id }, select: { sessionVersion: true } }),
+      );
+      return resolveSessionToken(token, current);
     },
   },
 });
