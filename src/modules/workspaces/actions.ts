@@ -41,7 +41,12 @@ export async function selectWorkspace(formData: FormData) {
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(WORKSPACE_COOKIE, workspaceId, { httpOnly: true, sameSite: "lax", path: "/" });
+  cookieStore.set(WORKSPACE_COOKIE, workspaceId, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    secure: process.env.NODE_ENV === "production",
+  });
   cookieStore.delete(PROJECT_COOKIE);
   revalidatePath("/app");
 }
@@ -54,7 +59,12 @@ export async function selectProject(formData: FormData) {
   await createProjectService(prisma).get(userId, workspaceId, projectId);
 
   const cookieStore = await cookies();
-  cookieStore.set(PROJECT_COOKIE, projectId, { httpOnly: true, sameSite: "lax", path: "/" });
+  cookieStore.set(PROJECT_COOKIE, projectId, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    secure: process.env.NODE_ENV === "production",
+  });
   revalidatePath("/app");
   const next = readField(formData, "next");
   if (isCabinetEnterPath(next)) {

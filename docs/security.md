@@ -30,7 +30,9 @@
 - 2FA/TOTP нет. Для личного кабинета приоритет ниже закрытой регистрации, отдельного `TOKEN_ENCRYPTION_KEY` и выключенного mailbox; внедрение потребует миграции и восстановления доступа.
 - HSTS нужно включать на HTTPS-прокси, не в локальном `npm start` по HTTP.
 - Rate limit хранится в памяти процесса. Несколько инстансов не делят счётчик. Платный Redis не обязателен: для личного кабинета достаточно одного процесса Node; следующий бесплатный шаг — таблица в PostgreSQL с TTL, не внешний WAF.
-- `AUTH_DEV_MAILBOX=true` в настоящем production откроет `/dev/mailbox`. В проде флаг должен быть выключен, а письма идут только через HTTP-адаптер.
+- `AUTH_DEV_MAILBOX=true` в настоящем production откроет `/dev/mailbox`. В проде флаг должен быть выключен, а письма (verify/reset/invite) идут через HTTP-адаптер (`EMAIL_API_*`).
+- Живые публикации VK/Telegram fail-closed: без `SOCIAL_PUBLISH_LIVE=true` сетевые адаптеры не вызывают API (тесты с injected transport обходят gate).
+- После сброса пароля `sessionVersion` пользователя увеличивается; JWT со старой версией отклоняется.
 - In-memory rate limit и health не заменяют WAF, backup и мониторинг инцидентов.
 - Обновление VPS: `scripts/vps-pull.sh --plan` только читает состояние; `--apply` пишет SHA и идёт дальше только после успешного backup. Миграции — отдельный `scripts/vps-migrate.sh`, не старт контейнера. Откат: [runbooks/rollback.md](runbooks/rollback.md). GitHub **Deploy VPS** отключён и не SSH.
 - Probe-режим тестов: строгая allowlist localhost/loopback, а не поиск подстрок production-hostname. `VPS_RUNTIME=probe` недостаточно. См. [vps-probe-security.md](vps-probe-security.md).

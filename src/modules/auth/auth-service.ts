@@ -5,6 +5,11 @@ import bcrypt from "bcryptjs";
 
 import { createStarterProjectIfMissing } from "@/modules/projects/project-service";
 import { isDevMailboxEnabled } from "@/server/mail/dev-mailbox";
+import {
+  createDevMailboxEmailAdapter,
+  getEmailAdapter,
+  type EmailNotificationAdapter,
+} from "@/server/notifications";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TOKEN_TTL_MS = 1000 * 60 * 60;
@@ -53,7 +58,17 @@ export function isValidEmail(email: string) {
   return EMAIL_RE.test(email);
 }
 
-export function createAuthService(db: PrismaClient, _siteUrl: string) {
+export function createAuthService(
+  db: PrismaClient,
+  _siteUrl: string,
+  options?: { email?: EmailNotificationAdapter },
+) {
+  // Prefer the DevMail stand when enabled so CI/local tests never depend on a
+  // globally cached unconfigured adapter from getEmailAdapter().
+  const mail =
+    options?.email ??
+    (isDevMailboxEnabled() ? createDevMailboxEmailAdapter(db) : getEmailAdapter());
+
   async function writeAudit(action: string, entityId: string, actorId?: string, details?: string) {
     await db.auditLog.create({
       data: {
@@ -64,6 +79,20 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
         details,
       },
     });
+  }
+
+  async function deliverAuthMail(message: {
+    to: string;
+    subject: string;
+    body: string;
+    url: string;
+    kind: string;
+  }) {
+    if (!mail.ready) {
+      return false;
+    }
+    await mail.send(message);
+    return true;
   }
 
   return {
@@ -124,19 +153,9 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
                 expires: new Date(Date.now() + TOKEN_TTL_MS),
               },
             });
-
-            await tx.devMailMessage.create({
-              data: {
-                to: normalizedEmail,
-                subject: "Подтверждение email",
-                body: "Откройте ссылку из локального почтового стенда, чтобы подтвердить адрес.",
-                url: `/verify-email?token=${token}`,
-                kind: "verify_email",
-              },
-            });
           }
 
-          return { created, autoVerify };
+          return { created, autoVerify, verifyToken: autoVerify ? null : token };
         });
 
         await writeAudit("REGISTER", user.created.id, user.created.id, normalizedEmail);
@@ -149,11 +168,25 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
           };
         }
 
+        if (user.verifyToken) {
+          await deliverAuthMail({
+            to: normalizedEmail,
+            subject: "Подтверждение email",
+            body: isDevMailboxEnabled()
+              ? "Откройте ссылку из локального почтового стенда, чтобы подтвердить адрес."
+              : "Откройте ссылку из письма, чтобы подтвердить адрес.",
+            url: `/verify-email?token=${user.verifyToken}`,
+            kind: "verify_email",
+          });
+        }
+
         return {
           ok: true,
           message: isDevMailboxEnabled()
             ? "Аккаунт создан. Письмо не отправлялось во внешнюю почту. Ссылка подтверждения лежит в локальном почтовом стенде."
-            : "Аккаунт создан. Подтверждение email недоступно, пока не настроена почтовая отправка.",
+            : mail.ready
+              ? "Аккаунт создан. Письмо с подтверждением отправлено на email."
+              : "Аккаунт создан. Подтверждение email недоступно, пока не настроена почтовая отправка (EMAIL_API_* или AUTH_DEV_MAILBOX).",
           mailboxUrl: mailboxUrlIfEnabled(),
         };
       } catch (error) {
@@ -274,28 +307,30 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
             expires: new Date(Date.now() + TOKEN_TTL_MS),
           },
         }),
-        db.devMailMessage.create({
-          data: {
-            to: normalizedEmail,
-            subject: "Подтверждение email",
-            body: "Откройте ссылку из локального почтового стенда, чтобы подтвердить адрес.",
-            url: `/verify-email?token=${token}`,
-            kind: "verify_email",
-          },
-        }),
       ]);
+      await deliverAuthMail({
+        to: normalizedEmail,
+        subject: "Подтверждение email",
+        body: isDevMailboxEnabled()
+          ? "Откройте ссылку из локального почтового стенда, чтобы подтвердить адрес."
+          : "Откройте ссылку из письма, чтобы подтвердить адрес.",
+        url: `/verify-email?token=${token}`,
+        kind: "verify_email",
+      });
       return {
         ok: true,
         message: isDevMailboxEnabled()
           ? "Новое письмо подтверждения лежит в локальном почтовом стенде."
-          : "Новое письмо подтверждения сохранено. Почтовая отправка на рабочем сайте не настроена.",
+          : mail.ready
+            ? "Новое письмо подтверждения отправлено на email."
+            : "Новое письмо подтверждения не отправлено: почтовая отправка на рабочем сайте не настроена.",
         mailboxUrl: mailboxUrlIfEnabled(),
         email: normalizedEmail,
       };
     },
 
-    async requestPasswordReset(email: string): Promise<AuthServiceResult> {
-      const normalizedEmail = email.trim().toLowerCase();
+    async requestPasswordReset(address: string): Promise<AuthServiceResult> {
+      const normalizedEmail = address.trim().toLowerCase();
 
       if (!isValidEmail(normalizedEmail)) {
         return { ok: false, message: "Укажите корректный email." };
@@ -312,14 +347,14 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
             expires: new Date(Date.now() + TOKEN_TTL_MS),
           },
         });
-        await db.devMailMessage.create({
-          data: {
-            to: normalizedEmail,
-            subject: "Сброс пароля",
-            body: "Откройте ссылку из локального почтового стенда, чтобы задать новый пароль.",
-            url: `/reset-password?token=${token}`,
-            kind: "reset_password",
-          },
+        await deliverAuthMail({
+          to: normalizedEmail,
+          subject: "Сброс пароля",
+          body: isDevMailboxEnabled()
+            ? "Откройте ссылку из локального почтового стенда, чтобы задать новый пароль."
+            : "Откройте ссылку из письма, чтобы задать новый пароль.",
+          url: `/reset-password?token=${token}`,
+          kind: "reset_password",
         });
         await writeAudit("REQUEST_PASSWORD_RESET", user.id, user.id);
       }
@@ -328,7 +363,9 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
         ok: true,
         message: isDevMailboxEnabled()
           ? "Письмо не отправлялось во внешнюю почту. Если аккаунт существует, ссылка появилась в локальном почтовом стенде."
-          : "Если аккаунт существует, ссылка сброса будет отправлена, когда настроена почта.",
+          : mail.ready
+            ? "Если аккаунт существует, ссылка сброса отправлена на email."
+            : "Если аккаунт существует, ссылка сброса будет отправлена, когда настроена почта (EMAIL_API_*).",
         mailboxUrl: mailboxUrlIfEnabled(),
       };
     },
@@ -362,7 +399,10 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
 
         await tx.user.update({
           where: { id: record.userId },
-          data: { passwordHash },
+          data: {
+            passwordHash,
+            sessionVersion: { increment: 1 },
+          },
         });
         await tx.passwordResetToken.deleteMany({
           where: { userId: record.userId },
@@ -410,6 +450,7 @@ export function createAuthService(db: PrismaClient, _siteUrl: string) {
           id: user.id,
           email: user.email,
           name: user.name,
+          sessionVersion: user.sessionVersion,
         },
       };
     },

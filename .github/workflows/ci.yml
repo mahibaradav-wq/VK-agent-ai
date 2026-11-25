@@ -31,6 +31,8 @@ jobs:
       DATABASE_URL: postgresql://polka:polka_dev_password@localhost:5432/polka_social
       PROBE_HARNESS_ADMIN_URL: postgresql://polka:polka_dev_password@localhost:5432/polka_social
       AUTH_SECRET: ci-auth-secret-not-for-production
+      AUTH_DEV_MAILBOX: "true"
+      AUTH_ALLOW_PUBLIC_REGISTRATION: "true"
       STORAGE_DRIVER: local
       LOCAL_STORAGE_DIR: ./data/media
     steps:

@@ -21,7 +21,9 @@ ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates ffmpeg \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd --system --gid 10001 polka \
+  && useradd --system --uid 10001 --gid polka --create-home --home-dir /home/polka polka
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm install prisma@6.12.0 tsx@4.23.15
 COPY --from=builder /app/.next ./.next
@@ -31,7 +33,10 @@ COPY --from=builder /app/src ./src
 COPY --from=builder /app/tsconfig.json ./
 COPY --from=builder /app/next.config.ts ./
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-RUN npx prisma generate
+RUN npx prisma generate \
+  && mkdir -p /app/data/media \
+  && chown -R polka:polka /app
+USER polka
 EXPOSE 3000
 # Migrations are a separate controlled step (scripts/vps-migrate.sh), not part of app start.
 CMD ["npm", "start", "--", "--hostname", "0.0.0.0", "--port", "3000"]

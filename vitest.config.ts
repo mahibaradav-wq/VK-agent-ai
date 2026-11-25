@@ -10,6 +10,8 @@ export default defineConfig({
     env: {
       DATABASE_URL: process.env.DATABASE_URL ?? "postgresql://polka:polka_dev_password@localhost:5432/polka_social",
       AUTH_ALLOW_PUBLIC_REGISTRATION: "true",
+      // CI has no .env; auth/invite flows must write DevMailMessage for tests.
+      AUTH_DEV_MAILBOX: "true",
     },
   },
   resolve: {

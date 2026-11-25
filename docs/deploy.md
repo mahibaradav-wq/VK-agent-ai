@@ -90,7 +90,9 @@ Vercel/Railway для этого проекта хуже: нужны PostgreSQL,
 | Тип | Имя | Значение |
 |---|---|---|
 | A | `@` | публичный IPv4 вашего VPS |
-| A | `www` | тот же IPv4 |
+| A | `www` | тот же IPv4 (нужна для редиректа `www` → apex в `deploy/Caddyfile`) |
+
+`SITE_DOMAIN` задавайте **без** `www` (например `example.com`). Caddy обслуживает apex и перенаправляет `www.{$SITE_DOMAIN}` на HTTPS apex. Без A-записи `www` выпуск сертификата для `www` будет сбоить.
 
 Подождите, пока `ping ваш-домен.ru` начнёт отвечать с IP сервера. До этого Caddy не получит сертификат.
 
@@ -127,9 +129,9 @@ curl -fsS https://ваш-домен.ru/api/health
 # {"ok":true,"db":"up"}
 ```
 
-`vps-up.sh` поднимает PostgreSQL, отдельно вызывает `scripts/vps-migrate.sh` (`FIRST_INSTALL=YES`) и только потом app/worker/caddy. Контейнер app больше не выполняет migrate при старте.
+`vps-up.sh` поднимает PostgreSQL, отдельно вызывает `scripts/vps-migrate.sh` (`FIRST_INSTALL=YES`) и только потом app/worker/caddy. Если том Postgres уже содержит `_prisma_migrations`, `vps-up.sh` отказывается продолжать — для обновления используйте `vps-pull.sh --plan` / `--apply`. Контейнер app больше не выполняет migrate при старте. App и worker работают от пользователя `polka` (uid 10001), не от root.
 
-Стек: Caddy (HTTPS) → Next.js → PostgreSQL, плюс воркер очереди. Медиа лежат в Docker-томе `media_data`. На хосте должны быть открыты 22/80/443; порт 5432 не публикуется.
+Стек: Caddy (HTTPS) → Next.js → PostgreSQL, плюс воркер очереди. Медиа лежат в Docker-томе `media_data`. App/worker запускаются от uid `10001` (`polka`). Если после первого `up` загрузка медиа падает по правам, один раз: `docker compose -f docker-compose.prod.yml --env-file .env.production run --rm -u root app chown -R 10001:10001 /app/data/media`. На хосте должны быть открыты 22/80/443; порт 5432 не публикуется. Живые VK/Telegram публикации требуют `SOCIAL_PUBLISH_LIVE=true` в `.env.production`.
 
 Обновление на уже работающем сервере (не запускать, пока владелец не подтвердит):
 

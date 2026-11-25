@@ -32,7 +32,12 @@ function readField(formData: FormData, name: string) {
 export async function selectTimezone(formData: FormData) {
   const timezone = parseTimezone(readField(formData, "timezone"));
   const cookieStore = await cookies();
-  cookieStore.set(TIMEZONE_COOKIE, timezone, { httpOnly: true, sameSite: "lax", path: "/" });
+  cookieStore.set(TIMEZONE_COOKIE, timezone, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    secure: process.env.NODE_ENV === "production",
+  });
   revalidatePath("/app/calendar");
   revalidatePath("/app/studio");
 }

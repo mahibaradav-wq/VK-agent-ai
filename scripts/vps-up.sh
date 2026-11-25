@@ -36,6 +36,14 @@ for _ in $(seq 1 30); do
 done
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T postgres pg_isready >/dev/null
 
+# Refuse FIRST_INSTALL when the volume already has Prisma migrations (re-run would skip backup gate).
+if docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T postgres \
+  sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -tAc "SELECT 1 FROM \"_prisma_migrations\" LIMIT 1;"' 2>/dev/null | grep -q 1; then
+  echo "База уже содержит миграции Prisma. scripts/vps-up.sh только для первой установки." >&2
+  echo "Для обновления: bash scripts/vps-pull.sh --plan, затем --apply (с backup)." >&2
+  exit 1
+fi
+
 FIRST_INSTALL=YES COMPOSE_FILE="$COMPOSE_FILE" ENV_FILE="$ENV_FILE" bash "$SCRIPT_DIR/vps-migrate.sh"
 
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --build app worker caddy

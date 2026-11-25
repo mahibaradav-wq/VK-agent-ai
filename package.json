@@ -1,7 +1,7 @@
 {
-  "name": "vk-agent-ai-saas",
+  "name": "polka-social",
   "version": "1.0.0",
-  "description": "SaaS-платформа управления соцсетями: этап 14, безопасность, e2e и документация запуска.",
+  "description": "Polka Social — личный кабинет владельца «Дом по полочкам» для Telegram и VK.",
   "private": true,
   "directories": {
     "doc": "docs"
@@ -30,9 +30,10 @@
   },
   "keywords": [
     "smm",
-    "saas",
+    "personal-cabinet",
     "nextjs",
-    "social-media"
+    "social-media",
+    "polka-social"
   ],
   "author": "",
   "license": "ISC",

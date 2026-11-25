@@ -6,6 +6,13 @@ import { createAccessService } from "@/modules/access/access-service";
 import { parseKind, parseLength, parseTone } from "@/modules/ai/kinds";
 import { encodeSlideshowMp4 } from "@/modules/ai/video-encode";
 import {
+  attemptReserveUnits,
+  MAX_POST_COMPLETION_CALLS,
+  paidCallsFromError,
+  paidCallsFromResult,
+  textGenerateReserveUnits,
+} from "@/modules/ai/usage-units";
+import {
   agentUsageUnits,
   defaultVideoSeconds,
   imageSizeForAspect,
@@ -15,6 +22,7 @@ import {
   parseVisualKind,
   prepareVisualPrompt,
   slideVisualPrompt,
+  studioReviseReserveUnits,
   videoFrameCount,
 } from "@/modules/ai/visual";
 import { createAiConnectionService } from "@/modules/ai/provider-service";
@@ -164,13 +172,77 @@ export function createAiService(
     return connections.resolveProvider(workspaceId, role);
   }
 
+  type PaidAccount = { workspaceId: string; periodStart: Date; reserved: number; charged: number };
+
+  type FallbackBilling = {
+    account: PaidAccount;
+    exhaustedMessage: string;
+    /** Worst-case paid units for the next provider attempt. */
+    attemptUnits: number;
+  };
+
+  async function settlePaidAi(account: PaidAccount) {
+    const charged = Math.max(0, account.charged);
+    const reserved = Math.max(0, account.reserved);
+    const kept = Math.min(charged, reserved);
+    const unused = reserved - kept;
+    if (unused > 0) {
+      await releaseUsage(db, account.workspaceId, USAGE_METRICS.ai, account.periodStart, unused);
+    }
+    account.charged = charged;
+    account.reserved = reserved;
+  }
+
+  /** Grow reserved units before a paid attempt so spend can never outrun the metric. */
+  async function ensureReserve(account: PaidAccount, units: number, exhaustedMessage: string) {
+    if (!Number.isInteger(units) || units <= 0) {
+      return;
+    }
+    const available = Math.max(0, account.reserved - account.charged);
+    if (units <= available) {
+      return;
+    }
+    const extra = units - available;
+    await beginPaidAi(account.workspaceId, extra, exhaustedMessage);
+    account.reserved += extra;
+  }
+
+  async function notePaidCalls(account: PaidAccount, calls: number, exhaustedMessage: string) {
+    if (!Number.isInteger(calls) || calls <= 0) {
+      return;
+    }
+    // Calls already happened: charge first, then grow if somehow under-reserved (should be rare).
+    account.charged += calls;
+    if (account.charged > account.reserved) {
+      const extra = account.charged - account.reserved;
+      await beginPaidAi(account.workspaceId, extra, exhaustedMessage);
+      account.reserved += extra;
+    }
+  }
+
   async function callWithFallback<T>(
     workspaceId: string,
     role: "ideas" | "copy" | "image",
     fn: (provider: AiProvider) => Promise<T>,
+    billing?: FallbackBilling,
   ): Promise<T> {
     if (injected) {
-      return fn(injected);
+      if (billing) {
+        await ensureReserve(billing.account, billing.attemptUnits, billing.exhaustedMessage);
+      }
+      try {
+        return await fn(injected);
+      } catch (error) {
+        const spent = paidCallsFromError(error);
+        if (spent > 0 && billing) {
+          try {
+            await notePaidCalls(billing.account, spent, billing.exhaustedMessage);
+          } catch {
+            billing.account.charged = Math.max(billing.account.charged, spent);
+          }
+        }
+        throw error;
+      }
     }
     const providers = await connections.listProviders(workspaceId, role);
     if (providers.length === 0) {
@@ -188,11 +260,26 @@ export function createAiService(
       );
     }
     let last: unknown;
+    let spentOnFailedAttempts = 0;
     for (const provider of providers) {
+      if (billing) {
+        // Refuse the next provider (incl. fallback) before HTTP if headroom cannot be reserved.
+        await ensureReserve(billing.account, billing.attemptUnits, billing.exhaustedMessage);
+      }
       try {
         return await fn(provider);
       } catch (error) {
         last = error;
+        const spent = paidCallsFromError(error);
+        spentOnFailedAttempts += spent;
+        if (spent > 0 && billing) {
+          try {
+            await notePaidCalls(billing.account, spent, billing.exhaustedMessage);
+          } catch {
+            // Keep actual spend charged even if emergency grow fails after the paid attempt.
+            billing.account.charged = Math.max(billing.account.charged, spentOnFailedAttempts);
+          }
+        }
         if (isOpenAiRegionError(error) && provider.name === "openai") {
           await connections.rememberError(
             workspaceId,
@@ -205,9 +292,19 @@ export function createAiService(
       }
     }
     if (role === "image" && isOpenAiRegionError(last)) {
-      throw new AccessError(400, OPENAI_IMAGE_REGION_MESSAGE);
+      throw attachFallbackPaid(new AccessError(400, OPENAI_IMAGE_REGION_MESSAGE), spentOnFailedAttempts);
+    }
+    if (last instanceof Error) {
+      throw attachFallbackPaid(last, spentOnFailedAttempts);
     }
     throw last;
+  }
+
+  function attachFallbackPaid(error: Error, paidCalls: number) {
+    if (paidCalls > 0) {
+      Object.defineProperty(error, "paidCalls", { value: paidCalls, enumerable: true, configurable: true });
+    }
+    return error;
   }
 
   async function loadBoundRequest(workspaceId: string, requestId: string) {
@@ -351,15 +448,22 @@ export function createAiService(
       }
 
       const limit = await resolveLimit(workspaceId);
-      const periodStart = await beginPaidAi(
+      const exhausted = `Общий лимит AI-запросов кабинета на месяц исчерпан (${limit}).`;
+      const reserved = textGenerateReserveUnits(kind);
+      const account: PaidAccount = {
         workspaceId,
-        1,
-        `Общий лимит AI-запросов кабинета на месяц исчерпан (${limit}).`,
-      );
+        periodStart: await beginPaidAi(workspaceId, reserved, exhausted),
+        reserved,
+        charged: 0,
+      };
       try {
-        const generated = await callWithFallback(workspaceId, role, (item) =>
-          item.generate({ kind, prompt, tone, length, platform }),
+        const generated = await callWithFallback(
+          workspaceId,
+          role,
+          (item) => item.generate({ kind, prompt, tone, length, platform }),
+          { account, exhaustedMessage: exhausted, attemptUnits: attemptReserveUnits(kind) },
         );
+        await notePaidCalls(account, paidCallsFromResult(generated, 1), exhausted);
         const row = await db.aIRequest.create({
           data: {
             workspaceId,
@@ -384,13 +488,22 @@ export function createAiService(
             action: "GENERATE_AI_REQUEST",
             entityType: "ai_request",
             entityId: row.id,
-            actorId: userId,
             details: `${kind}:${generated.provider}`,
+            actorId: userId,
           },
         });
+        await settlePaidAi(account);
         return toPublic(row);
       } catch (error) {
-        await releaseUsage(db, workspaceId, USAGE_METRICS.ai, periodStart);
+        // Fallback path already noted paid failures via onPaidCalls; only sync if throw skipped that.
+        if (paidCallsFromError(error) > account.charged) {
+          try {
+            await notePaidCalls(account, paidCallsFromError(error) - account.charged, exhausted);
+          } catch {
+            account.charged = Math.max(account.charged, paidCallsFromError(error));
+          }
+        }
+        await settlePaidAi(account);
         throw error;
       }
     },
@@ -548,17 +661,20 @@ export function createAiService(
       }
 
       const limit = await resolveLimit(workspaceId);
-      const periodStart = await beginPaidAi(
-        workspaceId,
-        usageUnits,
+      const exhausted =
         visualKind === "carousel"
-          ? `Агенту нужны ${usageUnits} генерации (${publishPlatforms.length > 1 ? "тексты Telegram и ВК" : "текст"} и ${slideCount} карточек). Общий лимит AI кабинета исчерпан (${limit}).`
+          ? `Агенту нужны до ${usageUnits} AI-вызовов (${publishPlatforms.length > 1 ? "тексты Telegram и ВК" : "текст"} с возможным revise и ${slideCount} карточек). Общий лимит AI кабинета исчерпан (${limit}).`
           : visualKind === "video"
-            ? `Агенту нужны ${usageUnits} генерации (${publishPlatforms.length > 1 ? "тексты Telegram и ВК" : "текст"} и ${slideCount} кадров ролика ${videoSeconds} с). Общий лимит AI кабинета исчерпан (${limit}).`
-          : publishPlatforms.length > 1
-            ? `Агенту нужны ${usageUnits} генерации (текст Telegram, текст ВК и визуал). Общий лимит AI кабинета исчерпан (${limit}).`
-            : `Агенту нужны две генерации (текст и визуал). Общий лимит AI кабинета исчерпан (${limit}).`,
-      );
+            ? `Агенту нужны до ${usageUnits} AI-вызовов (${publishPlatforms.length > 1 ? "тексты Telegram и ВК" : "текст"} с возможным revise и ${slideCount} кадров ролика ${videoSeconds} с). Общий лимит AI кабинета исчерпан (${limit}).`
+            : publishPlatforms.length > 1
+              ? `Агенту нужны до ${usageUnits} AI-вызовов (тексты Telegram и ВК с возможным revise и визуал). Общий лимит AI кабинета исчерпан (${limit}).`
+              : `Агенту нужны до ${usageUnits} AI-вызовов (текст с возможным revise и визуал). Общий лимит AI кабинета исчерпан (${limit}).`;
+      const account: PaidAccount = {
+        workspaceId,
+        periodStart: await beginPaidAi(workspaceId, usageUnits, exhausted),
+        reserved: usageUnits,
+        charged: 0,
+      };
 
       try {
         const variants: PlatformVariants = {};
@@ -571,15 +687,20 @@ export function createAiService(
           outputTokens: 0,
         };
         for (const target of publishPlatforms) {
-          const next = await callWithFallback(workspaceId, "copy", (item) =>
-            item.generate({
-              kind: "post",
-              prompt,
-              tone,
-              length: target === "telegram" ? "caption" : length,
-              platform: target,
-            }),
+          const next = await callWithFallback(
+            workspaceId,
+            "copy",
+            (item) =>
+              item.generate({
+                kind: "post",
+                prompt,
+                tone,
+                length: target === "telegram" ? "caption" : length,
+                platform: target,
+              }),
+            { account, exhaustedMessage: exhausted, attemptUnits: MAX_POST_COMPLETION_CALLS },
           );
+          await notePaidCalls(account, paidCallsFromResult(next, 1), exhausted);
           variants[target] = {
             title: next.title.trim() || "Черновик агента",
             body: next.body.trim() || prompt,
@@ -610,12 +731,17 @@ export function createAiService(
         const frames = [];
         let imageModel = "";
         for (let index = 0; index < slideCount; index += 1) {
-          const image = await callWithFallback(workspaceId, "image", (item) =>
-            item.generateImage({
-              prompt: slideVisualPrompt(baseVisualPrompt, index, slideCount),
-              size: imageSizeForAspect(visualAspect),
-            }),
+          const image = await callWithFallback(
+            workspaceId,
+            "image",
+            (item) =>
+              item.generateImage({
+                prompt: slideVisualPrompt(baseVisualPrompt, index, slideCount),
+                size: imageSizeForAspect(visualAspect),
+              }),
+            { account, exhaustedMessage: exhausted, attemptUnits: 1 },
           );
+          await notePaidCalls(account, paidCallsFromResult(image, 1), exhausted);
           imageModel = image.model;
           frames.push(image);
         }
@@ -695,13 +821,21 @@ export function createAiService(
           },
         });
 
+        await settlePaidAi(account);
         return {
           request: toPublic(row),
           post: await posts.get(userId, workspaceId, created.id),
           mediaId: coverId,
         };
       } catch (error) {
-        await releaseUsage(db, workspaceId, USAGE_METRICS.ai, periodStart, usageUnits);
+        if (paidCallsFromError(error) > account.charged) {
+          try {
+            await notePaidCalls(account, paidCallsFromError(error) - account.charged, exhausted);
+          } catch {
+            account.charged = Math.max(account.charged, paidCallsFromError(error));
+          }
+        }
+        await settlePaidAi(account);
         throw error;
       }
     },
@@ -730,13 +864,20 @@ export function createAiService(
       const existingVideo = post.media.some((item) => item.media.mimeType === "video/mp4");
       const slideCount = existingVideo ? videoFrameCount(defaultVideoSeconds) : Math.max(1, post.media.length);
       const platforms = defaultPublishPlatforms(post.targets.map((target) => target.platform));
-      const usageUnits = (rewriteText ? platforms.length : 0) + (rewriteVisual ? slideCount : 0);
+      const reserved = studioReviseReserveUnits({
+        rewriteText,
+        rewriteVisual,
+        platformCount: platforms.length,
+        slideCount,
+      });
       const limit = await resolveLimit(workspaceId);
-      const periodStart = await beginPaidAi(
+      const exhausted = `Общий лимит AI-запросов кабинета на месяц исчерпан (${limit}).`;
+      const account: PaidAccount = {
         workspaceId,
-        usageUnits,
-        `Общий лимит AI-запросов кабинета на месяц исчерпан (${limit}).`,
-      );
+        periodStart: await beginPaidAi(workspaceId, reserved, exhausted),
+        reserved,
+        charged: 0,
+      };
       try {
         let title = version.title;
         let body = version.body;
@@ -748,15 +889,20 @@ export function createAiService(
           }
           for (const target of platforms) {
             const current = copyForPlatform(version, target);
-            const generated = await callWithFallback(workspaceId, "copy", (item) =>
-              item.generate({
-                kind: "post",
-                prompt: `Текущий заголовок: ${current.title}\nТекущий текст:\n${current.body}\n\nПравка от автора: ${comment}`,
-                tone: "friendly",
-                length: target === "telegram" ? "caption" : "medium",
-                platform: target,
-              }),
+            const generated = await callWithFallback(
+              workspaceId,
+              "copy",
+              (item) =>
+                item.generate({
+                  kind: "post",
+                  prompt: `Текущий заголовок: ${current.title}\nТекущий текст:\n${current.body}\n\nПравка от автора: ${comment}`,
+                  tone: "friendly",
+                  length: target === "telegram" ? "caption" : "medium",
+                  platform: target,
+                }),
+              { account, exhaustedMessage: exhausted, attemptUnits: MAX_POST_COMPLETION_CALLS },
             );
+            await notePaidCalls(account, paidCallsFromResult(generated, 1), exhausted);
             variants[target] = {
               title: generated.title.trim() || current.title,
               body: generated.body.trim() || current.body,
@@ -786,14 +932,18 @@ export function createAiService(
           });
           const frames = [];
           for (let index = 0; index < slideCount; index += 1) {
-            frames.push(
-              await callWithFallback(workspaceId, "image", (item) =>
+            const frame = await callWithFallback(
+              workspaceId,
+              "image",
+              (item) =>
                 item.generateImage({
                   prompt: slideVisualPrompt(baseVisualPrompt, index, slideCount),
                   size: imageSizeForAspect(visualAspect),
                 }),
-              ),
+              { account, exhaustedMessage: exhausted, attemptUnits: 1 },
             );
+            await notePaidCalls(account, paidCallsFromResult(frame, 1), exhausted);
+            frames.push(frame);
           }
           const assets = [];
           if (existingVideo) {
@@ -838,9 +988,17 @@ export function createAiService(
             details: input.rewrite,
           },
         });
+        await settlePaidAi(account);
         return posts.get(userId, workspaceId, post.id);
       } catch (error) {
-        await releaseUsage(db, workspaceId, USAGE_METRICS.ai, periodStart, usageUnits);
+        if (paidCallsFromError(error) > account.charged) {
+          try {
+            await notePaidCalls(account, paidCallsFromError(error) - account.charged, exhausted);
+          } catch {
+            account.charged = Math.max(account.charged, paidCallsFromError(error));
+          }
+        }
+        await settlePaidAi(account);
         throw error;
       }
     },

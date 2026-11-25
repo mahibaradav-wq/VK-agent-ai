@@ -17,6 +17,12 @@ import {
   readErrorBody,
 } from "@/server/ai/errors";
 import { createAiFetch } from "@/server/http/outbound-fetch";
+import {
+  attachPaidCalls,
+  classifyPaidHttpOutcome,
+  paidCallsForHttpClass,
+  paidCallsFromError,
+} from "@/modules/ai/usage-units";
 import { assertPaidAiAllowed } from "@/server/ai/live-guard";
 import { detectMediaType, isVideoMime, MAX_MEDIA_BYTES } from "@/modules/media/file-validation";
 import type { AiGenerateInput, AiGenerateOutput, AiImageInput, AiImageOutput, AiProvider } from "@/server/ai/types";
@@ -185,24 +191,33 @@ export function createOpenAiCompatibleProvider(options: {
             }),
           });
         } catch {
-          throw new AccessError(400, name === "openai" ? OPENAI_REGION_MESSAGE : AI_UNAVAILABLE_MESSAGE);
+          // Network / timeout before HTTP — non-billable for workspace units.
+          throw attachPaidCalls(
+            new AccessError(400, name === "openai" ? OPENAI_REGION_MESSAGE : AI_UNAVAILABLE_MESSAGE),
+            paidCallsForHttpClass(classifyPaidHttpOutcome({ httpReached: false, networkFailed: true })),
+          );
         }
 
         if (!response.ok) {
           const body = await readErrorBody(response);
+          const billed = paidCallsForHttpClass(classifyPaidHttpOutcome({ httpReached: true }));
+          // HTTP reached the provider — count as one paid attempt for accounting.
           if (isOpenAiRegionBlock(body)) {
-            throw new AccessError(400, OPENAI_REGION_MESSAGE);
+            throw attachPaidCalls(new AccessError(400, OPENAI_REGION_MESSAGE), billed);
           }
           if (isInsufficientBalance(response.status, body)) {
-            throw new AccessError(400, AI_BALANCE_MESSAGE);
+            throw attachPaidCalls(new AccessError(400, AI_BALANCE_MESSAGE), billed);
           }
-          throw new AccessError(400, `Провайдер AI вернул ошибку ${response.status}. Ключ в ответ не попадает.`);
+          throw attachPaidCalls(
+            new AccessError(400, `Провайдер AI вернул ошибку ${response.status}. Ключ в ответ не попадает.`),
+            billed,
+          );
         }
 
         const json = (await response.json()) as ChatResponse;
         const content = json.choices?.[0]?.message?.content?.trim();
         if (!content) {
-          throw new AccessError(400, "Провайдер AI вернул пустой ответ.");
+          throw attachPaidCalls(new AccessError(400, "Провайдер AI вернул пустой ответ."), 1);
         }
         return {
           json,
@@ -211,38 +226,50 @@ export function createOpenAiCompatibleProvider(options: {
         };
       };
 
-      const first = await complete(`${input.prompt}\n\n${copyUserLengthHint(input.length)}`);
-      let parsed = first.parsed;
-      let content = first.content;
-      let json = first.json;
-      let inputTokens = first.json.usage?.prompt_tokens ?? 0;
-      let outputTokens = first.json.usage?.completion_tokens ?? 0;
+      let paidCalls = 0;
+      try {
+        const first = await complete(`${input.prompt}\n\n${copyUserLengthHint(input.length)}`);
+        paidCalls = 1;
+        let parsed = first.parsed;
+        let content = first.content;
+        let json = first.json;
+        let inputTokens = first.json.usage?.prompt_tokens ?? 0;
+        let outputTokens = first.json.usage?.completion_tokens ?? 0;
 
-      if (input.kind === "post" && !bodyMeetsCopyLength(parsed.body, input.length)) {
-        try {
-          const revised = await complete(
-            `${input.prompt}\n\n${copyReviseHint(parsed.body.trim().length, input.length)}\n\nЧерновик:\n${parsed.body}`,
-          );
-          inputTokens += revised.json.usage?.prompt_tokens ?? 0;
-          outputTokens += revised.json.usage?.completion_tokens ?? 0;
-          if (preferRevisedCopy(parsed.body, revised.parsed.body, input.length)) {
-            parsed = revised.parsed;
-            content = revised.content;
-            json = revised.json;
+        if (input.kind === "post" && !bodyMeetsCopyLength(parsed.body, input.length)) {
+          try {
+            const revised = await complete(
+              `${input.prompt}\n\n${copyReviseHint(parsed.body.trim().length, input.length)}\n\nЧерновик:\n${parsed.body}`,
+            );
+            paidCalls = 2;
+            inputTokens += revised.json.usage?.prompt_tokens ?? 0;
+            outputTokens += revised.json.usage?.completion_tokens ?? 0;
+            if (preferRevisedCopy(parsed.body, revised.parsed.body, input.length)) {
+              parsed = revised.parsed;
+              content = revised.content;
+              json = revised.json;
+            }
+          } catch (reviseError) {
+            // Revise HTTP may have billed even on failure; keep first draft.
+            paidCalls += paidCallsFromError(reviseError);
           }
-        } catch {
-          // Keep the first complete draft if the rewrite call fails.
         }
-      }
 
-      return {
-        ...parsed,
-        raw: content,
-        provider: name,
-        model: json.model || options.model,
-        inputTokens,
-        outputTokens,
-      };
+        return {
+          ...parsed,
+          raw: content,
+          provider: name,
+          model: json.model || options.model,
+          inputTokens,
+          outputTokens,
+          paidCalls,
+        };
+      } catch (error) {
+        throw attachPaidCalls(
+          error instanceof AccessError ? error : new AccessError(400, AI_UNAVAILABLE_MESSAGE),
+          paidCalls || paidCallsFromError(error),
+        );
+      }
     },
     async generateImage(input: AiImageInput): Promise<AiImageOutput> {
       if (!usingInjectedFetch) {
@@ -271,23 +298,33 @@ export function createOpenAiCompatibleProvider(options: {
           body: JSON.stringify(imageGenerationBody(imageModel, prompt, input.size ?? "1024x1024")),
         });
       } catch {
-        throw new AccessError(400, name === "openai" ? OPENAI_REGION_MESSAGE : "Провайдер изображений недоступен. Это не замена картинки.");
+        throw attachPaidCalls(
+          new AccessError(
+            400,
+            name === "openai" ? OPENAI_REGION_MESSAGE : "Провайдер изображений недоступен. Это не замена картинки.",
+          ),
+          paidCallsForHttpClass(classifyPaidHttpOutcome({ httpReached: false, networkFailed: true })),
+        );
       }
 
       if (!response.ok) {
         const body = await readErrorBody(response);
+        const billed = paidCallsForHttpClass(classifyPaidHttpOutcome({ httpReached: true }));
         if (isOpenAiRegionBlock(body)) {
-          throw new AccessError(400, OPENAI_REGION_MESSAGE);
+          throw attachPaidCalls(new AccessError(400, OPENAI_REGION_MESSAGE), billed);
         }
         if (isInsufficientBalance(response.status, body)) {
-          throw new AccessError(400, AI_BALANCE_MESSAGE);
+          throw attachPaidCalls(new AccessError(400, AI_BALANCE_MESSAGE), billed);
         }
         const detail = await providerErrorDetail(response);
-        throw new AccessError(
-          400,
-          detail
-            ? `Провайдер изображений: ${detail}`
-            : `Провайдер изображений вернул ошибку ${response.status}. Ключ в ответ не попадает.`,
+        throw attachPaidCalls(
+          new AccessError(
+            400,
+            detail
+              ? `Провайдер изображений: ${detail}`
+              : `Провайдер изображений вернул ошибку ${response.status}. Ключ в ответ не попадает.`,
+          ),
+          billed,
         );
       }
 
@@ -295,12 +332,15 @@ export function createOpenAiCompatibleProvider(options: {
       const bytes = await readGeneratedImageBytes(json, fetchImpl);
 
       if (bytes.byteLength === 0 || bytes.byteLength > MAX_MEDIA_BYTES) {
-        throw new AccessError(400, "Сгенерированное изображение пустое или больше 8 МБ.");
+        throw attachPaidCalls(new AccessError(400, "Сгенерированное изображение пустое или больше 8 МБ."), 1);
       }
 
       const mimeType = detectMediaType(bytes);
       if (!mimeType || isVideoMime(mimeType)) {
-        throw new AccessError(400, "Провайдер вернул файл, который нельзя сохранить как изображение.");
+        throw attachPaidCalls(
+          new AccessError(400, "Провайдер вернул файл, который нельзя сохранить как изображение."),
+          1,
+        );
       }
 
       return {
@@ -308,6 +348,7 @@ export function createOpenAiCompatibleProvider(options: {
         mimeType,
         provider: name,
         model: imageModel,
+        paidCalls: 1,
       };
     },
   };

@@ -16,6 +16,10 @@ import {
 } from "@/server/social/vk-api";
 import { VK_MANUAL_PHOTO_CODE, VK_MANUAL_PHOTO_MESSAGE } from "@/modules/social/vk-manual";
 import { toVkWallText } from "@/modules/social/vk-wall-text";
+import {
+  isSocialPublishLiveEnabled,
+  socialPublishLiveBlockedOutcome,
+} from "@/server/social/publish-live-guard";
 import { resolvePublishSocialAccount } from "@/server/social/resolve-account";
 import type { PublishInput, PublishOutcome, SocialAdapter } from "@/server/social/types";
 import { createStorageFromEnv, type StorageDriver } from "@/server/storage";
@@ -483,12 +487,16 @@ export function createVkAdapter(options: {
   transport?: VkTransport;
   storage?: StorageDriver;
 }): SocialAdapter {
+  const usingInjectedTransport = Boolean(options.transport);
   const transport = options.transport ?? createVkTransport();
   const storage = options.storage ?? createStorageFromEnv();
 
   return {
     platform: "vk",
     async publish(input: PublishInput): Promise<PublishOutcome> {
+      if (!usingInjectedTransport && !isSocialPublishLiveEnabled()) {
+        return socialPublishLiveBlockedOutcome();
+      }
       const account = await resolvePublishSocialAccount(options.db, input, "vk");
 
       if (!account || account.workspaceId !== input.workspaceId || account.status !== "connected" || !account.encryptedToken) {

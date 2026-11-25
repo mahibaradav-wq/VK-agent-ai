@@ -8,6 +8,7 @@ dns.setDefaultResultOrder("ipv4first");
 import { createPublishService } from "@/modules/publishing/publish-service";
 import { PUBLISH_QUEUE_NAME } from "@/server/queue/bullmq-queue";
 import { prisma } from "@/server/db/prisma";
+import { assertAuthSecret, assertProductionCabinetGuards } from "@/server/security/secrets";
 
 const workerId = `${os.hostname()}:${process.pid}`;
 const redisUrl = process.env.REDIS_URL?.trim();
@@ -18,7 +19,15 @@ async function tick() {
   await publishing.processDueJobs(workerId);
 }
 
+function assertWorkerBootGuards() {
+  assertAuthSecret();
+  if (process.env.POLKA_REQUIRE_PROD_SECRETS === "true" || process.env.NODE_ENV === "production") {
+    assertProductionCabinetGuards();
+  }
+}
+
 async function main() {
+  assertWorkerBootGuards();
   console.info(`[polka-worker] start ${workerId}`);
   await tick();
 

@@ -1,5 +1,4 @@
 import { auth } from "@/auth";
-import { AccessError } from "@/modules/access/permissions";
 import { createMediaService } from "@/modules/media/media-service";
 import { prisma } from "@/server/db/prisma";
 import { storage } from "@/server/storage";
@@ -28,8 +27,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         "Cache-Control": "private, max-age=3600",
       },
     });
-  } catch (error) {
-    const status = error instanceof AccessError ? error.status : 404;
-    return new Response("Медиафайл не найден.", { status });
+  } catch {
+    // Always 404 for missing or unauthorized media — do not leak existence via 403.
+    return new Response("Медиафайл не найден.", { status: 404 });
   }
 }

@@ -210,6 +210,51 @@ describe("AI assistant", () => {
     expect(await ai.list(owner.userId, owner.workspaceId)).toEqual([]);
   });
 
+  it("reserves two AI units for a post generate that may revise length", async () => {
+    const owner = await registerOwner("ai-post-units");
+    const short = `${"Короткий черновик. ".repeat(5)}`;
+    const finished = `${"На маленькой кухне каждый ящик должен работать на порядок. ".repeat(40)}В итоге стол с ящиками даёт спокойный ритм. Как вы организуете хранение?`;
+    let calls = 0;
+    const provider = createOpenAiCompatibleProvider({
+      apiKey: "sk-test-secret-key",
+      baseUrl: "https://example.test/v1",
+      model: "demo-mini",
+      fetchImpl: async () => {
+        calls += 1;
+        const body = calls === 1 ? short : finished;
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify({ title: "Полки", body, items: [] }) } }],
+          }),
+          { status: 200 },
+        );
+      },
+    });
+    const ai = createAiService(prisma, { provider, monthlyLimit: 10 });
+    await ai.generate(owner.userId, owner.workspaceId, {
+      kind: "post",
+      prompt: "полки без хаоса",
+      tone: "friendly",
+      length: "long",
+      platform: "vk",
+    });
+    expect(calls).toBe(2);
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(2);
+
+    const tightOwner = await registerOwner("ai-post-units-tight");
+    const limited = createAiService(prisma, { provider, monthlyLimit: 1 });
+    await expectAccess(
+      limited.generate(tightOwner.userId, tightOwner.workspaceId, {
+        kind: "post",
+        prompt: "ещё один пост",
+        length: "long",
+        platform: "vk",
+      }),
+      400,
+      /Общий лимит AI-запросов кабинета/,
+    );
+  });
+
   it("enforces the monthly limit atomically and releases usage if the provider fails", async () => {
     const owner = await registerOwner("ai-limit");
     const ai = createAiService(prisma, { provider: scriptedProvider([sample]), monthlyLimit: 1 });
@@ -616,7 +661,8 @@ describe("AI assistant", () => {
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
     expect(await prisma.mediaAsset.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
     expect(await prisma.aIRequest.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
-    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(0);
+    // Default Agent platforms = telegram+vk: both text calls already paid before image fails.
+    expect((await ai.usage(owner.userId, owner.workspaceId)).used).toBe(2);
   });
 
   it("needs two free AI units for the agent and blocks a Viewer", async () => {
@@ -632,7 +678,7 @@ describe("AI assistant", () => {
         projectId: owner.projectId,
       }),
       400,
-      /текст Telegram, текст ВК/,
+      /Агенту нужны до \d+ AI-вызовов|Общий лимит AI/,
     );
     expect(await prisma.post.count({ where: { workspaceId: owner.workspaceId } })).toBe(0);
 

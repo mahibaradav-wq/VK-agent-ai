@@ -1,3 +1,4 @@
+import { MAX_POST_COMPLETION_CALLS } from "@/modules/ai/usage-units";
 import { visualStyleRules, visualTargetPixels } from "@/modules/brand/visual-standard";
 import type { AiImageSize } from "@/server/ai/types";
 
@@ -97,7 +98,20 @@ export function parseVisualAssetCount(kind: VisualKind, count?: string | number)
 }
 
 export function agentUsageUnits(kind: VisualKind, count?: string | number, copyCount = 1) {
-  return Math.max(1, copyCount) + parseVisualAssetCount(kind, count);
+  // Each platform text generate may issue draft + length revise (2 chat calls).
+  const textUnits = Math.max(1, copyCount) * MAX_POST_COMPLETION_CALLS;
+  return textUnits + parseVisualAssetCount(kind, count);
+}
+
+export function studioReviseReserveUnits(options: {
+  rewriteText: boolean;
+  rewriteVisual: boolean;
+  platformCount: number;
+  slideCount: number;
+}) {
+  const text = options.rewriteText ? Math.max(1, options.platformCount) * MAX_POST_COMPLETION_CALLS : 0;
+  const visual = options.rewriteVisual ? Math.max(1, options.slideCount) : 0;
+  return text + visual;
 }
 
 export function slideVisualPrompt(base: string, index: number, total: number) {
