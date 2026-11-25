@@ -5,7 +5,11 @@ import bcrypt from "bcryptjs";
 
 import { createStarterProjectIfMissing } from "@/modules/projects/project-service";
 import { isDevMailboxEnabled } from "@/server/mail/dev-mailbox";
-import { getEmailAdapter, type EmailNotificationAdapter } from "@/server/notifications";
+import {
+  createDevMailboxEmailAdapter,
+  getEmailAdapter,
+  type EmailNotificationAdapter,
+} from "@/server/notifications";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TOKEN_TTL_MS = 1000 * 60 * 60;
@@ -59,7 +63,11 @@ export function createAuthService(
   _siteUrl: string,
   options?: { email?: EmailNotificationAdapter },
 ) {
-  const mail = options?.email ?? getEmailAdapter();
+  // Prefer the DevMail stand when enabled so CI/local tests never depend on a
+  // globally cached unconfigured adapter from getEmailAdapter().
+  const mail =
+    options?.email ??
+    (isDevMailboxEnabled() ? createDevMailboxEmailAdapter(db) : getEmailAdapter());
 
   async function writeAudit(action: string, entityId: string, actorId?: string, details?: string) {
     await db.auditLog.create({

@@ -10,7 +10,12 @@ import { lockWorkspaceMetric } from "@/modules/billing/usage";
 import { APPROVED_STATUS, REJECTED_STATUS, findActiveApproval } from "@/modules/collaboration/approval";
 import { deliverNotifications } from "@/modules/notifications/dispatch";
 import { createPostService } from "@/modules/posts/post-service";
-import { getEmailAdapter, type EmailNotificationAdapter } from "@/server/notifications";
+import { isDevMailboxEnabled } from "@/server/mail/dev-mailbox";
+import {
+  createDevMailboxEmailAdapter,
+  getEmailAdapter,
+  type EmailNotificationAdapter,
+} from "@/server/notifications";
 
 const INVITE_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const submitableStatuses = ["draft", "scheduled", "failed"] as const;
@@ -26,7 +31,9 @@ export function createCollaborationService(
   const access = createAccessService(db);
   const posts = createPostService(db);
   const now = options?.now ?? (() => new Date());
-  const mail = options?.email ?? getEmailAdapter();
+  const mail =
+    options?.email ??
+    (isDevMailboxEnabled() ? createDevMailboxEmailAdapter(db) : getEmailAdapter());
 
   async function loadBoundPost(workspaceId: string, postId: string) {
     const post = await db.post.findUnique({
@@ -162,17 +169,16 @@ export function createCollaborationService(
         await mail.send({
           to: email,
           subject: "Приглашение в Polka Social",
-          body:
-            process.env.AUTH_DEV_MAILBOX === "true"
-              ? "Письмо не уходило во внешнюю почту. Откройте ссылку из локального стенда, чтобы принять приглашение."
-              : "Откройте ссылку из письма, чтобы принять приглашение в Polka Social.",
+          body: isDevMailboxEnabled()
+            ? "Письмо не уходило во внешнюю почту. Откройте ссылку из локального стенда, чтобы принять приглашение."
+            : "Откройте ссылку из письма, чтобы принять приглашение в Polka Social.",
           url: `/accept-invite?token=${token}`,
           kind: "invitation",
         });
       }
       return {
         invitation,
-        mailboxUrl: process.env.AUTH_DEV_MAILBOX === "true" ? "/dev/mailbox" : undefined,
+        mailboxUrl: isDevMailboxEnabled() ? "/dev/mailbox" : undefined,
         projectIds: input.projectIds ?? [],
       };
     },

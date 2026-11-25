@@ -106,11 +106,14 @@ describe("production hosting stack", () => {
     expect(ci).toContain("npm run typecheck");
     expect(ci).toContain("npm run lint");
     expect(ci).toContain("npm test");
+    expect(ci).toContain('AUTH_DEV_MAILBOX: "true"');
     expect(ci).toContain("bash -n scripts/lib/vps-common.sh");
     expect(ci).toContain("scripts/backup-vps.sh");
     expect(ci).not.toContain("appleboy/ssh-action");
     expect(ci).not.toContain("docker compose");
     expect(ci).not.toContain("VPS_HOST");
+    const vitestConfig = read("vitest.config.ts");
+    expect(vitestConfig).toContain('AUTH_DEV_MAILBOX: "true"');
     expect(deployWorkflow).toContain("workflow_dispatch:");
     expect(deployWorkflow).toContain("Deploy VPS is disabled");
     expect(deployWorkflow).not.toContain("appleboy/ssh-action");

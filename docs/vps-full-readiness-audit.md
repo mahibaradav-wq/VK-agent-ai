@@ -34,6 +34,10 @@
 - Agent AI usage может недоучитывать revise на live OpenAI (standalone post — исправлено).
 - CSP `unsafe-inline`/`unsafe-eval`, in-memory rate limit — приняты для 1× Node.
 
+## CI follow-up
+
+После первого CI run (#45693091052) 8 тестов падали: без `AUTH_DEV_MAILBOX` адаптер почты был unconfigured и не писал `DevMailMessage`. Исправлено: `vitest.config.ts` + `.github/workflows/ci.yml` задают `AUTH_DEV_MAILBOX=true`; auth/collaboration предпочитают DevMailbox adapter при включённом стенде.
+
 ## Запреты соблюдены
 
 Merge, deploy, SSH, production DB, платные AI, реальные VK/Telegram публикации — не выполнялись.
