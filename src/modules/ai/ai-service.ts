@@ -28,10 +28,12 @@ import {
 import { createAiConnectionService } from "@/modules/ai/provider-service";
 import { getUsage, lockWorkspaceMetric, reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
 import {
+  AiAccountingPendingError,
   PaidSettlementError,
   recoverPendingOverageSettlements,
   settlePaidAccount,
   type PaidAccount,
+  type RecoverySummary,
 } from "@/modules/ai/paid-settlement";
 import { assertPaidAiAllowed, cabinetMonthlyAiLimit } from "@/server/ai/live-guard";
 import { createMediaService } from "@/modules/media/media-service";
@@ -45,6 +47,10 @@ import type { StorageDriver } from "@/server/storage/types";
 const AGENT_KIND = "agent";
 
 const WATCH_IDEAS_KIND = "watch_ideas";
+
+type OverageSyncState =
+  | { ok: true; summary: RecoverySummary; error: null }
+  | { ok: false; summary: RecoverySummary | null; error: AiAccountingPendingError };
 
 function visualItem(mediaId: string) {
   return `visual:${mediaId}`;
@@ -193,15 +199,41 @@ export function createAiService(
     });
   }
 
-  async function syncPendingOverage(workspaceId: string) {
+  /** Never returns "ok" unless every spooled overage for the workspace is confirmed in PostgreSQL. */
+  async function syncPendingOverage(workspaceId: string): Promise<OverageSyncState> {
+    let summary: RecoverySummary;
     try {
-      return await recoverPendingOverageSettlements(db, {
+      summary = await recoverPendingOverageSettlements(db, {
         spoolDir: options?.spoolDir,
         workspaceId,
       });
-    } catch {
-      return null;
+    } catch (error) {
+      const pending = new AiAccountingPendingError({ summary: null, error });
+      console.error("[ai-settlement] pending overage check failed", workspaceId, pending.diagnostic);
+      return { ok: false, summary: null, error: pending };
     }
+    if (summary.failed > 0) {
+      return { ok: false, summary, error: new AiAccountingPendingError({ summary }) };
+    }
+    return { ok: true, summary, error: null };
+  }
+
+  async function requireSettledOverage(workspaceId: string) {
+    const sync = await syncPendingOverage(workspaceId);
+    if (sync.ok) {
+      return;
+    }
+    await db.auditLog
+      .create({
+        data: {
+          action: "AI_PAID_DENIED",
+          entityType: "workspace",
+          entityId: workspaceId,
+          details: `overage_recovery_pending: ${sync.error.diagnostic}`.slice(0, 180),
+        },
+      })
+      .catch(() => undefined);
+    throw sync.error;
   }
 
   /** Grow reserved units before a paid attempt so spend can never outrun the metric. */
@@ -355,10 +387,7 @@ export function createAiService(
 
     const at = now();
     const limit = await resolveLimit(workspaceId);
-    const recovery = await syncPendingOverage(workspaceId);
-    if (recovery && recovery.failed > 0) {
-      throw new Error("Не удалось синхронизировать отложенный перерасход AI с базой данных.");
-    }
+    await requireSettledOverage(workspaceId);
     try {
       return await db.$transaction(async (tx) => {
         await lockWorkspaceMetric(tx, workspaceId, USAGE_METRICS.ai);
@@ -419,6 +448,17 @@ export function createAiService(
       await syncPendingOverage(workspaceId);
       const limit = await resolveLimit(workspaceId);
       return getUsage(db, workspaceId, USAGE_METRICS.ai, now(), limit);
+    },
+
+    /** Read-only for the caller: retries spool recovery and reports why paid AI is closed, if it is. */
+    async overageRecoveryStatus(userId: string, workspaceId: string) {
+      await access.requirePermission(userId, workspaceId, "ai.view");
+      const sync = await syncPendingOverage(workspaceId);
+      return {
+        paidAiBlocked: !sync.ok,
+        summary: sync.summary,
+        diagnostic: sync.ok ? null : sync.error.diagnostic,
+      };
     },
 
     async list(userId: string, workspaceId: string) {

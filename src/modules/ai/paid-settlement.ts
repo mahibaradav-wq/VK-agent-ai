@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readdir, readFile, rename, unlink } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { chmod, lstat, mkdir, open, readdir, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 
 import type { PrismaClient } from "@prisma/client";
 
+import { AccessError } from "@/modules/access/permissions";
 import {
   lockWorkspaceMetric,
   monthBounds,
@@ -88,6 +90,36 @@ export class PaidSettlementError extends Error {
   }
 }
 
+export const AI_ACCOUNTING_PENDING_MESSAGE =
+  "Платный AI временно недоступен: учёт предыдущих AI-запросов не подтверждён в базе данных. Повторите позже.";
+
+/**
+ * The durable spool could not be read or still holds overage that PostgreSQL has not confirmed.
+ * Paid AI stays closed until a later recovery pass succeeds.
+ */
+export class AiAccountingPendingError extends AccessError {
+  readonly summary: RecoverySummary | null;
+  readonly diagnostic: string;
+
+  constructor(params: { summary: RecoverySummary | null; error?: unknown }) {
+    super(409, AI_ACCOUNTING_PENDING_MESSAGE);
+    this.name = "AiAccountingPendingError";
+    this.summary = params.summary;
+    this.diagnostic =
+      params.error !== undefined
+        ? sanitizeDiagnosticError(params.error)
+        : `pending overage settlements not confirmed (failed=${params.summary?.failed ?? 0})`;
+    if (params.error !== undefined) {
+      Object.defineProperty(this, "cause", { value: params.error, enumerable: false, configurable: true });
+    }
+  }
+}
+
+const SPOOL_DIR_MODE = 0o700;
+const SPOOL_FILE_MODE = 0o600;
+/** fsync(2) on a directory fd returns EINVAL on filesystems that do not support it. */
+const DIR_FSYNC_UNSUPPORTED = new Set(["EINVAL", "ENOTSUP", "EOPNOTSUPP"]);
+
 export function resolveSettlementSpoolDir(spoolDir?: string): string {
   if (spoolDir?.trim()) {
     return path.resolve(spoolDir.trim());
@@ -123,26 +155,77 @@ function spoolFilePath(dir: string, settlementId: string): string {
   return path.join(dir, `${settlementId}.json`);
 }
 
+async function fsyncDirectory(dir: string): Promise<void> {
+  const handle = await open(dir, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY);
+  try {
+    await handle.sync();
+  } catch (error) {
+    if (!DIR_FSYNC_UNSUPPORTED.has((error as NodeJS.ErrnoException)?.code ?? "")) {
+      throw error;
+    }
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
+/** Refuses symlinks / non-directories and tightens a pre-existing directory to 0700. */
+async function assertSpoolDirSafe(dir: string): Promise<void> {
+  const stat = await lstat(dir);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new Error(`AI settlement spool path is not a plain directory: ${dir}`);
+  }
+  if ((stat.mode & 0o077) !== 0) {
+    await chmod(dir, SPOOL_DIR_MODE);
+  }
+}
+
+async function ensureSpoolDir(dir: string): Promise<void> {
+  const created = await mkdir(dir, { recursive: true, mode: SPOOL_DIR_MODE });
+  await assertSpoolDirSafe(dir);
+  if (created) {
+    // Persist the new directory entry itself, otherwise a crash can drop the whole spool dir.
+    await fsyncDirectory(path.dirname(created));
+  }
+}
+
 async function writeSpoolEntryAtomically(dir: string, entry: SpoolEntry): Promise<void> {
   const target = spoolFilePath(dir, entry.settlementId);
-  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await ensureSpoolDir(dir);
   const tempPath = `${target}.tmp.${process.pid}.${randomUUID()}`;
   const payload = JSON.stringify(entry);
-  const handle = await open(tempPath, "wx", 0o600);
+  const handle = await open(tempPath, "wx", SPOOL_FILE_MODE);
   try {
     await handle.writeFile(payload, "utf8");
     await handle.sync();
+    await handle.close();
   } catch (error) {
     await handle.close().catch(() => undefined);
     await unlink(tempPath).catch(() => undefined);
     throw error;
   }
-  await handle.close();
   try {
     await rename(tempPath, target);
   } catch (error) {
     await unlink(tempPath).catch(() => undefined);
     throw error;
+  }
+  // rename() is only durable once the directory entry is flushed; the renamed file is kept on failure.
+  await fsyncDirectory(dir);
+}
+
+async function readSpoolFile(filePath: string): Promise<string> {
+  const handle = await open(filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile()) {
+      throw new Error("spool entry is not a regular file");
+    }
+    if ((stat.mode & 0o077) !== 0) {
+      await handle.chmod(SPOOL_FILE_MODE);
+    }
+    return await handle.readFile("utf8");
+  } finally {
+    await handle.close().catch(() => undefined);
   }
 }
 
@@ -354,6 +437,7 @@ export async function recoverPendingOverageSettlements(
 
   let entries: string[];
   try {
+    await assertSpoolDirSafe(spoolDir);
     entries = (await readdir(spoolDir)).filter((name) => SPOOL_FILE_RE.test(name)).sort();
   } catch (error) {
     if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
@@ -366,7 +450,7 @@ export async function recoverPendingOverageSettlements(
     const filePath = path.join(spoolDir, filename);
     let parsed: unknown;
     try {
-      const raw = await readFile(filePath, "utf8");
+      const raw = await readSpoolFile(filePath);
       parsed = JSON.parse(raw) as unknown;
     } catch (error) {
       if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
@@ -417,7 +501,15 @@ export async function recoverPendingOverageSettlements(
         lastAttemptAt: new Date().toISOString(),
         lastError: sanitizeDiagnosticError(error),
       };
-      await writeSpoolEntryAtomically(spoolDir, updated).catch(() => undefined);
+      console.error("[ai-settlement] overage recovery failed", parsed.settlementId, updated.lastError);
+      // The previous spool file stays in place if this rewrite fails, so the entry is never lost.
+      await writeSpoolEntryAtomically(spoolDir, updated).catch((writeError: unknown) => {
+        console.error(
+          "[ai-settlement] failed to update spool diagnostics",
+          updated.settlementId,
+          sanitizeDiagnosticError(writeError),
+        );
+      });
     }
   }
 

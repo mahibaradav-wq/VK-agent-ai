@@ -16,9 +16,15 @@ const redisUrl = process.env.REDIS_URL?.trim();
 const publishing = createPublishService(prisma);
 
 async function tick() {
-  await recoverPendingOverageSettlements(prisma).catch((error: unknown) => {
-    console.error("[polka-worker] ai overage recovery failed", sanitizeDiagnosticError(error));
-  });
+  await recoverPendingOverageSettlements(prisma)
+    .then((summary) => {
+      if (summary.failed > 0) {
+        console.error("[polka-worker] ai overage recovery incomplete", sanitizeDiagnosticError(JSON.stringify(summary)));
+      }
+    })
+    .catch((error: unknown) => {
+      console.error("[polka-worker] ai overage recovery failed", sanitizeDiagnosticError(error));
+    });
   await publishing.enqueueDueSchedules();
   await publishing.processDueJobs(workerId);
 }
