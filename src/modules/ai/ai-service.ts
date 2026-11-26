@@ -26,7 +26,14 @@ import {
   videoFrameCount,
 } from "@/modules/ai/visual";
 import { createAiConnectionService } from "@/modules/ai/provider-service";
-import { getUsage, lockWorkspaceMetric, releaseUsage, reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
+import {
+  getUsage,
+  lockWorkspaceMetric,
+  recordSpentOverage,
+  releaseUsage,
+  reserveUsage,
+  USAGE_METRICS,
+} from "@/modules/billing/usage";
 import { assertPaidAiAllowed, cabinetMonthlyAiLimit } from "@/server/ai/live-guard";
 import { createMediaService } from "@/modules/media/media-service";
 import { defaultPublishPlatforms, parsePlatforms, parseStoredPlatforms } from "@/modules/posts/platforms";
@@ -184,13 +191,23 @@ export function createAiService(
   async function settlePaidAi(account: PaidAccount) {
     const charged = Math.max(0, account.charged);
     const reserved = Math.max(0, account.reserved);
-    const kept = Math.min(charged, reserved);
-    const unused = reserved - kept;
-    if (unused > 0) {
-      await releaseUsage(db, account.workspaceId, USAGE_METRICS.ai, account.periodStart, unused);
+    if (charged > reserved) {
+      // Emergency: paid calls already happened but the limit refused to grow the reserve.
+      const overage = charged - reserved;
+      await recordSpentOverage(db, account.workspaceId, USAGE_METRICS.ai, account.periodStart, overage);
+      await db.auditLog.create({
+        data: {
+          action: "AI_USAGE_OVERAGE",
+          entityType: "workspace",
+          entityId: account.workspaceId,
+          details: `units=${overage}`,
+        },
+      });
+    } else if (reserved > charged) {
+      await releaseUsage(db, account.workspaceId, USAGE_METRICS.ai, account.periodStart, reserved - charged);
     }
     account.charged = charged;
-    account.reserved = reserved;
+    account.reserved = charged;
   }
 
   /** Grow reserved units before a paid attempt so spend can never outrun the metric. */
