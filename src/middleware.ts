@@ -1,6 +1,25 @@
 import { getToken } from "next-auth/jwt";
 import { NextResponse, type NextRequest } from "next/server";
 
+const DEFAULT_SESSION_CHECK_TIMEOUT_MS = 3_000;
+
+function sessionCheckTimeoutMs() {
+  const parsed = Number(process.env.SESSION_CHECK_TIMEOUT_MS);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SESSION_CHECK_TIMEOUT_MS;
+}
+
+/**
+ * The session cookie is forwarded to this origin, so it must never be derived
+ * from the (client-controlled) Host header. Defaults to the local server port.
+ */
+function sessionCheckOrigin() {
+  const configured = process.env.SESSION_CHECK_ORIGIN?.trim();
+  if (configured) {
+    return configured.replace(/\/+$/, "");
+  }
+  return `http://127.0.0.1:${process.env.PORT || "3000"}`;
+}
+
 /**
  * Edge middleware: decode JWT locally, then confirm sessionVersion via the
  * Node session-check route so password-reset invalidation matches Node auth().
@@ -29,7 +48,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(login);
   }
 
-  const checkUrl = new URL("/api/auth/session-check", request.nextUrl.origin);
+  const checkUrl = new URL("/api/auth/session-check", sessionCheckOrigin());
   let valid = false;
   try {
     const response = await fetch(checkUrl, {
@@ -37,6 +56,7 @@ export async function middleware(request: NextRequest) {
         cookie: request.headers.get("cookie") ?? "",
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(sessionCheckTimeoutMs()),
     });
     if (response.ok) {
       const body = (await response.json()) as { valid?: unknown };
