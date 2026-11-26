@@ -179,27 +179,21 @@ async function assertSpoolDirSafe(dir: string): Promise<void> {
   }
 }
 
-/**
- * Parents whose directory entry for a freshly created level has not been fsynced successfully yet.
- * A failed fsync must not be forgotten: the next spool write flushes them before it stores anything.
- */
-const unsyncedParents = new Set<string>();
-
-async function flushUnsyncedParents(): Promise<void> {
-  // Insertion order is top-down, so a parent is always persisted before its own children.
-  for (const parent of [...unsyncedParents]) {
-    try {
-      await fsyncDirectory(parent);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
-        throw error;
-      }
+/** Every ancestor of `dir` up to the filesystem root, topmost first. */
+function ancestorChain(dir: string): string[] {
+  const chain: string[] = [];
+  let current = path.dirname(dir);
+  for (;;) {
+    chain.unshift(current);
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return chain;
     }
-    unsyncedParents.delete(parent);
+    current = parent;
   }
 }
 
-/** Existing ancestors are left alone; returns the missing levels of `dir`, topmost first. */
+/** Returns the missing levels of `dir`, topmost first. */
 async function missingLevels(dir: string): Promise<string[]> {
   const missing: string[] = [];
   let current = dir;
@@ -223,15 +217,16 @@ async function missingLevels(dir: string): Promise<string[]> {
 }
 
 /**
- * mkdir({ recursive: true }) only reports the first directory it created, which says nothing about
- * the levels below it. Each missing level is created explicitly and the directory that holds its
- * entry (its immediate parent) is fsynced top-down, so the final spool directory is reachable
- * after a crash.
+ * Whether an existing directory entry is already durable cannot be known: it may have been created
+ * by a process that crashed or hit EIO before its fsync. So before every spool write the whole
+ * ancestor chain is fsynced top-down (each fsync persists the entry of the next level), without any
+ * in-memory or on-disk "already synced" state. Spool writes only happen while PostgreSQL is
+ * unavailable, so the extra fsyncs are not on a hot path. Concurrent writers each sync the chain
+ * themselves; fsync is idempotent, so they need no coordination.
  */
-async function ensureSpoolDir(dir: string): Promise<void> {
-  await flushUnsyncedParents();
+async function ensureSpoolDir(spoolDir: string): Promise<void> {
+  const dir = path.resolve(spoolDir);
   for (const level of await missingLevels(dir)) {
-    const parent = path.dirname(level);
     try {
       await mkdir(level, { mode: SPOOL_DIR_MODE });
     } catch (error) {
@@ -239,10 +234,11 @@ async function ensureSpoolDir(dir: string): Promise<void> {
         throw error;
       }
     }
-    unsyncedParents.add(parent);
-    await flushUnsyncedParents();
   }
   await assertSpoolDirSafe(dir);
+  for (const ancestor of ancestorChain(dir)) {
+    await fsyncDirectory(ancestor);
+  }
 }
 
 async function writeSpoolEntryAtomically(dir: string, entry: SpoolEntry): Promise<void> {
