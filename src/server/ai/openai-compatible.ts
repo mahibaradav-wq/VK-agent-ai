@@ -94,6 +94,18 @@ async function providerErrorDetail(response: Response) {
   return "";
 }
 
+/**
+ * The provider already answered a paid POST with HTTP 2xx, so the call is billed
+ * no matter what goes wrong while reading or validating the body.
+ */
+async function afterPaidResponse<T>(fallbackMessage: string, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    throw attachPaidCalls(error instanceof AccessError ? error : new AccessError(400, fallbackMessage), 1);
+  }
+}
+
 function imageGenerationBody(model: string, prompt: string, size: string) {
   const body: Record<string, unknown> = {
     model,
@@ -141,7 +153,11 @@ async function readGeneratedImageBytes(
   if (!response.ok) {
     throw new AccessError(400, "Не удалось скачать сгенерированное изображение.");
   }
-  return new Uint8Array(await response.arrayBuffer());
+  try {
+    return new Uint8Array(await response.arrayBuffer());
+  } catch {
+    throw new AccessError(400, "Не удалось скачать сгенерированное изображение.");
+  }
 }
 
 export function createOpenAiCompatibleProvider(options: {
@@ -215,16 +231,18 @@ export function createOpenAiCompatibleProvider(options: {
           );
         }
 
-        const json = (await response.json()) as ChatResponse;
-        const content = json.choices?.[0]?.message?.content?.trim();
-        if (!content) {
-          throw attachPaidCalls(new AccessError(400, "Провайдер AI вернул пустой ответ."), 1);
-        }
-        return {
-          json,
-          content,
-          parsed: parseContent(content, input.kind),
-        };
+        return afterPaidResponse("Провайдер AI вернул ответ, который не удалось прочитать.", async () => {
+          const json = ((await response.json()) ?? {}) as ChatResponse;
+          const content = json.choices?.[0]?.message?.content?.trim();
+          if (!content) {
+            throw new AccessError(400, "Провайдер AI вернул пустой ответ.");
+          }
+          return {
+            json,
+            content,
+            parsed: parseContent(content, input.kind),
+          };
+        });
       };
 
       let paidCalls = 0;
@@ -329,28 +347,28 @@ export function createOpenAiCompatibleProvider(options: {
         );
       }
 
-      const json = (await response.json()) as ImageResponse;
-      const bytes = await readGeneratedImageBytes(json, fetchImpl);
+      // Downloading a returned URL is auxiliary: it never adds a unit, and its failure keeps the 1 unit.
+      return afterPaidResponse("Не удалось получить сгенерированное изображение. Это не замена картинки.", async () => {
+        const json = ((await response.json()) ?? {}) as ImageResponse;
+        const bytes = await readGeneratedImageBytes(json, fetchImpl);
 
-      if (bytes.byteLength === 0 || bytes.byteLength > MAX_MEDIA_BYTES) {
-        throw attachPaidCalls(new AccessError(400, "Сгенерированное изображение пустое или больше 8 МБ."), 1);
-      }
+        if (bytes.byteLength === 0 || bytes.byteLength > MAX_MEDIA_BYTES) {
+          throw new AccessError(400, "Сгенерированное изображение пустое или больше 8 МБ.");
+        }
 
-      const mimeType = detectMediaType(bytes);
-      if (!mimeType || isVideoMime(mimeType)) {
-        throw attachPaidCalls(
-          new AccessError(400, "Провайдер вернул файл, который нельзя сохранить как изображение."),
-          1,
-        );
-      }
+        const mimeType = detectMediaType(bytes);
+        if (!mimeType || isVideoMime(mimeType)) {
+          throw new AccessError(400, "Провайдер вернул файл, который нельзя сохранить как изображение.");
+        }
 
-      return {
-        bytes,
-        mimeType,
-        provider: name,
-        model: imageModel,
-        paidCalls: 1,
-      };
+        return {
+          bytes,
+          mimeType,
+          provider: name,
+          model: imageModel,
+          paidCalls: 1,
+        };
+      });
     },
   };
 }

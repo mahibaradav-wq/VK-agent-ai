@@ -112,3 +112,27 @@ export async function releaseUsage(
       AND "periodStart" = ${periodStart}
   `;
 }
+
+/**
+ * Records units that were already spent (paid HTTP happened) when the limit refused
+ * to grow the reserve. Deliberately skips the limit check: hiding real spend would
+ * undercount, and the next reserveUsage still refuses new paid calls.
+ */
+export async function recordSpentOverage(
+  db: DbClient,
+  workspaceId: string,
+  metric: string,
+  periodStart: Date,
+  units: number,
+) {
+  if (!Number.isInteger(units) || units < 1) {
+    return;
+  }
+  await db.$executeRaw`
+    UPDATE "UsageRecord"
+    SET "used" = "used" + ${units}, "updatedAt" = NOW()
+    WHERE "workspaceId" = ${workspaceId}
+      AND "metric" = ${metric}
+      AND "periodStart" = ${periodStart}
+  `;
+}
