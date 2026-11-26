@@ -384,9 +384,115 @@ describe("PR70 Block B: spool durability (atomic write, rename, fsync, permissio
     const target = path.join(spoolDir, `${error.settlementId}.json`);
     expect(fsFaults.syncedPaths.some((p) => p.startsWith(`${target}.tmp.`))).toBe(true);
     expect(fsFaults.syncedPaths).toContain(spoolDir);
-    expect(fsFaults.syncedPaths).toContain(base);
     expect((await stat(spoolDir)).mode & 0o777).toBe(0o700);
+    expect((await stat(path.dirname(spoolDir))).mode & 0o777).toBe(0o700);
     expect((await stat(target)).mode & 0o777).toBe(0o600);
+  });
+
+  /** Directory fsyncs, in call order, restricted to the given directories. */
+  function dirSyncOrder(dirs: string[]) {
+    return fsFaults.syncedPaths.filter((p) => dirs.includes(p));
+  }
+
+  it("one new level: fsyncs the existing parent (which holds the new entry), then the spool dir after rename", async () => {
+    const base = await makeSpoolDir();
+    const spoolDir = path.join(base, "spool");
+    const { error } = await failingSettle(spoolDir);
+    expect(error.spooled).toBe(true);
+    expect(dirSyncOrder([base, spoolDir])).toEqual([base, spoolDir]);
+  });
+
+  it("two new levels: fsyncs base, then the immediate parent of the spool dir, then the spool dir", async () => {
+    const base = await makeSpoolDir();
+    const parent = path.join(base, "a");
+    const spoolDir = path.join(parent, "spool");
+    const { error } = await failingSettle(spoolDir);
+    expect(error.spooled).toBe(true);
+    expect(dirSyncOrder([base, parent, spoolDir])).toEqual([base, parent, spoolDir]);
+  });
+
+  it("three new levels: every created level's parent is fsynced top-down before the file rename is synced", async () => {
+    const base = await makeSpoolDir();
+    const a = path.join(base, "a");
+    const b = path.join(a, "b");
+    const spoolDir = path.join(b, "spool");
+    const { error } = await failingSettle(spoolDir);
+    expect(error.spooled).toBe(true);
+    expect(dirSyncOrder([base, a, b, spoolDir])).toEqual([base, a, b, spoolDir]);
+    for (const dir of [a, b, spoolDir]) {
+      expect((await stat(dir)).mode & 0o777).toBe(0o700);
+    }
+  });
+
+  it("pre-existing spool dir: no ancestor fsync is repeated, only the spool dir after rename", async () => {
+    const base = await makeSpoolDir();
+    const spoolDir = path.join(base, "spool");
+    await mkdir(spoolDir, { mode: 0o700 });
+    const { error } = await failingSettle(spoolDir);
+    expect(error.spooled).toBe(true);
+    expect(dirSyncOrder([base, spoolDir])).toEqual([spoolDir]);
+  });
+
+  it("EIO on fsync of the immediate parent gives spooled=false, no file, and a retry syncs it before writing", async () => {
+    const base = await makeSpoolDir();
+    const parent = path.join(base, "a");
+    const spoolDir = path.join(parent, "spool");
+    fsFaults.add("sync", "EIO", (target) => target === parent, 1);
+    const first = await failingSettle(spoolDir);
+    expect(first.error.spooled).toBe(false);
+    expect(await readdir(spoolDir)).toEqual([]);
+
+    fsFaults.syncedPaths.length = 0;
+    const second = await failingSettle(spoolDir);
+    expect(second.error.spooled).toBe(true);
+    expect(dirSyncOrder([base, parent, spoolDir])).toEqual([parent, spoolDir]);
+    const summary = await recoverPendingOverageSettlements(prisma, { spoolDir });
+    expect(summary).toMatchObject({ recovered: 1, failed: 0 });
+    expect(await usedUnits(second.o.workspaceId)).toBe(3);
+    expect(await readdir(spoolDir)).toEqual([]);
+  });
+
+  it("EIO on a higher ancestor fsync (base) also refuses durability and is retried on the next write", async () => {
+    const base = await makeSpoolDir();
+    const spoolDir = path.join(base, "a", "b", "spool");
+    fsFaults.add("sync", "EIO", (target) => target === base, 1);
+    const first = await failingSettle(spoolDir);
+    expect(first.error.spooled).toBe(false);
+
+    fsFaults.syncedPaths.length = 0;
+    const second = await failingSettle(spoolDir);
+    expect(second.error.spooled).toBe(true);
+    expect(dirSyncOrder([base, spoolDir])).toEqual([base, spoolDir]);
+  });
+
+  it("EINVAL/ENOTSUP/EOPNOTSUPP on parent directory fsync are tolerated for every created level", async () => {
+    for (const code of ["EINVAL", "ENOTSUP", "EOPNOTSUPP"]) {
+      const base = await makeSpoolDir();
+      const spoolDir = path.join(base, "a", "b", "spool");
+      fsFaults.add("sync", code, (target) => target === base || target === path.join(base, "a") || target === path.join(base, "a", "b"));
+      const { error } = await failingSettle(spoolDir);
+      expect(error.spooled, code).toBe(true);
+      fsFaults.reset();
+    }
+  });
+
+  it("an already renamed spool file survives a failing parent/directory fsync and is recovered later", async () => {
+    const base = await makeSpoolDir();
+    const spoolDir = path.join(base, "a", "spool");
+    const stored = await failingSettle(spoolDir);
+    expect(stored.error.spooled).toBe(true);
+    const storedFile = `${stored.error.settlementId}.json`;
+
+    fsFaults.add("sync", "EIO", (target) => target === spoolDir, 1);
+    const failed = await failingSettle(spoolDir);
+    expect(failed.error.spooled).toBe(false);
+    expect((await readdir(spoolDir)).sort()).toEqual([storedFile, `${failed.error.settlementId}.json`].sort());
+
+    const summary = await recoverPendingOverageSettlements(prisma, { spoolDir });
+    expect(summary).toMatchObject({ scanned: 2, recovered: 2, failed: 0 });
+    expect(await usedUnits(stored.o.workspaceId)).toBe(3);
+    expect(await usedUnits(failed.o.workspaceId)).toBe(3);
+    expect(await readdir(spoolDir)).toEqual([]);
   });
 
   it("tightens permissions of a pre-existing spool directory and of a world-readable spool file", async () => {

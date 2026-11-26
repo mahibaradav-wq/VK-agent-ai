@@ -179,13 +179,70 @@ async function assertSpoolDirSafe(dir: string): Promise<void> {
   }
 }
 
-async function ensureSpoolDir(dir: string): Promise<void> {
-  const created = await mkdir(dir, { recursive: true, mode: SPOOL_DIR_MODE });
-  await assertSpoolDirSafe(dir);
-  if (created) {
-    // Persist the new directory entry itself, otherwise a crash can drop the whole spool dir.
-    await fsyncDirectory(path.dirname(created));
+/**
+ * Parents whose directory entry for a freshly created level has not been fsynced successfully yet.
+ * A failed fsync must not be forgotten: the next spool write flushes them before it stores anything.
+ */
+const unsyncedParents = new Set<string>();
+
+async function flushUnsyncedParents(): Promise<void> {
+  // Insertion order is top-down, so a parent is always persisted before its own children.
+  for (const parent of [...unsyncedParents]) {
+    try {
+      await fsyncDirectory(parent);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+        throw error;
+      }
+    }
+    unsyncedParents.delete(parent);
   }
+}
+
+/** Existing ancestors are left alone; returns the missing levels of `dir`, topmost first. */
+async function missingLevels(dir: string): Promise<string[]> {
+  const missing: string[] = [];
+  let current = dir;
+  for (;;) {
+    try {
+      await lstat(current);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+        throw error;
+      }
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      break;
+    }
+    missing.unshift(current);
+    current = parent;
+  }
+  return missing;
+}
+
+/**
+ * mkdir({ recursive: true }) only reports the first directory it created, which says nothing about
+ * the levels below it. Each missing level is created explicitly and the directory that holds its
+ * entry (its immediate parent) is fsynced top-down, so the final spool directory is reachable
+ * after a crash.
+ */
+async function ensureSpoolDir(dir: string): Promise<void> {
+  await flushUnsyncedParents();
+  for (const level of await missingLevels(dir)) {
+    const parent = path.dirname(level);
+    try {
+      await mkdir(level, { mode: SPOOL_DIR_MODE });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") {
+        throw error;
+      }
+    }
+    unsyncedParents.add(parent);
+    await flushUnsyncedParents();
+  }
+  await assertSpoolDirSafe(dir);
 }
 
 async function writeSpoolEntryAtomically(dir: string, entry: SpoolEntry): Promise<void> {
