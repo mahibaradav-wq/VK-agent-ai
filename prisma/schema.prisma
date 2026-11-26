@@ -121,6 +121,7 @@ model Workspace {
   vkWatchCredential   VkWatchCredential?
   shopProducts            ShopProduct[]
   shopPartnerCredentials  ShopPartnerCredential[]
+  aiOverageSettlements    AiOverageSettlement[]
 }
 
 model WorkspaceMember {
@@ -765,4 +766,23 @@ model ShopPartnerCredential {
 
   @@unique([projectId, shop])
   @@index([workspaceId, projectId])
+}
+
+model AiOverageSettlement {
+  id           String    @id @default(cuid())
+  settlementId String    @unique
+  workspaceId  String
+  metric       String
+  periodStart  DateTime
+  units        Int
+  attempts     Int       @default(1)
+  recovered    Boolean   @default(false)
+  lastError    String?   @db.Text
+  sourceError  String?   @db.Text
+  createdAt    DateTime  @default(now())
+  recoveredAt  DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
 }

@@ -494,9 +494,6 @@ export function createVkAdapter(options: {
   return {
     platform: "vk",
     async publish(input: PublishInput): Promise<PublishOutcome> {
-      if (!usingInjectedTransport && !isSocialPublishLiveEnabled()) {
-        return socialPublishLiveBlockedOutcome();
-      }
       const account = await resolvePublishSocialAccount(options.db, input, "vk");
 
       if (!account || account.workspaceId !== input.workspaceId || account.status !== "connected" || !account.encryptedToken) {
@@ -523,6 +520,10 @@ export function createVkAdapter(options: {
           code: "vk_no_group",
           message: "Ключ сообщества сохранён, но не выбран клуб для стены. Укажите vk.com/club… при подключении.",
         };
+      }
+
+      if (!usingInjectedTransport && !isSocialPublishLiveEnabled()) {
+        return socialPublishLiveBlockedOutcome();
       }
 
       let packed: string;

@@ -36,3 +36,21 @@ export function assertNoSecretLeak(text: string, label = "response") {
     throw new Error(`${label} содержит секрет или шаблон секрета.`);
   }
 }
+
+export function redactDiagnosticSecrets(raw: string): string {
+  return raw
+    .replace(/postgres(?:ql)?:\/\/[^\s@]+@/gi, "postgresql://[REDACTED]@")
+    .replace(/rediss?:\/\/[^\s@]+@/gi, "redis://[REDACTED]@")
+    .replace(/https?:\/\/[^\s@]+\/bot\d+:[A-Za-z0-9_-]{20,}/gi, "https://api.telegram.org/bot[REDACTED]")
+    .replace(/\bbot\d{6,}:[A-Za-z0-9_-]{20,}\b/g, "bot[REDACTED_BOT_TOKEN]")
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [REDACTED]")
+    .replace(/\bsk-[A-Za-z0-9._-]{8,}\b/g, "sk-[REDACTED]")
+    .replace(/\bwhsec_[A-Za-z0-9._-]{4,}\b/g, "whsec_[REDACTED]")
+    .replace(/\bvk[12]\.[a-zA-Z0-9._-]{8,}\b/g, "vk.[REDACTED]")
+    .replace(/\b\d{6,}:[A-Za-z0-9_-]{20,}\b/g, "[REDACTED_BOT_TOKEN]")
+    .replace(/polka_dev_password/g, "[REDACTED]")
+    .replace(
+      /(AUTH_SECRET|TOKEN_ENCRYPTION_KEY|BILLING_WEBHOOK_SECRET|YOOKASSA_SECRET_KEY|EMAIL_API_KEY|REDIS_URL|DATABASE_URL)\s*[=:]\s*\S+/gi,
+      "$1=[REDACTED]",
+    );
+}

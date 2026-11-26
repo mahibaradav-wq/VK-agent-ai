@@ -5,6 +5,7 @@ import os from "node:os";
 
 dns.setDefaultResultOrder("ipv4first");
 
+import { recoverPendingOverageSettlements, sanitizeDiagnosticError } from "@/modules/ai/paid-settlement";
 import { createPublishService } from "@/modules/publishing/publish-service";
 import { PUBLISH_QUEUE_NAME } from "@/server/queue/bullmq-queue";
 import { prisma } from "@/server/db/prisma";
@@ -15,6 +16,9 @@ const redisUrl = process.env.REDIS_URL?.trim();
 const publishing = createPublishService(prisma);
 
 async function tick() {
+  await recoverPendingOverageSettlements(prisma).catch((error: unknown) => {
+    console.error("[polka-worker] ai overage recovery failed", sanitizeDiagnosticError(error));
+  });
   await publishing.enqueueDueSchedules();
   await publishing.processDueJobs(workerId);
 }
@@ -33,7 +37,7 @@ async function main() {
 
   const timer = setInterval(() => {
     void tick().catch((error: unknown) => {
-      console.error("[polka-worker] poll failed", error);
+      console.error("[polka-worker] poll failed", sanitizeDiagnosticError(error));
     });
   }, 5_000);
 
@@ -53,7 +57,7 @@ async function main() {
       { connection },
     );
     bull.on("failed", (job, error) => {
-      console.error(`[polka-worker] bullmq job ${job?.id} failed`, error);
+      console.error(`[polka-worker] bullmq job ${job?.id} failed`, sanitizeDiagnosticError(error));
     });
     console.info("[polka-worker] BullMQ connected");
   } else {
@@ -77,6 +81,6 @@ async function main() {
 }
 
 void main().catch((error: unknown) => {
-  console.error("[polka-worker] fatal", error);
+  console.error("[polka-worker] fatal", sanitizeDiagnosticError(error));
   process.exit(1);
 });

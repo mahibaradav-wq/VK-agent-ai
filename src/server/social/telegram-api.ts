@@ -1,4 +1,5 @@
 import { createOutboundFetch } from "@/server/http/outbound-fetch";
+import { isSocialPublishLiveEnabled, socialPublishLiveBlockedOutcome } from "@/server/social/publish-live-guard";
 
 export type TelegramApiFailure = {
   ok: false;
@@ -65,14 +66,40 @@ export function createTelegramFetch(): typeof fetch {
   return createOutboundFetch();
 }
 
-export function createTelegramTransport(fetchImpl: typeof fetch = createTelegramFetch()): TelegramTransport {
+const TELEGRAM_PUBLISH_METHODS = new Set([
+  "sendMessage",
+  "sendPhoto",
+  "sendVideo",
+  "sendMediaGroup",
+  "sendDocument",
+  "sendAudio",
+  "sendAnimation",
+  "sendVoice",
+  "sendPoll",
+  "copyMessage",
+  "forwardMessage",
+  "editMessageText",
+  "editMessageCaption",
+]);
+
+export function createTelegramTransport(fetchImpl?: typeof fetch): TelegramTransport {
+  const usingDefaultTransport = !fetchImpl;
+  const activeFetch = fetchImpl ?? createTelegramFetch();
+
   return {
     async request(token, method, body, file) {
+      if (usingDefaultTransport && TELEGRAM_PUBLISH_METHODS.has(method) && !isSocialPublishLiveEnabled()) {
+        return {
+          ok: false,
+          error_code: 403,
+          description: socialPublishLiveBlockedOutcome().message,
+        };
+      }
       try {
         const url = `${telegramApiRoot()}/bot${token}/${method}`;
         const files = file ? (Array.isArray(file) ? file : [file]) : [];
         const response = files.length
-          ? await fetchImpl(url, {
+          ? await activeFetch(url, {
               method: "POST",
               body: (() => {
                 const form = new FormData();
@@ -88,7 +115,7 @@ export function createTelegramTransport(fetchImpl: typeof fetch = createTelegram
               })(),
               signal: AbortSignal.timeout(120_000),
             })
-          : await fetchImpl(url, {
+          : await activeFetch(url, {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: body ? JSON.stringify(body) : undefined,

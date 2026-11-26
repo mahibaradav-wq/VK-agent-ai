@@ -13,6 +13,7 @@ export default defineConfig({
       AUTH_ALLOW_PUBLIC_REGISTRATION: "true",
       // CI has no .env; auth/invite flows must write DevMailMessage for tests.
       AUTH_DEV_MAILBOX: "true",
+      SOCIAL_PUBLISH_LIVE: "false",
     },
   },
   resolve: {
