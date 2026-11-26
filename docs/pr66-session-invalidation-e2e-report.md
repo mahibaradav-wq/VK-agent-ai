@@ -4,7 +4,7 @@ Stacked on PR #65 (`cursor/pr65-ai-billing-session-ee77-90d9`).
 
 - Base HEAD (PR #65): `832b15227f37f38c70146d87466c91e99a5dbbae`
 - Branch: `cursor/pr66-session-invalidation-e2e-ee77`
-- Final HEAD: see the PR (the report-only commit follows `23dde44`)
+- Code commit: `23dde44`; HEAD (with report): `74e8bec8890d59957ab64415fea6d68c4d256018`
 
 ## A — Review results
 
@@ -72,7 +72,10 @@ Playwright is not part of GitHub CI. Locally it needs `AUTH_ALLOW_PUBLIC_REGISTR
 
 ## GitHub Actions
 
-See the PR checks (CI and VPS readiness); results are recorded in the PR description.
+On `74e8bec`:
+
+- CI: success — https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45751972213
+- VPS readiness: success — https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45751972112
 
 ## Limitations
 
