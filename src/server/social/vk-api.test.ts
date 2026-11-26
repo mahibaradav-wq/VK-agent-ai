@@ -100,7 +100,9 @@ describe("VK multipart upload", () => {
     const port = await new Promise<number>((resolve) => {
       server.listen(0, "127.0.0.1", () => resolve((server.address() as AddressInfo).port));
     });
+    const prevLive = process.env.SOCIAL_PUBLISH_LIVE;
     try {
+      process.env.SOCIAL_PUBLISH_LIVE = "true";
       const transport = createVkTransport();
       const uploaded = await transport.uploadDocument!(`http://127.0.0.1:${port}/doc`, {
         filename: "slide.png",
@@ -114,6 +116,11 @@ describe("VK multipart upload", () => {
       expect(Number(lengthHeader)).toBe(received);
       expect(received).toBeGreaterThan(20);
     } finally {
+      if (prevLive === undefined) {
+        delete process.env.SOCIAL_PUBLISH_LIVE;
+      } else {
+        process.env.SOCIAL_PUBLISH_LIVE = prevLive;
+      }
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
       });

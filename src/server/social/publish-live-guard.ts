@@ -1,19 +1,15 @@
 import type { PublishOutcome } from "@/server/social/types";
 
 /**
- * Fail-closed live social publish on the production cabinet path
- * (`POLKA_REQUIRE_PROD_SECRETS=true`, as set in docker-compose.prod.yml).
- * Local/dev/tests keep adapters usable (tokens still required); set
- * `SOCIAL_PUBLISH_LIVE=false` to force-block locally.
+ * Fail-closed live social publish across all environments (production,
+ * development, test). Real VK/Telegram publishing requires explicit
+ * `SOCIAL_PUBLISH_LIVE=true` (strict equality).
  */
 export function isSocialPublishLiveEnabled() {
-  if (process.env.POLKA_REQUIRE_PROD_SECRETS === "true") {
-    return process.env.SOCIAL_PUBLISH_LIVE === "true";
-  }
-  return process.env.SOCIAL_PUBLISH_LIVE !== "false";
+  return process.env.SOCIAL_PUBLISH_LIVE === "true";
 }
 
-export function socialPublishLiveBlockedOutcome(): PublishOutcome {
+export function socialPublishLiveBlockedOutcome(): Extract<PublishOutcome, { kind: "permanent_failure" }> {
   return {
     kind: "permanent_failure",
     code: "social_publish_disabled",

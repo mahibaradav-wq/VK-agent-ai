@@ -93,9 +93,6 @@ export function createTelegramAdapter(options: {
   return {
     platform: "telegram",
     async publish(input: PublishInput): Promise<PublishOutcome> {
-      if (!usingInjectedTransport && !isSocialPublishLiveEnabled()) {
-        return socialPublishLiveBlockedOutcome();
-      }
       const account = await resolvePublishSocialAccount(options.db, input, "telegram");
 
       if (!account || account.workspaceId !== input.workspaceId || account.status !== "connected" || !account.encryptedToken) {
@@ -121,6 +118,10 @@ export function createTelegramAdapter(options: {
           message:
             "Бот подключён, но канал не указан. Привяжите t.me/dom_po_polochkam — бот уже должен быть там администратором.",
         };
+      }
+
+      if (!usingInjectedTransport && !isSocialPublishLiveEnabled()) {
+        return socialPublishLiveBlockedOutcome();
       }
 
       let token: string;

@@ -27,7 +27,12 @@ import {
 } from "@/modules/ai/visual";
 import { createAiConnectionService } from "@/modules/ai/provider-service";
 import { getUsage, lockWorkspaceMetric, reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
-import { settlePaidAccount, type PaidAccount } from "@/modules/ai/paid-settlement";
+import {
+  PaidSettlementError,
+  recoverPendingOverageSettlements,
+  settlePaidAccount,
+  type PaidAccount,
+} from "@/modules/ai/paid-settlement";
 import { assertPaidAiAllowed, cabinetMonthlyAiLimit } from "@/server/ai/live-guard";
 import { createMediaService } from "@/modules/media/media-service";
 import { defaultPublishPlatforms, parsePlatforms, parseStoredPlatforms } from "@/modules/posts/platforms";
@@ -154,6 +159,7 @@ export function createAiService(
     storage?: StorageDriver;
     monthlyLimit?: number;
     now?: () => Date;
+    spoolDir?: string;
   },
 ) {
   const access = createAccessService(db);
@@ -180,8 +186,22 @@ export function createAiService(
     attemptUnits: number;
   };
 
-  async function settlePaidAi(account: PaidAccount) {
-    await settlePaidAccount(db, account);
+  async function settlePaidAi(account: PaidAccount, sourceError?: unknown) {
+    await settlePaidAccount(db, account, {
+      spoolDir: options?.spoolDir,
+      sourceError,
+    });
+  }
+
+  async function syncPendingOverage(workspaceId: string) {
+    try {
+      return await recoverPendingOverageSettlements(db, {
+        spoolDir: options?.spoolDir,
+        workspaceId,
+      });
+    } catch {
+      return null;
+    }
   }
 
   /** Grow reserved units before a paid attempt so spend can never outrun the metric. */
@@ -335,6 +355,10 @@ export function createAiService(
 
     const at = now();
     const limit = await resolveLimit(workspaceId);
+    const recovery = await syncPendingOverage(workspaceId);
+    if (recovery && recovery.failed > 0) {
+      throw new Error("Не удалось синхронизировать отложенный перерасход AI с базой данных.");
+    }
     try {
       return await db.$transaction(async (tx) => {
         await lockWorkspaceMetric(tx, workspaceId, USAGE_METRICS.ai);
@@ -392,6 +416,7 @@ export function createAiService(
 
     async usage(userId: string, workspaceId: string) {
       await access.requirePermission(userId, workspaceId, "ai.view");
+      await syncPendingOverage(workspaceId);
       const limit = await resolveLimit(workspaceId);
       return getUsage(db, workspaceId, USAGE_METRICS.ai, now(), limit);
     },
@@ -486,15 +511,17 @@ export function createAiService(
         await settlePaidAi(account);
         return toPublic(row);
       } catch (error) {
-        // Fallback path already noted paid failures via onPaidCalls; only sync if throw skipped that.
-        if (paidCallsFromError(error) > account.charged) {
-          try {
-            await notePaidCalls(account, paidCallsFromError(error) - account.charged, exhausted);
-          } catch {
-            account.charged = Math.max(account.charged, paidCallsFromError(error));
+        if (!(error instanceof PaidSettlementError)) {
+          // Fallback path already noted paid failures via onPaidCalls; only sync if throw skipped that.
+          if (paidCallsFromError(error) > account.charged) {
+            try {
+              await notePaidCalls(account, paidCallsFromError(error) - account.charged, exhausted);
+            } catch {
+              account.charged = Math.max(account.charged, paidCallsFromError(error));
+            }
           }
+          await settlePaidAi(account, error);
         }
-        await settlePaidAi(account);
         throw error;
       }
     },
@@ -819,14 +846,16 @@ export function createAiService(
           mediaId: coverId,
         };
       } catch (error) {
-        if (paidCallsFromError(error) > account.charged) {
-          try {
-            await notePaidCalls(account, paidCallsFromError(error) - account.charged, exhausted);
-          } catch {
-            account.charged = Math.max(account.charged, paidCallsFromError(error));
+        if (!(error instanceof PaidSettlementError)) {
+          if (paidCallsFromError(error) > account.charged) {
+            try {
+              await notePaidCalls(account, paidCallsFromError(error) - account.charged, exhausted);
+            } catch {
+              account.charged = Math.max(account.charged, paidCallsFromError(error));
+            }
           }
+          await settlePaidAi(account, error);
         }
-        await settlePaidAi(account);
         throw error;
       }
     },
@@ -982,14 +1011,16 @@ export function createAiService(
         await settlePaidAi(account);
         return posts.get(userId, workspaceId, post.id);
       } catch (error) {
-        if (paidCallsFromError(error) > account.charged) {
-          try {
-            await notePaidCalls(account, paidCallsFromError(error) - account.charged, exhausted);
-          } catch {
-            account.charged = Math.max(account.charged, paidCallsFromError(error));
+        if (!(error instanceof PaidSettlementError)) {
+          if (paidCallsFromError(error) > account.charged) {
+            try {
+              await notePaidCalls(account, paidCallsFromError(error) - account.charged, exhausted);
+            } catch {
+              account.charged = Math.max(account.charged, paidCallsFromError(error));
+            }
           }
+          await settlePaidAi(account, error);
         }
-        await settlePaidAi(account);
         throw error;
       }
     },

@@ -3,6 +3,7 @@ import http from "node:http";
 import https from "node:https";
 
 import { redactVkSecrets } from "@/modules/social/vk-manual";
+import { isSocialPublishLiveEnabled, socialPublishLiveBlockedOutcome } from "@/server/social/publish-live-guard";
 
 // VK API is reachable directly from the host. Do not send it through the
 // Telegram/OpenAI CONNECT proxy: that tunnel fails with api.vk.ru.
@@ -400,10 +401,31 @@ export function isPhotoUploadUnavailable(error: VkApiFailure) {
   return error.error_code === 15 || error.error_code === 27 || error.error_code === 200;
 }
 
-export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport {
+const VK_PUBLISH_METHODS = new Set([
+  "wall.post",
+  "market.add",
+  "photos.saveWallPhoto",
+  "photos.createAlbum",
+  "photos.getUploadServer",
+  "photos.save",
+  "video.save",
+]);
+
+function vkPublishBlockedFailure(): VkApiFailure {
+  return {
+    ok: false,
+    error_code: 403,
+    error_msg: socialPublishLiveBlockedOutcome().message,
+  };
+}
+
+export function createVkTransport(fetchImpl?: typeof fetch): VkTransport {
+  const usingDefaultTransport = !fetchImpl || fetchImpl === fetch;
+  const activeFetch = fetchImpl ?? fetch;
+
   async function postUpload(uploadUrl: string, encoded: { body: Uint8Array; headers: Record<string, string> }) {
-    if (fetchImpl !== fetch) {
-      return fetchImpl(uploadUrl, {
+    if (!usingDefaultTransport) {
+      return activeFetch(uploadUrl, {
         method: "POST",
         headers: encoded.headers,
         body: encoded.body as BodyInit,
@@ -419,6 +441,9 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
 
   return {
     async call(token, method, params = {}) {
+      if (usingDefaultTransport && VK_PUBLISH_METHODS.has(method) && !isSocialPublishLiveEnabled()) {
+        return vkPublishBlockedFailure();
+      }
       try {
         const body = new URLSearchParams({
           access_token: token,
@@ -427,7 +452,7 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
         for (const [key, value] of Object.entries(params)) {
           body.set(key, String(value));
         }
-        const response = await fetchImpl(`${vkApiRoot()}/method/${method}`, {
+        const response = await activeFetch(`${vkApiRoot()}/method/${method}`, {
           method: "POST",
           headers: {
             "content-type": "application/x-www-form-urlencoded",
@@ -453,6 +478,9 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
       }
     },
     async uploadWallPhoto(uploadUrl, file) {
+      if (usingDefaultTransport && !isSocialPublishLiveEnabled()) {
+        return vkPublishBlockedFailure();
+      }
       try {
         const encoded = encodeMultipartFile("photo", file);
         const response = await postUpload(uploadUrl, encoded);
@@ -475,6 +503,9 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
       }
     },
     async uploadAlbumPhoto(uploadUrl, file) {
+      if (usingDefaultTransport && !isSocialPublishLiveEnabled()) {
+        return vkPublishBlockedFailure();
+      }
       try {
         const encoded = encodeMultipartFile("file", file);
         const response = await postUpload(uploadUrl, encoded);
@@ -497,6 +528,9 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
       }
     },
     async uploadDocument(uploadUrl, file) {
+      if (usingDefaultTransport && !isSocialPublishLiveEnabled()) {
+        return vkPublishBlockedFailure();
+      }
       try {
         const encoded = encodeMultipartFile("file", file);
         const response = await postUpload(uploadUrl, encoded);
@@ -519,6 +553,9 @@ export function createVkTransport(fetchImpl: typeof fetch = fetch): VkTransport 
       }
     },
     async uploadVideo(uploadUrl, file) {
+      if (usingDefaultTransport && !isSocialPublishLiveEnabled()) {
+        return vkPublishBlockedFailure();
+      }
       try {
         const encoded = encodeMultipartFile("video_file", file);
         const response = await postUpload(uploadUrl, encoded);
