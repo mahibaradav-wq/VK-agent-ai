@@ -22,6 +22,7 @@
 | `STORAGE_DRIVER=local` | Файлы в `LOCAL_STORAGE_DIR` (по умолчанию `./data/media`) |
 | `AI_LIVE_ENABLED=true` | Разрешает платные вызовы OpenAI вместе с `AI_MONTHLY_HARD_LIMIT`. Пока оба не заданы, live-запросы не идут |
 | `AI_MONTHLY_HARD_LIMIT` | Общий месячный лимит платных AI-операций кабинета (целое ≥ 1) |
+| `AI_SETTLEMENT_SPOOL_DIR` | Необязательно. Каталог spool неподтверждённого перерасхода AI (по умолчанию `<LOCAL_STORAGE_DIR>/.ai-settlement-spool`, права `0700`/`0600`). Должен быть общим для `app` и `worker`. Пока каталог не читается или в нём есть записи, не подтверждённые в PostgreSQL, новые платные AI-запросы кабинета блокируются |
 | `SOCIAL_PUBLISH_LIVE=true` | Обязателен во всех окружениях (`production`, `development`, `test`) для живых VK/Telegram-публикаций (строгое сравнение `=== "true"`). Без флага адаптеры и сетевой транспорт блокируют отправку |
 
 В production `AUTH_DEV_MAILBOX` не задают. Иначе стенд писем станет публичной утечкой токенов. Для личного кабинета после первого владельца задайте `AUTH_ALLOW_PUBLIC_REGISTRATION=false`. `AI_LIVE_ENABLED` и `SOCIAL_PUBLISH_LIVE` не включайте, пока не согласованы бюджет и токены.
