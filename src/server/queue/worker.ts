@@ -102,6 +102,36 @@ function assertWorkerBootGuards() {
   }
 }
 
+export async function startWorkerLoop(options: {
+  runTick: () => Promise<void>;
+  onTickError?: (error: unknown) => void;
+  onShutdownError?: (error: unknown) => void;
+  close?: () => Promise<void>;
+  intervalMs?: number;
+  onSignal: (signal: "SIGINT" | "SIGTERM", handler: () => void) => void;
+  exit?: () => void;
+}) {
+  const loop = createWorkerLoop(options);
+  let shuttingDown = false;
+  const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    void loop.shutdown().then(
+      () => options.exit?.(),
+      (error: unknown) => options.onShutdownError?.(error),
+    );
+  };
+
+  // Install signal handlers before the first awaited tick. SIGTERM during startup
+  // must wait for that tick and close resources instead of terminating immediately.
+  options.onSignal("SIGINT", shutdown);
+  options.onSignal("SIGTERM", shutdown);
+
+  await loop.triggerTick();
+  loop.startTimer();
+  return loop;
+}
+
 async function main() {
   assertWorkerBootGuards();
   console.info(`[polka-worker] start ${workerId}`);
@@ -129,31 +159,22 @@ async function main() {
     console.warn("[polka-worker] REDIS_URL не задан: обработчик забирает задачи из PostgreSQL.");
   }
 
-  const loop = createWorkerLoop({
+  await startWorkerLoop({
     runTick: () => runWorkerTick(workerId),
     onTickError: (error) => {
       console.error("[polka-worker] poll failed", sanitizeDiagnosticError(error));
+    },
+    onShutdownError: (error) => {
+      console.error("[polka-worker] shutdown failed", sanitizeDiagnosticError(error));
+      process.exit(1);
     },
     close: async () => {
       await bull?.close();
       await connection?.quit();
       await prisma.$disconnect();
     },
-  });
-
-  await loop.triggerTick();
-  loop.startTimer();
-
-  const shutdown = async () => {
-    await loop.shutdown();
-    process.exit(0);
-  };
-
-  process.on("SIGINT", () => {
-    void shutdown();
-  });
-  process.on("SIGTERM", () => {
-    void shutdown();
+    onSignal: (signal, handler) => process.on(signal, handler),
+    exit: () => process.exit(0),
   });
 }
 
