@@ -50,11 +50,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       // Node runtime (RSC/actions/API): reject JWT after password reset / missing user.
       // Edge middleware uses /api/auth/session-check with the same resolveSessionToken rule.
-      const { prisma } = await import("@/server/db/prisma");
-      const current = await loadUserSessionVersion(token.sub, (id) =>
-        prisma.user.findUnique({ where: { id }, select: { sessionVersion: true } }),
-      );
-      return resolveSessionToken(token, current);
+      try {
+        const { prisma } = await import("@/server/db/prisma");
+        const current = await loadUserSessionVersion(token.sub, (id) =>
+          prisma.user.findUnique({ where: { id }, select: { sessionVersion: true } }),
+        );
+        return resolveSessionToken(token, current);
+      } catch {
+        // Fail closed when PostgreSQL is unavailable instead of throwing 500 across RSC/API.
+        return {};
+      }
     },
   },
 });

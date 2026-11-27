@@ -10,7 +10,12 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   }
 
   const { id } = await context.params;
-  const media = await prisma.mediaAsset.findUnique({ where: { id } });
+  let media: Awaited<ReturnType<typeof prisma.mediaAsset.findUnique>>;
+  try {
+    media = await prisma.mediaAsset.findUnique({ where: { id } });
+  } catch {
+    return new Response("База данных временно недоступна.", { status: 503 });
+  }
   if (!media) {
     return new Response("Медиафайл не найден.", { status: 404 });
   }
