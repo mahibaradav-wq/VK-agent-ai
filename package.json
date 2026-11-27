@@ -16,6 +16,7 @@
     "test:vps": "bash scripts/tests/vps-ops.test.sh",
     "test:e2e": "playwright test",
     "test:all": "vitest run && playwright test",
+    "test:full": "bash scripts/test-full.sh",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",

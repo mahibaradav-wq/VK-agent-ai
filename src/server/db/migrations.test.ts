@@ -105,10 +105,13 @@ describe("prisma migrations", () => {
       npm_config_cache: process.env.npm_config_cache,
       NPM_CONFIG_CACHE: process.env.NPM_CONFIG_CACHE,
     };
+    execFileSync("npx", ["prisma", "validate"], { env, stdio: "pipe" });
     execFileSync("psql", [...sqlArgs, "-d", maintenanceDb, "-c", `CREATE DATABASE ${dbName}`], {
       env,
       stdio: "pipe",
     });
+    execFileSync("npx", ["prisma", "migrate", "deploy"], { env, stdio: "pipe" });
+    // Second deploy must be idempotent
     execFileSync("npx", ["prisma", "migrate", "deploy"], { env, stdio: "pipe" });
 
     const applied = execFileSync(
@@ -119,5 +122,47 @@ describe("prisma migrations", () => {
 
     expect(Number(applied)).toBe(expected.length);
     expect(expected.length).toBeGreaterThan(0);
+
+    // Verify deployed schema structure (tables, FKs, unique indexes, indexes) and zero drift
+    const counts = execFileSync(
+      "psql",
+      [
+        ...sqlArgs,
+        "-d",
+        dbName,
+        "-Atc",
+        [
+          "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';",
+          "SELECT count(*) FROM information_schema.table_constraints WHERE table_schema='public' AND constraint_type='FOREIGN KEY';",
+          "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND indexdef LIKE 'CREATE UNIQUE INDEX%';",
+          "SELECT count(*) FROM pg_indexes WHERE schemaname='public';",
+        ].join(" "),
+      ],
+      { env, encoding: "utf8" },
+    )
+      .trim()
+      .split(/\s+/)
+      .map(Number);
+
+    expect(counts[0]).toBeGreaterThanOrEqual(41);
+    expect(counts[1]).toBeGreaterThanOrEqual(71);
+    expect(counts[2]).toBeGreaterThanOrEqual(70);
+    expect(counts[3]).toBeGreaterThanOrEqual(98);
+
+    // Deployed DB schema must match prisma/schema.prisma with zero unplanned changes
+    execFileSync(
+      "npx",
+      [
+        "prisma",
+        "migrate",
+        "diff",
+        "--from-schema-datasource",
+        "prisma/schema.prisma",
+        "--to-schema-datamodel",
+        "prisma/schema.prisma",
+        "--exit-code",
+      ],
+      { env, stdio: "pipe" },
+    );
   });
 });

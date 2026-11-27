@@ -3,7 +3,7 @@ import type { Prisma, PrismaClient, PostStatus, PostTargetStatus } from "@prisma
 import { AccessError, assertActiveProject, assertWorkspaceBound } from "@/modules/access/permissions";
 import { createAccessService } from "@/modules/access/access-service";
 import { PERSONAL_CABINET_LIMITS } from "@/modules/cabinet/limits";
-import { reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
+import { lockWorkspaceMetric, reserveUsage, USAGE_METRICS } from "@/modules/billing/usage";
 import { invalidateApprovals } from "@/modules/collaboration/approval";
 import { parsePlatforms } from "@/modules/posts/platforms";
 import { serializeVariants, type PlatformVariants } from "@/modules/posts/variants";
@@ -221,6 +221,7 @@ export function createPostService(db: PrismaClient) {
 
       const nextTitle = title?.trim() || "Черновик";
       const post = await db.$transaction(async (tx) => {
+        await lockWorkspaceMetric(tx, workspaceId, USAGE_METRICS.posts);
         await reserveUsage(
           tx,
           workspaceId,

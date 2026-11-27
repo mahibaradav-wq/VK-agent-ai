@@ -2,6 +2,8 @@ import { Worker } from "bullmq";
 import IORedis from "ioredis";
 import dns from "node:dns";
 import os from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 dns.setDefaultResultOrder("ipv4first");
 
@@ -15,7 +17,7 @@ const workerId = `${os.hostname()}:${process.pid}`;
 const redisUrl = process.env.REDIS_URL?.trim();
 const publishing = createPublishService(prisma);
 
-async function tick() {
+export async function runWorkerTick(id = workerId) {
   await recoverPendingOverageSettlements(prisma)
     .then((summary) => {
       if (summary.failed > 0) {
@@ -26,7 +28,71 @@ async function tick() {
       console.error("[polka-worker] ai overage recovery failed", sanitizeDiagnosticError(error));
     });
   await publishing.enqueueDueSchedules();
-  await publishing.processDueJobs(workerId);
+  await publishing.processDueJobs(id);
+}
+
+export function createWorkerLoop(options: {
+  runTick: () => Promise<void>;
+  onTickError?: (error: unknown) => void;
+  close?: () => Promise<void>;
+  intervalMs?: number;
+}) {
+  let activeTick: Promise<void> | null = null;
+  let stopping = false;
+  let shutdownPromise: Promise<void> | null = null;
+  let timer: ReturnType<typeof setInterval> | null = null;
+
+  const triggerTick = () => {
+    if (stopping) {
+      return activeTick ?? Promise.resolve();
+    }
+    if (activeTick) {
+      return activeTick;
+    }
+    const run = options
+      .runTick()
+      .catch((error: unknown) => {
+        options.onTickError?.(error);
+      })
+      .finally(() => {
+        if (activeTick === run) {
+          activeTick = null;
+        }
+      });
+    activeTick = run;
+    return run;
+  };
+
+  return {
+    triggerTick,
+    startTimer() {
+      if (!timer && !stopping) {
+        timer = setInterval(() => {
+          void triggerTick();
+        }, options.intervalMs ?? 5_000);
+      }
+    },
+    shutdown() {
+      if (shutdownPromise) {
+        return shutdownPromise;
+      }
+      stopping = true;
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+      shutdownPromise = (async () => {
+        if (activeTick) {
+          await activeTick;
+        }
+        await options.close?.();
+      })();
+      return shutdownPromise;
+    },
+    isStopping() {
+      return stopping;
+    },
+  };
 }
 
 function assertWorkerBootGuards() {
@@ -39,13 +105,6 @@ function assertWorkerBootGuards() {
 async function main() {
   assertWorkerBootGuards();
   console.info(`[polka-worker] start ${workerId}`);
-  await tick();
-
-  const timer = setInterval(() => {
-    void tick().catch((error: unknown) => {
-      console.error("[polka-worker] poll failed", sanitizeDiagnosticError(error));
-    });
-  }, 5_000);
 
   let bull: Worker | undefined;
   let connection: IORedis | undefined;
@@ -70,11 +129,23 @@ async function main() {
     console.warn("[polka-worker] REDIS_URL не задан: обработчик забирает задачи из PostgreSQL.");
   }
 
+  const loop = createWorkerLoop({
+    runTick: () => runWorkerTick(workerId),
+    onTickError: (error) => {
+      console.error("[polka-worker] poll failed", sanitizeDiagnosticError(error));
+    },
+    close: async () => {
+      await bull?.close();
+      await connection?.quit();
+      await prisma.$disconnect();
+    },
+  });
+
+  await loop.triggerTick();
+  loop.startTimer();
+
   const shutdown = async () => {
-    clearInterval(timer);
-    await bull?.close();
-    await connection?.quit();
-    await prisma.$disconnect();
+    await loop.shutdown();
     process.exit(0);
   };
 
@@ -86,7 +157,14 @@ async function main() {
   });
 }
 
-void main().catch((error: unknown) => {
-  console.error("[polka-worker] fatal", sanitizeDiagnosticError(error));
-  process.exit(1);
-});
+const isMainEntry =
+  Boolean(process.argv[1]) &&
+  !process.env.VITEST &&
+  pathToFileURL(path.resolve(process.argv[1]!)).href === import.meta.url;
+
+if (isMainEntry) {
+  void main().catch((error: unknown) => {
+    console.error("[polka-worker] fatal", sanitizeDiagnosticError(error));
+    process.exit(1);
+  });
+}
