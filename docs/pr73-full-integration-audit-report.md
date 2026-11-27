@@ -5,7 +5,7 @@
 - **Исходный HEAD (PR #72):** `79f8e44c6d51706a4e79b7a954a2b75e0d958851` (`cursor/pr72-spool-fsync-restart-ee77`)
 - **Рабочая ветка:** `cursor/pr73-full-integration-audit-ee77`
 - **Коммит кода, тестов и `test:full`:** `8f960eedf98008bfef97d4736e0d962aba5f0199`
-- **Итоговый HEAD:** коммит добавления этого отчёта поверх `8f960eedf98008bfef97d4736e0d962aba5f0199` (точный SHA итогового HEAD и актуальный статус GitHub CI / VPS readiness приводятся в описании PR #73 и финальном отчёте запуска).
+- **Исправление таймаута CI в `migrations.test.ts` и актуализация отчёта:** поверх `c2a3de871659b1b8d08684b185e3c4670289e5e4` (точный SHA нового итогового HEAD приводится в финальном ответе и обновляется в PR #73).
 
 ---
 
@@ -73,7 +73,7 @@
 - `prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --shadow-database-url ... --exit-code`: `-- This is an empty migration.` (exit 0).
 - `prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --exit-code`: `-- This is an empty migration.` (exit 0).
 
-### Полный прогон `npm run test:full` после исправлений Блока E
+### Полный прогон `npm run test:full` после исправлений Блока E и CI-таймаута `migrations.test.ts`
 
 | Этап | Команда / проверка | Результат | Время |
 |---|---|---|---|
@@ -81,21 +81,24 @@
 | 2 | `npx prisma generate` | **PASS** | 1s |
 | 3 | `npx prisma validate` | **PASS** | 1s |
 | 4 | `npx prisma migrate deploy` (19 миграций) | **PASS** | 1s |
-| 5 | `npm run typecheck` (`tsc --noEmit`) | **PASS** | 6s |
+| 5 | `npm run typecheck` (`tsc --noEmit`) | **PASS** | 2s |
 | 6 | `npm run lint` (`eslint .`) | **PASS** | 6s |
-| 7 | `npm test` (Vitest: **68 файлов, 427 тестов**) | **PASS** | 131s |
+| 7 | `npm test` (Vitest: **68 файлов, 427 тестов**) | **PASS** | 130s |
 | 8 | `npm run test:vps` (`scripts/tests/vps-ops.test.sh`: **108 проверок**) | **PASS** | 6s |
-| 9 | `npm run build` (`next build`, 62 маршрута) | **PASS** | 9s |
-| 10 | `npm run test:e2e` (Playwright: **12/12 тестов**) | **PASS** | 17s |
+| 9 | `npm run build` (`next build`, 62 маршрута) | **PASS** | 5s |
+| 10 | `npm run test:e2e` (Playwright: **12/12 тестов**) | **PASS** | 18s |
 | 11 | `bash -n` для 9 VPS/test-full shell-скриптов | **PASS** | 0s |
 | 12 | `git grep` по отслеживаемым файлам на секреты | **PASS** | 0s |
-| **Итог** | `OVERALL: PASS (12 stages)` | **PASS** | ~179s |
+| **Итог** | `OVERALL: PASS (12 stages)` | **PASS** | ~170s |
 
 ---
 
 ## 5. Статус CI / VPS readiness и оставшиеся ограничения
 
-- **GitHub CI и VPS readiness:** на момент фиксации этого отчёта ветка `cursor/pr73-full-integration-audit-ee77` готовится к push и созданию PR #73 (stacked на PR #72). Актуальный статус и ссылки на прогоны CI / VPS readiness отслеживаются после push через подписку и указываются в итоговом сообщении.
+- **GitHub CI и VPS readiness (предыдущий коммит `c2a3de871659b1b8d08684b185e3c4670289e5e4`):**
+  - `CI / Test` ([run 45945108550](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45945108550)): **PASS**.
+  - `VPS readiness / Readiness checks` ([run 45945108452](https://github.com/mahibaradav-wq/VK-agent-ai/actions/runs/45945108452/job/140327908965)): **FAIL** — единственный сбой в `src/server/db/migrations.test.ts` (`Error: Test timed out in 5000ms`, фактическое время 5242ms из-за 4 последовательных вызовов `npx prisma` в одном `it`-блоке). Исправлено минимально добавлением явного таймаута `30_000` мс в `it(..., 30_000)` в `src/server/db/migrations.test.ts` без ослабления проверок.
+- **Текущий запуск CI / VPS readiness:** перезапускается автоматически после push исправления в ветку `cursor/pr73-full-integration-audit-ee77`.
 - **Что НЕ проверено на реальном VPS (вне рамок локального аудита и строго запрещено правилами PR #73):**
   1. Боевые сетевые запросы к внешним API OpenAI, VK API (`api.vk.com`) и Telegram Bot API (`api.telegram.org`) — все проверки выполнены только против локальных `node:http` spy-серверов.
   2. Работа очереди `BullMQ` / `IORedis` против реального процесса Redis (проверены `inline`, `unconfigured` и PostgreSQL polling / `createWorkerLoop`).

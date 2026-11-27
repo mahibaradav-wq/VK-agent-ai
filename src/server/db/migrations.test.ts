@@ -164,5 +164,5 @@ describe("prisma migrations", () => {
       ],
       { env, stdio: "pipe" },
     );
-  });
+  }, 30_000);
 });
