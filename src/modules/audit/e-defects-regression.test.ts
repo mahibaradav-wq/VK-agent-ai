@@ -9,7 +9,7 @@ import { createAuthService } from "@/modules/auth/auth-service";
 import { createPostService } from "@/modules/posts/post-service";
 import { createProjectService } from "@/modules/projects/project-service";
 import { prisma } from "@/server/db/prisma";
-import { createWorkerLoop } from "@/server/queue/worker";
+import { createWorkerLoop, startWorkerLoop } from "@/server/queue/worker";
 import { createLocalStorage } from "@/server/storage/local-storage";
 
 const TEST_SECRET = "pr73-regression-secret-not-for-production";
@@ -156,6 +156,52 @@ describe("PR73 Block E: Defect regression suite (D1–D4)", () => {
     releaseTick();
     await Promise.all([p1, p2, p3, shut]);
     expect(events).toEqual(["tick:start:1", "tick:end:1", "close"]);
+  });
+
+  it("D2: startup registers SIGINT/SIGTERM before the first tick and drains it before exit", async () => {
+    let releaseTick!: () => void;
+    const events: string[] = [];
+    const handlers = new Map<string, () => void>();
+
+    const starting = startWorkerLoop({
+      runTick: async () => {
+        events.push("tick:start");
+        await new Promise<void>((resolve) => {
+          releaseTick = resolve;
+        });
+        events.push("tick:end");
+      },
+      close: async () => {
+        events.push("close");
+      },
+      onSignal: (signal, handler) => {
+        handlers.set(signal, handler);
+        events.push(`signal:${signal}`);
+      },
+      exit: () => {
+        events.push("exit");
+      },
+    });
+
+    expect(handlers.has("SIGINT")).toBe(true);
+    expect(handlers.has("SIGTERM")).toBe(true);
+    expect(events).toEqual(["signal:SIGINT", "signal:SIGTERM", "tick:start"]);
+
+    handlers.get("SIGTERM")!();
+    expect(events).toEqual(["signal:SIGINT", "signal:SIGTERM", "tick:start"]);
+
+    releaseTick();
+    await starting;
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(events).toEqual([
+      "signal:SIGINT",
+      "signal:SIGTERM",
+      "tick:start",
+      "tick:end",
+      "close",
+      "exit",
+    ]);
   });
 
   it("D3: local storage rejects '.' key and refuses symlinks escaping rootDir on get and put", async () => {
